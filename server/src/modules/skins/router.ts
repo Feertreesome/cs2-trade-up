@@ -1,6 +1,8 @@
 import { Router } from "express";
 import type { AxiosError } from "axios";
 import { LRUCache } from "lru-cache";
+import fs from "node:fs/promises";
+import path from "node:path";
 import { getPriceUSD, searchByRarity, fetchListingTotalCount } from "../steam/repo";
 import { STEAM_MAX_AUTO_LIMIT, STEAM_PAGE_SIZE } from "../../config";
 import { parseBoolean } from "./validators";
@@ -16,6 +18,8 @@ import {
   type ExpandMode,
   type SkinsGroup,
 } from "./types";
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const totalsCache = new LRUCache<string, { perRarity: Record<string, number>; sum: number }>({
   max: 100,
@@ -140,6 +144,21 @@ export const createSkinsRouter = (): Router => {
             })
           );
         }
+
+        const namesNeedingTotals = flatItems
+          .filter((e) => e.sell_listings === 0)
+          .map((e) => e.market_hash_name);
+        for (const name of Array.from(new Set(namesNeedingTotals))) {
+          const n = await fetchListingTotalCount(name);
+          if (typeof n === "number") {
+            for (const item of flatItems) {
+              if (item.market_hash_name === name && item.sell_listings === 0) {
+                item.sell_listings = n;
+              }
+            }
+          }
+        }
+
         return response.json({ rarities: rarityList, total: flatItems.length, items: flatItems, meta });
       }
 
@@ -262,6 +281,52 @@ export const createSkinsRouter = (): Router => {
 
       const { items, total } = await searchByRarity({ rarity: rarity as any, start, count, normalOnly });
       return response.json({ rarity, start, count: items.length, total, items });
+    } catch (error) {
+      return handleError(response, error);
+    }
+  });
+
+  /**
+   * GET /api/skins/names?rarity=Classified&normalOnly=1
+   * Выгружает все market_hash_name указанной редкости и сохраняет в JSON.
+   */
+  router.get("/names", async (request, response) => {
+    try {
+      const rarity = String(request.query.rarity ?? "");
+      if (!ALL_RARITIES.includes(rarity as any)) {
+        return response.status(400).json({ error: "Invalid rarity" });
+      }
+      const normalOnly = parseBoolean(request.query.normalOnly, true);
+
+      const names: string[] = [];
+      let start = 0;
+      while (true) {
+        try {
+          const { items, total } = await searchByRarity({
+            rarity: rarity as any,
+            start,
+            count: STEAM_PAGE_SIZE,
+            normalOnly,
+          });
+          if (!items.length) break;
+          names.push(...items.map((i) => i.market_hash_name));
+          start += items.length;
+          if (start >= total) break;
+        } catch (err) {
+          const status = (err as AxiosError)?.response?.status;
+          if (status === 429) {
+            await sleep(16_000);
+            continue;
+          }
+          throw err;
+        }
+      }
+
+      const filePath = path.join(process.cwd(), "server", "data", `${rarity}.json`);
+      await fs.mkdir(path.dirname(filePath), { recursive: true });
+      await fs.writeFile(filePath, JSON.stringify({ rarity, names }, null, 2), "utf8");
+
+      return response.json({ rarity, total: names.length, file: filePath, names });
     } catch (error) {
       return handleError(response, error);
     }
