@@ -30,14 +30,18 @@ export default function SkinsBrowser() {
   } = useSkinsBrowser();
 
   const [savingNames, setSavingNames] = React.useState(false);
+  const [namesMessage, setNamesMessage] = React.useState<string | null>(null);
+  const [namesError, setNamesError] = React.useState<string | null>(null);
 
   async function handleFetchNames() {
     setSavingNames(true);
+    setNamesMessage(null);
+    setNamesError(null);
     try {
       const result = await fetchAllNames(rarity, normalOnly);
-      alert(`Saved ${result.total} names for ${result.rarity}`);
+      setNamesMessage(`Saved ${result.total} names for ${result.rarity}`);
     } catch (e: any) {
-      alert(String(e?.message || e));
+      setNamesError(String(e?.message || e));
     } finally {
       setSavingNames(false);
     }
@@ -87,6 +91,16 @@ export default function SkinsBrowser() {
       {loader.error && (
         <div className="red" style={{ marginTop: 8 }}>
           {loader.error}
+        </div>
+      )}
+      {namesError && (
+        <div className="red" style={{ marginTop: 8 }}>
+          {namesError}
+        </div>
+      )}
+      {namesMessage && (
+        <div className="small" style={{ marginTop: 8 }}>
+          {namesMessage}
         </div>
       )}
       {hint && (

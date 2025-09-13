@@ -19,6 +19,8 @@ import {
   type SkinsGroup,
 } from "./types";
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 const totalsCache = new LRUCache<string, { perRarity: Record<string, number>; sum: number }>({
   max: 100,
   ttl: 1000 * 60 * 5,
@@ -284,16 +286,25 @@ export const createSkinsRouter = (): Router => {
       const names: string[] = [];
       let start = 0;
       while (true) {
-        const { items, total } = await searchByRarity({
-          rarity: rarity as any,
-          start,
-          count: STEAM_PAGE_SIZE,
-          normalOnly,
-        });
-        if (!items.length) break;
-        names.push(...items.map((i) => i.market_hash_name));
-        start += items.length;
-        if (start >= total) break;
+        try {
+          const { items, total } = await searchByRarity({
+            rarity: rarity as any,
+            start,
+            count: STEAM_PAGE_SIZE,
+            normalOnly,
+          });
+          if (!items.length) break;
+          names.push(...items.map((i) => i.market_hash_name));
+          start += items.length;
+          if (start >= total) break;
+        } catch (err) {
+          const status = (err as AxiosError)?.response?.status;
+          if (status === 429) {
+            await sleep(16_000);
+            continue;
+          }
+          throw err;
+        }
       }
 
       const filePath = path.join(process.cwd(), "server", "data", `${rarity}.json`);
