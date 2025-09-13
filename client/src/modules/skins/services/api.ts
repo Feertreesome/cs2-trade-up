@@ -44,6 +44,13 @@ export async function fetchPaged(rarity: Rarity, start: number, count: number, n
   return r.json() as Promise<{ items: any[]; total: number }>;
 }
 
+export async function fetchAllNames(rarity: Rarity, normalOnly: boolean) {
+  const qs = new URLSearchParams({ rarity, normalOnly: normalOnly ? "1" : "0" });
+  const r = await fetch(`/api/skins/names?${qs.toString()}`);
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json() as Promise<{ rarity: Rarity; names: string[]; total: number }>;
+}
+
 export async function batchPriceOverview(names: string[], chunk = 20, maxRetries = 4) {
   const out: Record<string, number | null> = {};
   for (let i = 0; i < names.length; i += chunk) {
