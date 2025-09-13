@@ -229,15 +229,21 @@ export const createSkinsRouter = (): Router => {
       // Уточняем реальные количества для «нулевых» экстерьеров
       const namesNeedingTotals = Object.values(groupedSkins)
         .flatMap((g) => g.exteriors.filter((e) => e.sell_listings === 0).map((e) => e.marketHashName));
-      for (const name of Array.from(new Set(namesNeedingTotals))) {
-        const n = await fetchListingTotalCount(name);
-        if (typeof n === "number") {
-          for (const g of Object.values(groupedSkins)) {
-            for (const e of g.exteriors) {
-              if (e.marketHashName === name && e.sell_listings === 0) e.sell_listings = n;
+      const uniqueNames = Array.from(new Set(namesNeedingTotals)).slice(0, 150);
+      const concurrency = 5;
+      for (let i = 0; i < uniqueNames.length; i += concurrency) {
+        const slice = uniqueNames.slice(i, i + concurrency);
+        const totals = await Promise.all(slice.map((name) => fetchListingTotalCount(name)));
+        slice.forEach((name, idx) => {
+          const n = totals[idx];
+          if (typeof n === "number") {
+            for (const g of Object.values(groupedSkins)) {
+              for (const e of g.exteriors) {
+                if (e.marketHashName === name && e.sell_listings === 0) e.sell_listings = n;
+              }
             }
           }
-        }
+        });
       }
 
       const skins = Object.values(groupedSkins).sort((a, b) => a.baseName.localeCompare(b.baseName));
