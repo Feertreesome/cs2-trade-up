@@ -21,24 +21,27 @@ app.use("/api/skins", createSkinsRouter());
  */
 app.post("/api/priceoverview/batch", async (request, response) => {
   try {
-    const names = Array.isArray(request.body?.names)
-      ? request.body.names.slice(0, 200)
+    const names: string[] = Array.isArray(request.body?.names)
+      ? request.body.names.slice(0, 200).map((n: unknown) => String(n))
       : [];
     if (!names.length)
       return response.status(400).json({ error: "names[] required" });
 
     const prices: Record<string, number | null> = {};
+    const errors: Record<string, unknown> = {};
     const concurrency = 5;
     for (let i = 0; i < names.length; i += concurrency) {
       const slice = names.slice(i, i + concurrency);
       const batch = await Promise.all(
-        slice.map((name) => getPriceUSD(String(name))),
+        slice.map((name: string) => getPriceUSD(String(name))),
       );
-      slice.forEach((name, idx) => {
-        prices[name] = batch[idx];
+      slice.forEach((name: string, idx: number) => {
+        const { price, error } = batch[idx];
+        prices[name] = price;
+        if (error) errors[name] = error;
       });
     }
-    return response.json({ prices });
+    return response.json({ prices, errors });
   } catch (error) {
     return response.status(500).json({ error: String(error) });
   }

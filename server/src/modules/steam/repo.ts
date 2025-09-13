@@ -182,12 +182,17 @@ const parseSteamPriceText = (text: string): number | null => {
 };
 
 /** Читает USD-цену предмета по market_hash_name через priceoverview. */
+export interface PriceUSDResult {
+  price: number | null;
+  error?: unknown;
+}
+
 export const getPriceUSD = async (
   marketHashName: string,
-): Promise<number | null> => {
+): Promise<PriceUSDResult> => {
   const cacheKey = `price:${marketHashName}`;
   const cached = memoryCache.get(cacheKey);
-  if (cached !== undefined) return cached;
+  if (cached !== undefined) return { price: cached };
 
   const params = new URLSearchParams({
     appid: String(APP_ID),
@@ -200,18 +205,38 @@ export const getPriceUSD = async (
     const payload = await steamGetData<PriceOverviewResponse>(
       `${PRICE_URL}?${params.toString()}`,
     );
-    if (!payload?.success) return null;
+
+    if (!payload?.success) {
+      console.warn("getPriceUSD: payload.success is false", {
+        marketHashName,
+        payload,
+      });
+      return { price: null, error: "payload_not_success" };
+    }
 
     const rawPrice = payload.lowest_price ?? payload.median_price;
-    if (!rawPrice) return null;
+    if (!rawPrice) {
+      console.warn("getPriceUSD: price fields missing", {
+        marketHashName,
+        payload,
+      });
+      return { price: null, error: "price_missing" };
+    }
 
     const parsed = parseSteamPriceText(rawPrice);
-    if (parsed == null) return null;
+    if (parsed == null) {
+      console.warn("getPriceUSD: failed to parse price", {
+        marketHashName,
+        rawPrice,
+      });
+      return { price: null, error: "parse_failed" };
+    }
 
     memoryCache.set(cacheKey, parsed);
-    return parsed;
-  } catch {
-    return null;
+    return { price: parsed };
+  } catch (error) {
+    console.error(`getPriceUSD error for ${marketHashName}`, error);
+    return { price: null, error };
   }
 };
 
