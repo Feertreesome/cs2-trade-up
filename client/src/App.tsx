@@ -1,8 +1,8 @@
 import React from "react";
-import SkinsBrowserComponent from "./components/SkinsBrowserComponent/SkinsBrowserComponent";
+import SkinsBrowser from "./modules/skins";
 
 /**
- * Главная страница приложения — содержит только SkinsBrowserComponent.
+ * Главная страница приложения — содержит только компонент SkinsBrowser.
  */
 const App: React.FC = () => (
     <div className="container">
@@ -10,7 +10,7 @@ const App: React.FC = () => (
             <div className="h1">CS2 Skins — Market Browser</div>
             <div className="small">Live Steam prices • Stable pagination • Progressive loading</div>
         </div>
-        <SkinsBrowserComponent />
+        <SkinsBrowser />
     </div>
 );
 

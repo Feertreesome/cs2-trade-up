@@ -1,47 +1,19 @@
 import { Router } from "express";
-import { RARITY_TO_TAG, getPriceUSD, searchByRarity, fetchListingTotalCount } from "../steam/repo";
+import { getPriceUSD, searchByRarity, fetchListingTotalCount } from "../steam/repo";
 import { STEAM_MAX_AUTO_LIMIT, STEAM_PAGE_SIZE } from "../../config";
-
-/** Поддерживаемые редкости в виде кортежа для валидации. */
-const ALL_RARITIES = Object.keys(RARITY_TO_TAG) as (keyof typeof RARITY_TO_TAG)[];
-
-/** Экстерьеры в заданном порядке (нужны для сортировки). */
-const EXTERIORS = ["Factory New", "Minimal Wear", "Field-Tested", "Well-Worn", "Battle-Scarred"] as const;
-type Exterior = typeof EXTERIORS[number];
-
-type ExpandMode = "none" | "price" | "all";
-
-/** Булевый парсер query-параметров с дефолтом. */
-const parseBoolean = (value: unknown, defaultValue = false) => {
-  const text = String(value ?? "");
-  if (/^(1|true|yes|on)$/i.test(text)) return true;
-  if (/^(0|false|no|off)$/i.test(text)) return false;
-  return defaultValue;
-};
-
-/** Из market_hash_name извлекает экстрерьер, по умолчанию FT. */
-const parseMarketHashExterior = (marketHashName: string): Exterior => {
-  const m = marketHashName.match(/\((Factory New|Minimal Wear|Field-Tested|Well-Worn|Battle-Scarred)\)$/i);
-  return (m?.[1] as Exterior) ?? "Field-Tested";
-};
-
-/** Убирает суффикс экстерьера, получая базовое имя предмета. */
-const baseFromMarketHash = (marketHashName: string): string =>
-  marketHashName.replace(/ \((Factory New|Minimal Wear|Field-Tested|Well-Worn|Battle-Scarred)\)$/i, "");
-
-/**
- * Возвращает объект с total_count по каждой редкости одним лёгким запросом (count=1).
- */
-const getTotals = async (rarities: (keyof typeof RARITY_TO_TAG)[], normalOnly: boolean) => {
-  const perRarity: Record<string, number> = {};
-  let sum = 0;
-  for (const rarity of rarities) {
-    const { total } = await searchByRarity({ rarity, start: 0, count: 1, normalOnly });
-    perRarity[rarity] = total;
-    sum += total;
-  }
-  return { perRarity, sum };
-};
+import { parseBoolean } from "./validators";
+import {
+  ALL_RARITIES,
+  baseFromMarketHash,
+  getTotals,
+  parseMarketHashExterior,
+} from "./service";
+import {
+  EXTERIORS,
+  type Exterior,
+  type ExpandMode,
+  type SkinsGroup,
+} from "./types";
 
 /**
  * Конструирует и возвращает Router с маршрутами для работы со скинами.
@@ -66,7 +38,7 @@ export const createSkinsRouter = (): Router => {
       const raritiesParam = String(request.query.rarities ?? "").trim();
       const rarityList = (raritiesParam ? raritiesParam.split(",") : ALL_RARITIES)
         .map((s) => s.trim())
-        .filter((s): s is keyof typeof RARITY_TO_TAG => (ALL_RARITIES as readonly string[]).includes(s));
+        .filter((s): s is (typeof ALL_RARITIES)[number] => ALL_RARITIES.includes(s as any));
 
       if (!rarityList.length) {
         return response.status(400).json({ error: `No valid rarities. Allowed: ${ALL_RARITIES.join(", ")}` });
@@ -109,13 +81,13 @@ export const createSkinsRouter = (): Router => {
       const perRarityLimit = Math.max(1, Math.floor(limitNumber / rarityList.length));
       const pageSize = STEAM_PAGE_SIZE;
 
-      const flat: { market_hash_name: string; sell_listings: number; rarity: string }[] = [];
+      const flatItems: { market_hash_name: string; sell_listings: number; rarity: string }[] = [];
 
       // Пагинация по каждой редкости
       for (const rarity of rarityList) {
         let start = 0;
         while (true) {
-          const already = flat.filter((x) => x.rarity === rarity).length;
+          const already = flatItems.filter((x) => x.rarity === rarity).length;
           const need = perRarityLimit - already;
           if (need <= 0) break;
 
@@ -123,7 +95,7 @@ export const createSkinsRouter = (): Router => {
           const { items, total } = await searchByRarity({ rarity, start, count: batch, normalOnly });
           if (!items.length) break;
 
-          flat.push(...items.map((i) => ({ ...i, rarity })));
+          flatItems.push(...items.map((i) => ({ ...i, rarity })));
           start += items.length;
           if (start >= total) break;
         }
@@ -133,42 +105,35 @@ export const createSkinsRouter = (): Router => {
       if (!aggregate) {
         if (includePrices) {
           await Promise.all(
-            flat.map(async (it) => {
+            flatItems.map(async (it) => {
               (it as any).price = await getPriceUSD(it.market_hash_name);
             })
           );
         }
-        return response.json({ rarities: rarityList, total: flat.length, items: flat, meta });
+        return response.json({ rarities: rarityList, total: flatItems.length, items: flatItems, meta });
       }
 
       // Агрегация по базовому имени
-      const groups: Record<
-        string,
-        {
-          baseName: string;
-          rarity: string;
-          exteriors: { exterior: Exterior; marketHashName: string; sell_listings: number; price: number | null }[];
-        }
-      > = {};
-      const toPrice: Array<{ groupKey: string; idx: number }> = [];
+      const groupedSkins: Record<string, SkinsGroup> = {};
+      const priceTasks: Array<{ groupKey: string; idx: number }> = [];
 
-      for (const item of flat) {
+      for (const item of flatItems) {
         const marketHashName = item.market_hash_name;
         const baseName = baseFromMarketHash(marketHashName);
         const exterior = parseMarketHashExterior(marketHashName);
         const key = `${item.rarity}::${baseName}`;
 
-        if (!groups[key]) groups[key] = { baseName, rarity: item.rarity, exteriors: [] };
+        if (!groupedSkins[key]) groupedSkins[key] = { baseName, rarity: item.rarity, exteriors: [] };
         const entry = { exterior, marketHashName, sell_listings: item.sell_listings, price: null as number | null };
-        groups[key].exteriors.push(entry);
-        if (includePrices) toPrice.push({ groupKey: key, idx: groups[key].exteriors.length - 1 });
+        groupedSkins[key].exteriors.push(entry);
+        if (includePrices) priceTasks.push({ groupKey: key, idx: groupedSkins[key].exteriors.length - 1 });
       }
 
       // Дополняем отсутствующие экстерьеры по выбранному режиму
-      type Group = (typeof groups)[string];
+      type Group = (typeof groupedSkins)[string];
       const priceChecks: Array<{ key: string; marketHashName: string; exterior: Exterior }> = [];
 
-      for (const [key, group] of Object.entries(groups) as [string, Group][]) {
+      for (const [key, group] of Object.entries(groupedSkins) as [string, Group][]) {
         const present = new Set(group.exteriors.map((e) => e.exterior));
         if (expandMode === "all") {
           for (const exterior of EXTERIORS) {
@@ -176,7 +141,7 @@ export const createSkinsRouter = (): Router => {
             const mhn = `${group.baseName} (${exterior})`;
             const entry = { exterior, marketHashName: mhn, sell_listings: 0, price: null as number | null };
             group.exteriors.push(entry);
-            if (includePrices) toPrice.push({ groupKey: key, idx: group.exteriors.length - 1 });
+            if (includePrices) priceTasks.push({ groupKey: key, idx: group.exteriors.length - 1 });
           }
         } else if (expandMode === "price") {
           for (const exterior of EXTERIORS) {
@@ -192,20 +157,20 @@ export const createSkinsRouter = (): Router => {
         for (const check of priceChecks) {
           const price = await getPriceUSD(check.marketHashName);
           if (price == null) continue;
-          const group = groups[check.key];
+          const group = groupedSkins[check.key];
           const entry = { exterior: check.exterior, marketHashName: check.marketHashName, sell_listings: 0, price: includePrices ? price : null };
           group.exteriors.push(entry);
           if (includePrices && entry.price == null) {
-            toPrice.push({ groupKey: check.key, idx: group.exteriors.length - 1 });
+            priceTasks.push({ groupKey: check.key, idx: group.exteriors.length - 1 });
           }
         }
       }
 
       // Дотягиваем цены для тех, кому ещё не поставили
-      if (includePrices && toPrice.length) {
+      if (includePrices && priceTasks.length) {
         await Promise.all(
-          toPrice.map(async ({ groupKey, idx }) => {
-            const group = groups[groupKey];
+          priceTasks.map(async ({ groupKey, idx }) => {
+            const group = groupedSkins[groupKey];
             const e = group.exteriors[idx];
             if (e.price == null) e.price = await getPriceUSD(e.marketHashName);
           })
@@ -213,12 +178,12 @@ export const createSkinsRouter = (): Router => {
       }
 
       // Уточняем реальные количества для «нулевых» экстерьеров
-      const needTotals = Object.values(groups)
+      const namesNeedingTotals = Object.values(groupedSkins)
         .flatMap((g) => g.exteriors.filter((e) => e.sell_listings === 0).map((e) => e.marketHashName));
-      for (const name of Array.from(new Set(needTotals))) {
+      for (const name of Array.from(new Set(namesNeedingTotals))) {
         const n = await fetchListingTotalCount(name);
         if (typeof n === "number") {
-          for (const g of Object.values(groups)) {
+          for (const g of Object.values(groupedSkins)) {
             for (const e of g.exteriors) {
               if (e.marketHashName === name && e.sell_listings === 0) e.sell_listings = n;
             }
@@ -226,7 +191,7 @@ export const createSkinsRouter = (): Router => {
         }
       }
 
-      const skins = Object.values(groups).sort((a, b) => a.baseName.localeCompare(b.baseName));
+      const skins = Object.values(groupedSkins).sort((a, b) => a.baseName.localeCompare(b.baseName));
       return response.json({ rarities: rarityList, total: skins.length, skins, meta });
     } catch (error) {
       return response.status(500).json({ error: String(error) });
@@ -242,7 +207,7 @@ export const createSkinsRouter = (): Router => {
       const raritiesParam = String(request.query.rarities ?? "").trim();
       const rarityList = (raritiesParam ? raritiesParam.split(",") : ALL_RARITIES)
         .map((s) => s.trim())
-        .filter((s): s is keyof typeof RARITY_TO_TAG => (ALL_RARITIES as any).includes(s));
+        .filter((s): s is (typeof ALL_RARITIES)[number] => ALL_RARITIES.includes(s as any));
       const normalOnly = parseBoolean(request.query.normalOnly, true);
       if (!rarityList.length) return response.status(400).json({ error: "No valid rarities" });
 
@@ -266,7 +231,7 @@ export const createSkinsRouter = (): Router => {
   router.get("/paged", async (request, response) => {
     try {
       const rarity = String(request.query.rarity ?? "");
-      if (!(ALL_RARITIES as any).includes(rarity)) return response.status(400).json({ error: "Invalid rarity" });
+      if (!ALL_RARITIES.includes(rarity as any)) return response.status(400).json({ error: "Invalid rarity" });
       const start = Math.max(0, parseInt(String(request.query.start ?? "0"), 10));
       const count = Math.max(1, Math.min(30, parseInt(String(request.query.count ?? "30"), 10)));
       const normalOnly = parseBoolean(request.query.normalOnly, true);

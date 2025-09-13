@@ -1,5 +1,5 @@
 import React from "react";
-import type { ExpandMode, Rarity } from "../services/types";
+import type { ExpandMode, Rarity } from "../services";
 
 /**
  * Панель управляет параметрами загрузки скинов.

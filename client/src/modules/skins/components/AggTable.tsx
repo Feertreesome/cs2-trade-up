@@ -1,5 +1,5 @@
 import React from "react";
-import { EXTERIORS, type AggGroup } from "../services/types";
+import { EXTERIORS, type AggGroup } from "../services";
 
 const fmt = (n: number | null | undefined) => (n == null ? "—" : `$${n.toFixed(2)}`);
 
