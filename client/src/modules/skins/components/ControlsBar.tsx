@@ -29,6 +29,7 @@ type ControlsBarProps = {
   onLoad: () => void;
   onLoadProgressive: () => void;
   onResume: () => void;
+  onFetchNames: () => void;
 
   loading: boolean;
   canResume: boolean;
@@ -116,6 +117,7 @@ const ControlsBar: React.FC<ControlsBarProps> = (props) => {
         <button className="btn" onClick={props.onLoad} disabled={props.loading}>Load</button>
         <button className="btn" style={{ marginLeft: 8 }} onClick={props.onLoadProgressive} disabled={props.loading}>Load progressively</button>
         <button className="btn" style={{ marginLeft: 8 }} onClick={props.onResume} disabled={props.loading || !props.canResume}>Resume</button>
+        <button className="btn" style={{ marginLeft: 8 }} onClick={props.onFetchNames} disabled={props.loading}>Get names</button>
       </div>
     </div>
   );

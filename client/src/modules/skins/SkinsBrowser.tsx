@@ -4,7 +4,7 @@ import ControlsBar from "./components/ControlsBar";
 import ProgressBar from "./components/ProgressBar";
 import FlatTable from "./components/FlatTable";
 import AggTable from "./components/AggTable";
-import { EXTERIORS, RARITIES } from "./services";
+import { EXTERIORS, RARITIES, fetchAllNames } from "./services";
 import useSkinsBrowser from "./hooks/useSkinsBrowser";
 
 export default function SkinsBrowser() {
@@ -28,6 +28,24 @@ export default function SkinsBrowser() {
     load,
     loader,
   } = useSkinsBrowser();
+
+  const [savingNames, setSavingNames] = React.useState(false);
+  const [namesMessage, setNamesMessage] = React.useState<string | null>(null);
+  const [namesError, setNamesError] = React.useState<string | null>(null);
+
+  async function handleFetchNames() {
+    setSavingNames(true);
+    setNamesMessage(null);
+    setNamesError(null);
+    try {
+      const result = await fetchAllNames(rarity, normalOnly);
+      setNamesMessage(`Saved ${result.total} names for ${result.rarity}`);
+    } catch (e: any) {
+      setNamesError(String(e?.message || e));
+    } finally {
+      setSavingNames(false);
+    }
+  }
 
   const viewData = data || loader.data;
 
@@ -57,7 +75,8 @@ export default function SkinsBrowser() {
         onLoad={load}
         onLoadProgressive={loader.loadProgressive}
         onResume={loader.resume}
-        loading={loading || loader.loading}
+        onFetchNames={handleFetchNames}
+        loading={loading || loader.loading || savingNames}
         canResume={loader.canResume}
       />
 
@@ -72,6 +91,16 @@ export default function SkinsBrowser() {
       {loader.error && (
         <div className="red" style={{ marginTop: 8 }}>
           {loader.error}
+        </div>
+      )}
+      {namesError && (
+        <div className="red" style={{ marginTop: 8 }}>
+          {namesError}
+        </div>
+      )}
+      {namesMessage && (
+        <div className="small" style={{ marginTop: 8 }}>
+          {namesMessage}
         </div>
       )}
       {hint && (

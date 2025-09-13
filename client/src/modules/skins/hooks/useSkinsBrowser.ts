@@ -13,7 +13,7 @@ export default function useSkinsBrowser() {
   const [aggregate, setAggregate] = useState(true);
   const [prices, setPrices] = useState(false);
   const [normalOnly, setNormalOnly] = useState(true);
-  const [expandExteriors, setExpandExteriors] = useState<ExpandMode>("price");
+  const [expandExteriors, setExpandExteriors] = useState<ExpandMode>("all");
   const [limit, setLimit] = useState(100);
 
   const [data, setData] = useState<ApiAggResp | ApiFlatResp | null>(null);
