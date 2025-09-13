@@ -1,19 +1,4 @@
-import type { ApiAggResp, ApiFlatResp, ExpandMode, Rarity, SkinsQuery } from "./types";
-
-export async function fetchSkins(q: SkinsQuery): Promise<ApiAggResp | ApiFlatResp> {
-  const qs = new URLSearchParams({
-    rarities: q.rarities.join(","),
-    limit: String(q.limit),
-    aggregate: q.aggregate ? "1" : "0",
-    prices: q.prices ? "1" : "0",
-    normalOnly: q.normalOnly ? "1" : "0",
-    withTotals: "1",
-    expandExteriors: q.expandExteriors
-  });
-  const r = await fetch(`/api/skins?${qs.toString()}`);
-  if (!r.ok) throw new Error(`HTTP ${r.status}`);
-  return r.json();
-}
+import type { Rarity } from "./types";
 
 export async function fetchTotals(rarities: Rarity[], normalOnly: boolean, maxRetries = 4) {
   const qs = new URLSearchParams({
@@ -33,15 +18,6 @@ export async function fetchTotals(rarities: Rarity[], normalOnly: boolean, maxRe
       await new Promise(r => setTimeout(r, backoff));
     }
   }
-}
-
-export async function fetchPaged(rarity: Rarity, start: number, count: number, normalOnly: boolean) {
-  const qs = new URLSearchParams({
-    rarity, start: String(start), count: String(count), normalOnly: normalOnly ? "1" : "0"
-  });
-  const r = await fetch(`/api/skins/paged?${qs.toString()}`);
-  if (!r.ok) throw new Error(`HTTP ${r.status}`);
-  return r.json() as Promise<{ items: any[]; total: number }>;
 }
 
 export async function fetchAllNames(rarity: Rarity, normalOnly: boolean, maxRetries = 4) {
