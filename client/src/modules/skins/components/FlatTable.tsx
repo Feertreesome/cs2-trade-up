@@ -1,5 +1,5 @@
 import React from "react";
-import { parseExterior } from "../services/utils";
+import { parseExterior } from "../services";
 
 type Item = { market_hash_name: string; sell_listings: number; price?: number | null };
 

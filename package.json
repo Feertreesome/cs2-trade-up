@@ -11,7 +11,7 @@
     "client:dev": "npm --workspace=cs2-tradeup-ev-client run dev",
     "lint": "eslint \"{client,server}/**/*.{ts,tsx}\"",
     "lint:fix": "eslint \"{client,server}/**/*.{ts,tsx}\" --fix",
-    "check": "npm lint && tsc -b"
+    "check": "npm run lint && tsc -b"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
