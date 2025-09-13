@@ -1,7 +1,11 @@
 import { Router } from "express";
 import type { AxiosError } from "axios";
 import { LRUCache } from "lru-cache";
-import { getPriceUSD, searchByRarity, fetchListingTotalCount } from "../steam/repo";
+import {
+  getPriceUSD,
+  searchByRarity,
+  fetchListingTotalCount,
+} from "../steam/repo";
 import { STEAM_MAX_AUTO_LIMIT, STEAM_PAGE_SIZE } from "../../config";
 import { parseBoolean } from "./validators";
 import {
@@ -17,7 +21,10 @@ import {
   type SkinsGroup,
 } from "./types";
 
-const totalsCache = new LRUCache<string, { perRarity: Record<string, number>; sum: number }>({
+const totalsCache = new LRUCache<
+  string,
+  { perRarity: Record<string, number>; sum: number }
+>({
   max: 100,
   ttl: 1000 * 60 * 5,
 });
@@ -66,19 +73,29 @@ export const createSkinsRouter = (): Router => {
   router.get("/", async (request, response) => {
     try {
       const raritiesParam = String(request.query.rarities ?? "").trim();
-      const rarityList = (raritiesParam ? raritiesParam.split(",") : ALL_RARITIES)
+      const rarityList = (
+        raritiesParam ? raritiesParam.split(",") : ALL_RARITIES
+      )
         .map((s) => s.trim())
-        .filter((s): s is (typeof ALL_RARITIES)[number] => ALL_RARITIES.includes(s as any));
+        .filter((s): s is (typeof ALL_RARITIES)[number] =>
+          ALL_RARITIES.includes(s as any),
+        );
 
       if (!rarityList.length) {
-        return response.status(400).json({ error: `No valid rarities. Allowed: ${ALL_RARITIES.join(", ")}` });
+        return response
+          .status(400)
+          .json({
+            error: `No valid rarities. Allowed: ${ALL_RARITIES.join(", ")}`,
+          });
       }
 
       const aggregate = parseBoolean(request.query.aggregate, true);
       const includePrices = parseBoolean(request.query.prices, false);
       const normalOnly = parseBoolean(request.query.normalOnly, true);
       const withTotals = parseBoolean(request.query.withTotals, false);
-      const expandMode = String(request.query.expandExteriors || "none").toLowerCase() as ExpandMode;
+      const expandMode = String(
+        request.query.expandExteriors || "none",
+      ).toLowerCase() as ExpandMode;
 
       const limitRaw = String(request.query.limit ?? "500").toLowerCase();
       let limitNumber: number;
@@ -92,26 +109,35 @@ export const createSkinsRouter = (): Router => {
           totals: totals.perRarity,
           recommendedLimit: recommended,
           appliedLimit: limitNumber,
-          capped: recommended > STEAM_MAX_AUTO_LIMIT
+          capped: recommended > STEAM_MAX_AUTO_LIMIT,
         };
       } else {
         const raw = Number.parseInt(String(request.query.limit ?? "500"), 10);
-        limitNumber = Number.isFinite(raw) ? Math.min(5000, Math.max(1, raw)) : 500;
+        limitNumber = Number.isFinite(raw)
+          ? Math.min(5000, Math.max(1, raw))
+          : 500;
         if (withTotals) {
           const totals = await getTotalsCached(rarityList, normalOnly);
           meta = {
             totals: totals.perRarity,
             recommendedLimit: totals.sum,
             appliedLimit: limitNumber,
-            capped: false
+            capped: false,
           };
         }
       }
 
-      const perRarityLimit = Math.max(1, Math.floor(limitNumber / rarityList.length));
+      const perRarityLimit = Math.max(
+        1,
+        Math.floor(limitNumber / rarityList.length),
+      );
       const pageSize = STEAM_PAGE_SIZE;
 
-      const flatItems: { market_hash_name: string; sell_listings: number; rarity: string }[] = [];
+      const flatItems: {
+        market_hash_name: string;
+        sell_listings: number;
+        rarity: string;
+      }[] = [];
 
       // Пагинация по каждой редкости
       for (const rarity of rarityList) {
@@ -122,7 +148,12 @@ export const createSkinsRouter = (): Router => {
           if (need <= 0) break;
 
           const batch = Math.min(pageSize, need);
-          const { items, total } = await searchByRarity({ rarity, start, count: batch, normalOnly });
+          const { items, total } = await searchByRarity({
+            rarity,
+            start,
+            count: batch,
+            normalOnly,
+          });
           if (!items.length) break;
 
           flatItems.push(...items.map((i) => ({ ...i, rarity })));
@@ -137,10 +168,15 @@ export const createSkinsRouter = (): Router => {
           await Promise.all(
             flatItems.map(async (it) => {
               (it as any).price = await getPriceUSD(it.market_hash_name);
-            })
+            }),
           );
         }
-        return response.json({ rarities: rarityList, total: flatItems.length, items: flatItems, meta });
+        return response.json({
+          rarities: rarityList,
+          total: flatItems.length,
+          items: flatItems,
+          meta,
+        });
       }
 
       // Агрегация по базовому имени
@@ -153,25 +189,51 @@ export const createSkinsRouter = (): Router => {
         const exterior = parseMarketHashExterior(marketHashName);
         const key = `${item.rarity}::${baseName}`;
 
-        if (!groupedSkins[key]) groupedSkins[key] = { baseName, rarity: item.rarity, exteriors: [] };
-        const entry = { exterior, marketHashName, sell_listings: item.sell_listings, price: null as number | null };
+        if (!groupedSkins[key])
+          groupedSkins[key] = { baseName, rarity: item.rarity, exteriors: [] };
+        const entry = {
+          exterior,
+          marketHashName,
+          sell_listings: item.sell_listings,
+          price: null as number | null,
+        };
         groupedSkins[key].exteriors.push(entry);
-        if (includePrices) priceTasks.push({ groupKey: key, idx: groupedSkins[key].exteriors.length - 1 });
+        if (includePrices)
+          priceTasks.push({
+            groupKey: key,
+            idx: groupedSkins[key].exteriors.length - 1,
+          });
       }
 
       // Дополняем отсутствующие экстерьеры по выбранному режиму
       type Group = (typeof groupedSkins)[string];
-      const priceChecks: Array<{ key: string; marketHashName: string; exterior: Exterior }> = [];
+      const priceChecks: Array<{
+        key: string;
+        marketHashName: string;
+        exterior: Exterior;
+      }> = [];
 
-      for (const [key, group] of Object.entries(groupedSkins) as [string, Group][]) {
+      for (const [key, group] of Object.entries(groupedSkins) as [
+        string,
+        Group,
+      ][]) {
         const present = new Set(group.exteriors.map((e) => e.exterior));
         if (expandMode === "all") {
           for (const exterior of EXTERIORS) {
             if (present.has(exterior)) continue;
             const mhn = `${group.baseName} (${exterior})`;
-            const entry = { exterior, marketHashName: mhn, sell_listings: 0, price: null as number | null };
+            const entry = {
+              exterior,
+              marketHashName: mhn,
+              sell_listings: 0,
+              price: null as number | null,
+            };
             group.exteriors.push(entry);
-            if (includePrices) priceTasks.push({ groupKey: key, idx: group.exteriors.length - 1 });
+            if (includePrices)
+              priceTasks.push({
+                groupKey: key,
+                idx: group.exteriors.length - 1,
+              });
           }
         } else if (expandMode === "price") {
           for (const exterior of EXTERIORS) {
@@ -184,15 +246,30 @@ export const createSkinsRouter = (): Router => {
 
       // В режиме "price" — добавляем только те экстерьеры, на которые Steam отдал цену
       if (expandMode === "price") {
-        for (const check of priceChecks) {
-          const price = await getPriceUSD(check.marketHashName);
-          if (price == null) continue;
-          const group = groupedSkins[check.key];
-          const entry = { exterior: check.exterior, marketHashName: check.marketHashName, sell_listings: 0, price: includePrices ? price : null };
-          group.exteriors.push(entry);
-          if (includePrices && entry.price == null) {
-            priceTasks.push({ groupKey: check.key, idx: group.exteriors.length - 1 });
-          }
+        const concurrency = 5;
+        for (let i = 0; i < priceChecks.length; i += concurrency) {
+          const slice = priceChecks.slice(i, i + concurrency);
+          const prices = await Promise.all(
+            slice.map((check) => getPriceUSD(check.marketHashName)),
+          );
+          slice.forEach((check, idx) => {
+            const price = prices[idx];
+            if (price == null) return;
+            const group = groupedSkins[check.key];
+            const entry = {
+              exterior: check.exterior,
+              marketHashName: check.marketHashName,
+              sell_listings: 0,
+              price: includePrices ? price : null,
+            };
+            group.exteriors.push(entry);
+            if (includePrices && entry.price == null) {
+              priceTasks.push({
+                groupKey: check.key,
+                idx: group.exteriors.length - 1,
+              });
+            }
+          });
         }
       }
 
@@ -203,26 +280,45 @@ export const createSkinsRouter = (): Router => {
             const group = groupedSkins[groupKey];
             const e = group.exteriors[idx];
             if (e.price == null) e.price = await getPriceUSD(e.marketHashName);
-          })
+          }),
         );
       }
 
       // Уточняем реальные количества для «нулевых» экстерьеров
-      const namesNeedingTotals = Object.values(groupedSkins)
-        .flatMap((g) => g.exteriors.filter((e) => e.sell_listings === 0).map((e) => e.marketHashName));
-      for (const name of Array.from(new Set(namesNeedingTotals))) {
-        const n = await fetchListingTotalCount(name);
-        if (typeof n === "number") {
-          for (const g of Object.values(groupedSkins)) {
-            for (const e of g.exteriors) {
-              if (e.marketHashName === name && e.sell_listings === 0) e.sell_listings = n;
+      const namesNeedingTotals = Object.values(groupedSkins).flatMap((g) =>
+        g.exteriors
+          .filter((e) => e.sell_listings === 0)
+          .map((e) => e.marketHashName),
+      );
+      const uniqueNames = Array.from(new Set(namesNeedingTotals));
+      const concurrency = 5;
+      for (let i = 0; i < uniqueNames.length; i += concurrency) {
+        const slice = uniqueNames.slice(i, i + concurrency);
+        const totals = await Promise.all(
+          slice.map((name) => fetchListingTotalCount(name)),
+        );
+        slice.forEach((name, idx) => {
+          const n = totals[idx];
+          if (typeof n === "number") {
+            for (const g of Object.values(groupedSkins)) {
+              for (const e of g.exteriors) {
+                if (e.marketHashName === name && e.sell_listings === 0)
+                  e.sell_listings = n;
+              }
             }
           }
-        }
+        });
       }
 
-      const skins = Object.values(groupedSkins).sort((a, b) => a.baseName.localeCompare(b.baseName));
-      return response.json({ rarities: rarityList, total: skins.length, skins, meta });
+      const skins = Object.values(groupedSkins).sort((a, b) =>
+        a.baseName.localeCompare(b.baseName),
+      );
+      return response.json({
+        rarities: rarityList,
+        total: skins.length,
+        skins,
+        meta,
+      });
     } catch (error) {
       return handleError(response, error);
     }
@@ -235,11 +331,16 @@ export const createSkinsRouter = (): Router => {
   router.get("/totals", async (request, response) => {
     try {
       const raritiesParam = String(request.query.rarities ?? "").trim();
-      const rarityList = (raritiesParam ? raritiesParam.split(",") : ALL_RARITIES)
+      const rarityList = (
+        raritiesParam ? raritiesParam.split(",") : ALL_RARITIES
+      )
         .map((s) => s.trim())
-        .filter((s): s is (typeof ALL_RARITIES)[number] => ALL_RARITIES.includes(s as any));
+        .filter((s): s is (typeof ALL_RARITIES)[number] =>
+          ALL_RARITIES.includes(s as any),
+        );
       const normalOnly = parseBoolean(request.query.normalOnly, true);
-      if (!rarityList.length) return response.status(400).json({ error: "No valid rarities" });
+      if (!rarityList.length)
+        return response.status(400).json({ error: "No valid rarities" });
 
       const { perRarity, sum } = await getTotalsCached(rarityList, normalOnly);
       return response.json({ rarities: rarityList, totals: perRarity, sum });
@@ -255,13 +356,31 @@ export const createSkinsRouter = (): Router => {
   router.get("/paged", async (request, response) => {
     try {
       const rarity = String(request.query.rarity ?? "");
-      if (!ALL_RARITIES.includes(rarity as any)) return response.status(400).json({ error: "Invalid rarity" });
-      const start = Math.max(0, parseInt(String(request.query.start ?? "0"), 10));
-      const count = Math.max(1, Math.min(30, parseInt(String(request.query.count ?? "30"), 10)));
+      if (!ALL_RARITIES.includes(rarity as any))
+        return response.status(400).json({ error: "Invalid rarity" });
+      const start = Math.max(
+        0,
+        parseInt(String(request.query.start ?? "0"), 10),
+      );
+      const count = Math.max(
+        1,
+        Math.min(30, parseInt(String(request.query.count ?? "30"), 10)),
+      );
       const normalOnly = parseBoolean(request.query.normalOnly, true);
 
-      const { items, total } = await searchByRarity({ rarity: rarity as any, start, count, normalOnly });
-      return response.json({ rarity, start, count: items.length, total, items });
+      const { items, total } = await searchByRarity({
+        rarity: rarity as any,
+        start,
+        count,
+        normalOnly,
+      });
+      return response.json({
+        rarity,
+        start,
+        count: items.length,
+        total,
+        items,
+      });
     } catch (error) {
       return handleError(response, error);
     }
@@ -276,7 +395,8 @@ export const createSkinsRouter = (): Router => {
       const names = Array.isArray(request.body?.names)
         ? request.body.names.slice(0, 150)
         : [];
-      if (!names.length) return response.status(400).json({ error: "names[] required" });
+      if (!names.length)
+        return response.status(400).json({ error: "names[] required" });
 
       const result: Record<string, number | null> = {};
       const concurrency = 5;
