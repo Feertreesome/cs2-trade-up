@@ -23,6 +23,10 @@ export default function SkinsBrowser() {
     setNormalOnly,
     expandExteriors,
     setExpandExteriors,
+    actualPrices,
+    setActualPrices,
+    actualListings,
+    setActualListings,
     loader,
   } = useSkinsBrowser();
 
@@ -89,52 +93,163 @@ export default function SkinsBrowser() {
     }
   }
 
-  async function handleCheckZero() {
+  async function handleAddCorrectPrice() {
     if (!loader.data) {
-      showToast("error", "Nothing to check");
+      showToast("error", "Nothing to update");
       return;
     }
-    setExtraProgress("Checking listings…");
+    setExtraProgress("Updating prices…");
     try {
-      const zeroNames = new Set<string>();
-      const priceNames = new Set<string>();
+      const names = new Set<string>();
       const d: any = loader.data;
       if ("skins" in d) {
-        d.skins.forEach((s: any) =>
-          s.exteriors.forEach((e: any) => {
-            if (!e.sell_listings) zeroNames.add(e.marketHashName);
-            if (e.price == null) priceNames.add(e.marketHashName);
-          }),
-        );
+        d.skins.forEach((s: any) => s.exteriors.forEach((e: any) => names.add(e.marketHashName)));
       } else if ("items" in d) {
-        d.items.forEach((i: any) => {
-          if (!i.sell_listings) zeroNames.add(i.market_hash_name);
-          if (i.price == null) priceNames.add(i.market_hash_name);
-        });
+        d.items.forEach((i: any) => names.add(i.market_hash_name));
       }
-      const [totals, prices] = await Promise.all([
-        zeroNames.size ? batchListingTotals(Array.from(zeroNames)) : ({} as any),
-        priceNames.size ? batchPriceOverview(Array.from(priceNames)) : ({} as any),
-      ]);
+      const prices = await batchPriceOverview(Array.from(names));
       if ("skins" in d) {
         d.skins.forEach((s: any) =>
           s.exteriors.forEach((e: any) => {
-            const n = (totals as any)[e.marketHashName];
-            if (typeof n === "number") e.sell_listings = n;
             const p = (prices as any)[e.marketHashName];
             if (typeof p === "number") e.price = p;
           }),
         );
       } else if ("items" in d) {
         d.items.forEach((i: any) => {
-          const n = (totals as any)[i.market_hash_name];
-          if (typeof n === "number") i.sell_listings = n;
           const p = (prices as any)[i.market_hash_name];
           if (typeof p === "number") i.price = p;
         });
       }
       loader.setData({ ...d });
-      showToast("success", "Check complete");
+      showToast("success", "Prices updated");
+    } catch (e: any) {
+      showToast("error", String(e?.message || e));
+    } finally {
+      setExtraProgress(null);
+    }
+  }
+
+  async function handleFixZeroPrice() {
+    if (!loader.data) {
+      showToast("error", "Nothing to fix");
+      return;
+    }
+    setExtraProgress("Fixing prices…");
+    try {
+      const names = new Set<string>();
+      const d: any = loader.data;
+      if ("skins" in d) {
+        d.skins.forEach((s: any) =>
+          s.exteriors.forEach((e: any) => {
+            if (e.price == null || e.price === 0) names.add(e.marketHashName);
+          }),
+        );
+      } else if ("items" in d) {
+        d.items.forEach((i: any) => {
+          if (i.price == null || i.price === 0) names.add(i.market_hash_name);
+        });
+      }
+      if (names.size) {
+        const prices = await batchPriceOverview(Array.from(names));
+        if ("skins" in d) {
+          d.skins.forEach((s: any) =>
+            s.exteriors.forEach((e: any) => {
+              const p = (prices as any)[e.marketHashName];
+              if (typeof p === "number") e.price = p;
+            }),
+          );
+        } else if ("items" in d) {
+          d.items.forEach((i: any) => {
+            const p = (prices as any)[i.market_hash_name];
+            if (typeof p === "number") i.price = p;
+          });
+        }
+        loader.setData({ ...d });
+      }
+      showToast("success", "Prices fixed");
+    } catch (e: any) {
+      showToast("error", String(e?.message || e));
+    } finally {
+      setExtraProgress(null);
+    }
+  }
+
+  async function handleAddCorrectListings() {
+    if (!loader.data) {
+      showToast("error", "Nothing to update");
+      return;
+    }
+    setExtraProgress("Updating listings…");
+    try {
+      const names = new Set<string>();
+      const d: any = loader.data;
+      if ("skins" in d) {
+        d.skins.forEach((s: any) => s.exteriors.forEach((e: any) => names.add(e.marketHashName)));
+      } else if ("items" in d) {
+        d.items.forEach((i: any) => names.add(i.market_hash_name));
+      }
+      const totals = await batchListingTotals(Array.from(names));
+      if ("skins" in d) {
+        d.skins.forEach((s: any) =>
+          s.exteriors.forEach((e: any) => {
+            const n = (totals as any)[e.marketHashName];
+            if (typeof n === "number") e.sell_listings = n;
+          }),
+        );
+      } else if ("items" in d) {
+        d.items.forEach((i: any) => {
+          const n = (totals as any)[i.market_hash_name];
+          if (typeof n === "number") i.sell_listings = n;
+        });
+      }
+      loader.setData({ ...d });
+      showToast("success", "Listings updated");
+    } catch (e: any) {
+      showToast("error", String(e?.message || e));
+    } finally {
+      setExtraProgress(null);
+    }
+  }
+
+  async function handleFixZeroListings() {
+    if (!loader.data) {
+      showToast("error", "Nothing to fix");
+      return;
+    }
+    setExtraProgress("Fixing listings…");
+    try {
+      const names = new Set<string>();
+      const d: any = loader.data;
+      if ("skins" in d) {
+        d.skins.forEach((s: any) =>
+          s.exteriors.forEach((e: any) => {
+            if (!e.sell_listings) names.add(e.marketHashName);
+          }),
+        );
+      } else if ("items" in d) {
+        d.items.forEach((i: any) => {
+          if (!i.sell_listings) names.add(i.market_hash_name);
+        });
+      }
+      if (names.size) {
+        const totals = await batchListingTotals(Array.from(names));
+        if ("skins" in d) {
+          d.skins.forEach((s: any) =>
+            s.exteriors.forEach((e: any) => {
+              const n = (totals as any)[e.marketHashName];
+              if (typeof n === "number") e.sell_listings = n;
+            }),
+          );
+        } else if ("items" in d) {
+          d.items.forEach((i: any) => {
+            const n = (totals as any)[i.market_hash_name];
+            if (typeof n === "number") i.sell_listings = n;
+          });
+        }
+        loader.setData({ ...d });
+      }
+      showToast("success", "Listings fixed");
     } catch (e: any) {
       showToast("error", String(e?.message || e));
     } finally {
@@ -162,11 +277,18 @@ export default function SkinsBrowser() {
         setNormalOnly={setNormalOnly}
         expandExteriors={expandExteriors}
         setExpandExteriors={setExpandExteriors}
+        actualPrices={actualPrices}
+        setActualPrices={setActualPrices}
+        actualListings={actualListings}
+        setActualListings={setActualListings}
         expandOptions={["none", "price", "all"]}
         onLoadProgressive={loader.loadProgressive}
         onFetchNames={handleFetchNames}
         onShowOldList={handleShowOldList}
-        onCheckZero={handleCheckZero}
+        onAddCorrectPrice={handleAddCorrectPrice}
+        onFixZeroPrice={handleFixZeroPrice}
+        onAddCorrectListings={handleAddCorrectListings}
+        onFixZeroListings={handleFixZeroListings}
         hasOldList={hasOld}
         loading={loader.loading || savingNames || Boolean(extraProgress)}
       />
