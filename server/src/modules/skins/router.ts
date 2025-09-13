@@ -144,6 +144,21 @@ export const createSkinsRouter = (): Router => {
             })
           );
         }
+
+        const namesNeedingTotals = flatItems
+          .filter((e) => e.sell_listings === 0)
+          .map((e) => e.market_hash_name);
+        for (const name of Array.from(new Set(namesNeedingTotals))) {
+          const n = await fetchListingTotalCount(name);
+          if (typeof n === "number") {
+            for (const item of flatItems) {
+              if (item.market_hash_name === name && item.sell_listings === 0) {
+                item.sell_listings = n;
+              }
+            }
+          }
+        }
+
         return response.json({ rarities: rarityList, total: flatItems.length, items: flatItems, meta });
       }
 

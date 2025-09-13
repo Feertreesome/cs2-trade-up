@@ -247,7 +247,8 @@ export const searchByRarity = async ({
   const total = payload?.total_count ?? 0;
   const items: SearchItem[] = (payload?.results ?? []).map((result) => ({
     market_hash_name: result.hash_name,
-    sell_listings: result.sell_listings,
+    // Steam иногда возвращает sell_listings строкой, нормализуем в число
+    sell_listings: Number.parseInt(String(result.sell_listings ?? 0), 10) || 0,
     sell_price_text: result.sell_price_text,
   }));
 
