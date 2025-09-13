@@ -29,6 +29,8 @@ export default function SkinsBrowser() {
     loader,
   } = useSkinsBrowser();
 
+  const viewData = data || loader.data;
+
   return (
     <div className="card sbc">
       <div className="h1">Skins Browser</div>
@@ -78,24 +80,24 @@ export default function SkinsBrowser() {
         </div>
       )}
 
-      {!loader.loading && !loading && data && "skins" in data && (
+      {!loader.loading && !loading && viewData && "skins" in viewData && (
         <>
-          <AggTable skins={data.skins} />
+          <AggTable skins={viewData.skins} />
           <div className="small" style={{ marginTop: 8 }}>
-            Items: {data.total}
+            Items: {viewData.total}
           </div>
         </>
       )}
-      {!loader.loading && !loading && data && "items" in data && (
+      {!loader.loading && !loading && viewData && "items" in viewData && (
         <>
-          <FlatTable items={data.items} />
+          <FlatTable items={viewData.items} />
           <div className="small" style={{ marginTop: 8 }}>
-            Items: {data.total}
+            Items: {viewData.total}
           </div>
         </>
       )}
 
-      {!loader.loading && !loading && !data && !error && !loader.error && (
+      {!loader.loading && !loading && !viewData && !error && !loader.error && (
         <div className="small" style={{ marginTop: 8 }}>
           Pick params and compute. EXTERIORS: {EXTERIORS.join(" / ")}.
         </div>
