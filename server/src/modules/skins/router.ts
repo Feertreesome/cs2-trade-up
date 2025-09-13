@@ -273,11 +273,23 @@ export const createSkinsRouter = (): Router => {
    */
   router.post("/listing-totals", async (request, response) => {
     try {
-      const names = Array.isArray(request.body?.names) ? request.body.names.slice(0, 150) : [];
+      const names = Array.isArray(request.body?.names)
+        ? request.body.names.slice(0, 150)
+        : [];
       if (!names.length) return response.status(400).json({ error: "names[] required" });
 
       const result: Record<string, number | null> = {};
-      for (const name of names) result[name] = await fetchListingTotalCount(String(name));
+      const concurrency = 5;
+      for (let i = 0; i < names.length; i += concurrency) {
+        const slice = names.slice(i, i + concurrency);
+        const totals = await Promise.all(
+          slice.map((name) => fetchListingTotalCount(String(name))),
+        );
+        slice.forEach((name, idx) => {
+          result[name] = totals[idx];
+        });
+      }
+
       return response.json({ totals: result });
     } catch (error) {
       return handleError(response, error);

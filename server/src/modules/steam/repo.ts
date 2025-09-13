@@ -60,8 +60,11 @@ const relaxRate = () => {
   requestPauseMs = Math.max(RATE_MIN_MS, requestPauseMs - 100);
 };
 
+/** Максимальное количество одновременных запросов к Steam */
+const MAX_PARALLEL_REQUESTS = 5;
+
 /**
- * Кладёт вызов в глобальную очередь, чтобы не параллелить запросы к Steam.
+ * Кладёт вызов в глобальную очередь, ограничивая параллелизм запросов к Steam.
  */
 const enqueue = <T>(runRequest: () => Promise<T>) =>
   new Promise<T>((resolve, reject) => {
@@ -70,24 +73,28 @@ const enqueue = <T>(runRequest: () => Promise<T>) =>
   });
 
 /**
- * Внутренний раннер очереди — выполняет по одному запросу с паузами.
+ * Внутренний раннер очереди — выполняет пачки запросов с паузами.
  */
 const runQueue = async () => {
   if (queueRunning) return;
   queueRunning = true;
   try {
     while (queue.length) {
-      const now = Date.now();
-      if (cooldownUntilTs > now) await sleep(cooldownUntilTs - now);
-      const job = queue.shift()!;
-      try {
-        const value = await job.run();
-        job.resolve(value);
-        relaxRate();
-      } catch (error) {
-        job.reject(error);
-      }
-      await sleep(withJitter(requestPauseMs));
+      const batch = queue.splice(0, MAX_PARALLEL_REQUESTS);
+      await Promise.all(
+        batch.map(async (job) => {
+          const now = Date.now();
+          if (cooldownUntilTs > now) await sleep(cooldownUntilTs - now);
+          try {
+            const value = await job.run();
+            job.resolve(value);
+            relaxRate();
+          } catch (error) {
+            job.reject(error);
+          }
+          await sleep(withJitter(requestPauseMs));
+        }),
+      );
     }
   } finally {
     queueRunning = false;
