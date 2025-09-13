@@ -1,4 +1,6 @@
 import { Router } from "express";
+import type { AxiosError } from "axios";
+import { LRUCache } from "lru-cache";
 import { getPriceUSD, searchByRarity, fetchListingTotalCount } from "../steam/repo";
 import { STEAM_MAX_AUTO_LIMIT, STEAM_PAGE_SIZE } from "../../config";
 import { parseBoolean } from "./validators";
@@ -14,6 +16,34 @@ import {
   type ExpandMode,
   type SkinsGroup,
 } from "./types";
+
+const totalsCache = new LRUCache<string, { perRarity: Record<string, number>; sum: number }>({
+  max: 100,
+  ttl: 1000 * 60 * 5,
+});
+
+const totalsCacheKey = (rarities: string[], normalOnly: boolean) =>
+  `${rarities.slice().sort().join(",")}:${normalOnly ? "1" : "0"}`;
+
+const getTotalsCached = async (
+  rarities: (typeof ALL_RARITIES)[number][],
+  normalOnly: boolean,
+) => {
+  const key = totalsCacheKey(rarities, normalOnly);
+  const cached = totalsCache.get(key);
+  if (cached) return cached;
+  const fresh = await getTotals(rarities, normalOnly);
+  totalsCache.set(key, fresh);
+  return fresh;
+};
+
+const handleError = (res: any, error: unknown) => {
+  const status = (error as AxiosError)?.response?.status;
+  if (status === 429) {
+    return res.status(503).json({ error: "Steam rate limit, retry later" });
+  }
+  return res.status(500).json({ error: String(error) });
+};
 
 /**
  * Конструирует и возвращает Router с маршрутами для работы со скинами.
@@ -55,7 +85,7 @@ export const createSkinsRouter = (): Router => {
       let meta: any = null;
 
       if (["all", "auto", "max"].includes(limitRaw)) {
-        const totals = await getTotals(rarityList, normalOnly);
+        const totals = await getTotalsCached(rarityList, normalOnly);
         const recommended = totals.sum;
         limitNumber = Math.min(recommended, STEAM_MAX_AUTO_LIMIT);
         meta = {
@@ -68,7 +98,7 @@ export const createSkinsRouter = (): Router => {
         const raw = Number.parseInt(String(request.query.limit ?? "500"), 10);
         limitNumber = Number.isFinite(raw) ? Math.min(5000, Math.max(1, raw)) : 500;
         if (withTotals) {
-          const totals = await getTotals(rarityList, normalOnly);
+          const totals = await getTotalsCached(rarityList, normalOnly);
           meta = {
             totals: totals.perRarity,
             recommendedLimit: totals.sum,
@@ -194,7 +224,7 @@ export const createSkinsRouter = (): Router => {
       const skins = Object.values(groupedSkins).sort((a, b) => a.baseName.localeCompare(b.baseName));
       return response.json({ rarities: rarityList, total: skins.length, skins, meta });
     } catch (error) {
-      return response.status(500).json({ error: String(error) });
+      return handleError(response, error);
     }
   });
 
@@ -211,16 +241,10 @@ export const createSkinsRouter = (): Router => {
       const normalOnly = parseBoolean(request.query.normalOnly, true);
       if (!rarityList.length) return response.status(400).json({ error: "No valid rarities" });
 
-      const totals: Record<string, number> = {};
-      let sum = 0;
-      for (const rarity of rarityList) {
-        const { total } = await searchByRarity({ rarity, start: 0, count: 1, normalOnly });
-        totals[rarity] = total;
-        sum += total;
-      }
-      return response.json({ rarities: rarityList, totals, sum });
+      const { perRarity, sum } = await getTotalsCached(rarityList, normalOnly);
+      return response.json({ rarities: rarityList, totals: perRarity, sum });
     } catch (error) {
-      return response.status(500).json({ error: String(error) });
+      return handleError(response, error);
     }
   });
 
@@ -239,7 +263,7 @@ export const createSkinsRouter = (): Router => {
       const { items, total } = await searchByRarity({ rarity: rarity as any, start, count, normalOnly });
       return response.json({ rarity, start, count: items.length, total, items });
     } catch (error) {
-      return response.status(500).json({ error: String(error) });
+      return handleError(response, error);
     }
   });
 
@@ -256,7 +280,7 @@ export const createSkinsRouter = (): Router => {
       for (const name of names) result[name] = await fetchListingTotalCount(String(name));
       return response.json({ totals: result });
     } catch (error) {
-      return response.status(500).json({ error: String(error) });
+      return handleError(response, error);
     }
   });
 

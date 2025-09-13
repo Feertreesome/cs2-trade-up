@@ -15,13 +15,24 @@ export async function fetchSkins(q: SkinsQuery): Promise<ApiAggResp | ApiFlatRes
   return r.json();
 }
 
-export async function fetchTotals(rarities: Rarity[], normalOnly: boolean) {
+export async function fetchTotals(rarities: Rarity[], normalOnly: boolean, maxRetries = 4) {
   const qs = new URLSearchParams({
     rarities: rarities.join(","), normalOnly: normalOnly ? "1" : "0"
   });
-  const r = await fetch(`/api/skins/totals?${qs.toString()}`);
-  if (!r.ok) throw new Error(`HTTP ${r.status}`);
-  return r.json() as Promise<{ rarities: Rarity[]; totals: Record<Rarity, number>; sum: number }>;
+  let attempt = 0;
+  while (true) {
+    try {
+      const r = await fetch(`/api/skins/totals?${qs.toString()}`);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json() as Promise<{ rarities: Rarity[]; totals: Record<Rarity, number>; sum: number }>;
+    } catch (e: any) {
+      attempt++;
+      const retriable = /HTTP 429|HTTP 5\d{2}/.test(String(e?.message || e));
+      if (!retriable || attempt >= maxRetries) throw e;
+      const backoff = Math.min(15000, 1500 * Math.pow(2, attempt - 1));
+      await new Promise(r => setTimeout(r, backoff));
+    }
+  }
 }
 
 export async function fetchPaged(rarity: Rarity, start: number, count: number, normalOnly: boolean) {
