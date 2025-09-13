@@ -20,6 +20,9 @@ type ControlsBarProps = {
   expandOptions: ReadonlyArray<ExpandMode>;           // ← было: ExpandMode[]
   onLoadProgressive: () => void;
   onFetchNames: () => void;
+  onShowOldList: () => void;
+  onCheckZero: () => void;
+  hasOldList: boolean;
   loading: boolean;
 };
 
@@ -76,9 +79,11 @@ const ControlsBar: React.FC<ControlsBarProps> = (props) => {
         </select>
       </div>
 
-      <div style={{ alignSelf: "end" }}>
+      <div className="buttons" style={{ alignSelf: "end" }}>
         <button className="btn" onClick={props.onLoadProgressive} disabled={props.loading}>Load progressively</button>
-        <button className="btn" style={{ marginLeft: 8 }} onClick={props.onFetchNames} disabled={props.loading}>Get names</button>
+        <button className="btn" onClick={props.onFetchNames} disabled={props.loading}>Get names</button>
+        <button className="btn" onClick={props.onShowOldList} disabled={!props.hasOldList || props.loading}>Show old list</button>
+        <button className="btn" onClick={props.onCheckZero} disabled={props.loading}>Check Zero</button>
       </div>
     </div>
   );

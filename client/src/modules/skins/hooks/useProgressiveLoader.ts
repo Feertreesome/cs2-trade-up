@@ -131,7 +131,11 @@ export default function useProgressiveLoader(params: Params) {
   }
 
   return {
-    data, loading, progress, error,
+    data,
+    loading,
+    progress,
+    error,
     loadProgressive,
+    setData,
   };
 }
