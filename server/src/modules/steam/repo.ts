@@ -226,7 +226,7 @@ export const RARITY_TO_TAG: Record<string, string> = {
 export interface SearchItem {
   market_hash_name: string;
   sell_listings: number;
-  sell_price_text?: string;
+  price: number | null;
 }
 
 /**
@@ -268,7 +268,7 @@ export const searchByRarity = async ({
     market_hash_name: result.hash_name,
     // Steam иногда возвращает sell_listings строкой, нормализуем в число
     sell_listings: Number.parseInt(String(result.sell_listings ?? 0), 10) || 0,
-    sell_price_text: result.sell_price_text,
+    price: parseSteamPriceText(result.sell_price_text ?? ""),
   }));
 
   const typed = { total, items };

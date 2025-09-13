@@ -16,11 +16,3 @@ export type AggGroup = {
 export type ApiFlatResp = { rarities: Rarity[]; total: number; items: FlatItem[]; meta?: any };
 export type ApiAggResp  = { rarities: Rarity[]; total: number; skins: AggGroup[]; meta?: any };
 
-export type SkinsQuery = {
-  rarities: Rarity[];
-  limit: number | "all" | "auto";
-  aggregate: boolean;
-  prices: boolean;
-  normalOnly: boolean;
-  expandExteriors: ExpandMode;
-};
