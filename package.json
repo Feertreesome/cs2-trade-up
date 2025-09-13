@@ -1,0 +1,29 @@
+{
+  "name": "cs2-tradeup-ev",
+  "private": true,
+  "workspaces": [
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "dev": "concurrently -k \"npm:server:dev\" \"npm:client:dev\"",
+    "server:dev": "npm --workspace=cs2-tradeup-ev-server run dev",
+    "client:dev": "npm --workspace=cs2-tradeup-ev-client run dev",
+    "lint": "eslint \"{client,server}/**/*.{ts,tsx}\"",
+    "lint:fix": "eslint \"{client,server}/**/*.{ts,tsx}\" --fix",
+    "check": "npm lint && tsc -b"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "eslint": "^9.9.0",
+    "@typescript-eslint/eslint-plugin": "^8.0.1",
+    "@typescript-eslint/parser": "^8.0.1",
+    "eslint-plugin-jsdoc": "^48.2.7",
+    "prettier": "^3.3.3"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.2",
+    "prettier": "^3.6.2",
+    "server": "^1.0.42"
+  }
+}

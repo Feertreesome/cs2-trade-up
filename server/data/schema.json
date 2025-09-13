@@ -1,0 +1,24 @@
+{
+  "itemToCase": {
+    "AWP | Duality": "Revolution Case",
+    "P2000 | Wicked Sick": "Revolution Case",
+    "UMP-45 | Wild Child": "Revolution Case",
+    "M4A1-S | Black Lotus": "Kilowatt Case",
+    "USP-S | Jawbreaker": "Kilowatt Case",
+    "Glock-18 | Block-18": "Kilowatt Case"
+  },
+  "caseOutputs": {
+    "Revolution Case": [
+      { "name": "AK-47 | Head Shot", "minFloat": 0.0, "maxFloat": 1.0 },
+      { "name": "M4A4 | Temukau",    "minFloat": 0.0, "maxFloat": 0.8 }
+    ],
+    "Kilowatt Case": [
+      { "name": "AK-47 | Inheritance", "minFloat": 0.0, "maxFloat": 1.0 },
+      { "name": "AWP | Chrome Cannon", "minFloat": 0.0, "maxFloat": 1.0 }
+    ]
+  },
+  "caseClassified": {
+    "Revolution Case": ["AWP | Duality","P2000 | Wicked Sick","UMP-45 | Wild Child"],
+    "Kilowatt Case":   ["M4A1-S | Black Lotus","USP-S | Jawbreaker","Glock-18 | Block-18"]
+  }
+}
