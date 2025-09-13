@@ -1,6 +1,6 @@
 import express from "express";
 import cors from "cors";
-import { createSkinsRouter } from "./modules/skins/router";
+import { createSkinsRouter } from "./modules/skins";
 import { getPriceUSD } from "./modules/steam/repo";
 
 /**
