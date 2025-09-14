@@ -1,16 +1,3 @@
-.sbc .controls-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 12px;
-    margin-top: 8px;
-}
-.sbc .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
-.sbc .input, .sbc select { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid #283347; background: #0f1523; color: white; }
-.sbc .btn { padding: 10px 14px; border-radius: 10px; border: 1px solid #2b3b58; background: #162033; color: white; cursor: pointer; }
-.sbc .btn:hover { background: #1d2a44; }
-.sbc .buttons { display: flex; flex-wrap: wrap; gap: 8px; }
-
-.sbc .btn-wrap { display: flex; align-items: center; gap: 4px; }
 .sbc .help { width: 16px; height: 16px; border-radius: 50%; border: 1px solid #2b3b58; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; cursor: help; color: var(--muted); }
 
 .sbc .spinner {
