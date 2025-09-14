@@ -33,29 +33,35 @@ export default function SkinsBrowser() {
   const [savingNames, setSavingNames] = React.useState(false);
   const [namesMessage, setNamesMessage] = React.useState<string | null>(null);
   const [namesError, setNamesError] = React.useState<string | null>(null);
-  const [hasOld, setHasOld] = React.useState(false);
+  const [oldListDate, setOldListDate] = React.useState<string | null>(null);
   const [extraProgress, setExtraProgress] = React.useState<string | null>(null);
   const [toast, setToast] = React.useState<
     { type: "success" | "error"; text: string } | null
   >(null);
+  const skipSaveRef = React.useRef(false);
 
   React.useEffect(() => {
-    if (loader.data) {
+    if (!loader.loading && loader.data && !skipSaveRef.current) {
       try {
         localStorage.setItem("skins_browser_list", JSON.stringify(loader.data));
-        setHasOld(true);
+        const now = new Date().toISOString();
+        localStorage.setItem("skins_browser_list_date", now);
+        setOldListDate(now);
       } catch {
         /* ignore */
       }
     }
-  }, [loader.data]);
+    if (!loader.loading) {
+      skipSaveRef.current = false;
+    }
+  }, [loader.loading, loader.data]);
 
   React.useEffect(() => {
     try {
-      const s = localStorage.getItem("skins_browser_list");
-      setHasOld(Boolean(s));
+      const d = localStorage.getItem("skins_browser_list_date");
+      setOldListDate(d);
     } catch {
-      setHasOld(false);
+      setOldListDate(null);
     }
   }, []);
 
@@ -82,9 +88,12 @@ export default function SkinsBrowser() {
     setExtraProgress("Loading saved list…");
     try {
       const s = localStorage.getItem("skins_browser_list");
-      if (!s) throw new Error("No saved list");
+      const d = localStorage.getItem("skins_browser_list_date");
+      if (!s || !d) throw new Error("No saved list");
       const parsed = JSON.parse(s);
+      skipSaveRef.current = true;
       loader.setData(parsed);
+      setOldListDate(d);
       showToast("success", "Loaded saved list");
     } catch (e: any) {
       showToast("error", String(e?.message || e));
@@ -289,7 +298,7 @@ export default function SkinsBrowser() {
         onFixZeroPrice={handleFixZeroPrice}
         onAddCorrectListings={handleAddCorrectListings}
         onFixZeroListings={handleFixZeroListings}
-        hasOldList={hasOld}
+        oldListDate={oldListDate}
         loading={loader.loading || savingNames || Boolean(extraProgress)}
       />
 
@@ -311,20 +320,22 @@ export default function SkinsBrowser() {
           {namesMessage}
         </div>
       )}
-      {!loader.loading && viewData && "skins" in viewData && (
+      {viewData && "skins" in viewData && (
         <>
-          <AggTable skins={viewData.skins} />
           <div className="small" style={{ marginTop: 8 }}>
             Items: {viewData.total}
+            {loader.elapsedMs != null && ` | Time: ${(loader.elapsedMs / 1000).toFixed(1)}s`}
           </div>
+          <AggTable skins={viewData.skins} />
         </>
       )}
-      {!loader.loading && viewData && "items" in viewData && (
+      {viewData && "items" in viewData && (
         <>
-          <FlatTable items={viewData.items} />
           <div className="small" style={{ marginTop: 8 }}>
             Items: {viewData.total}
+            {loader.elapsedMs != null && ` | Time: ${(loader.elapsedMs / 1000).toFixed(1)}s`}
           </div>
+          <FlatTable items={viewData.items} />
         </>
       )}
       {!loader.loading && !viewData && !loader.error && (

@@ -33,7 +33,7 @@ type ControlsBarProps = {
   onFixZeroPrice: () => void;
   onAddCorrectListings: () => void;
   onFixZeroListings: () => void;
-  hasOldList: boolean;
+  oldListDate: string | null;
   loading: boolean;
 };
 
@@ -130,8 +130,19 @@ const ControlsBar: React.FC<ControlsBarProps> = (props) => {
           <Help text="Store market hash names" />
         </div>
         <div className="btn-wrap">
-          <button className="btn" onClick={props.onShowOldList} disabled={!props.hasOldList || props.loading}>Show old list</button>
+          <button
+            className="btn"
+            onClick={props.onShowOldList}
+            disabled={!props.oldListDate || props.loading}
+          >
+            Show old list
+          </button>
           <Help text="Load list from local storage" />
+          {props.oldListDate && (
+            <div className="small" style={{ marginTop: 4 }}>
+              {new Date(props.oldListDate).toLocaleString()}
+            </div>
+          )}
         </div>
         <div className="btn-wrap">
           <button className="btn" onClick={props.onAddCorrectPrice} disabled={props.loading}>Add correct price</button>
