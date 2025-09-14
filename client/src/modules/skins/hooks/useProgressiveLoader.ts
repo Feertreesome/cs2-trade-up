@@ -30,7 +30,7 @@ export default function useProgressiveLoader(params: Params) {
 
   //стим хуй вернет больше 10
   const pageSize = 30;
-  const pageDelayMs = 6000;
+  const pageDelayMs = 8000;
 
   async function fetchPageWithRetry(url: string) {
     let attempt = 0;
