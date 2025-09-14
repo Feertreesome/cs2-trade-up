@@ -178,9 +178,27 @@ const steamGetData = async <T = unknown>(
  * Возвращает число в USD (если currency=1) либо null, если распарсить нельзя.
  */
 const parseSteamPriceText = (text: string): number | null => {
-  const normalized = String(text)
-    .replace(/[^0-9.,]/g, "")
-    .replace(",", ".");
+  const cleaned = String(text).replace(/[^0-9.,]/g, "");
+  if (!cleaned) return null;
+  const hasDot = cleaned.includes(".");
+  const hasComma = cleaned.includes(",");
+  let decimalSep: "," | "." | null = null;
+  if (hasDot && hasComma) {
+    decimalSep = cleaned.lastIndexOf(",") > cleaned.lastIndexOf(".") ? "," : ".";
+  } else if (hasComma && !hasDot) {
+    const parts = cleaned.split(",");
+    decimalSep = parts[parts.length - 1].length <= 2 ? "," : null;
+  } else if (hasDot && !hasComma) {
+    const parts = cleaned.split(".");
+    decimalSep = parts[parts.length - 1].length <= 2 ? "." : null;
+  }
+  let normalized = cleaned;
+  if (decimalSep) {
+    const thousand = decimalSep === "," ? /\./g : /,/g;
+    normalized = normalized.replace(thousand, "").replace(decimalSep, ".");
+  } else {
+    normalized = normalized.replace(/[.,]/g, "");
+  }
   const value = Number.parseFloat(normalized);
   return Number.isFinite(value) ? value : null;
 };

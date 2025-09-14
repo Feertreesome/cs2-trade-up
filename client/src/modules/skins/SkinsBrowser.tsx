@@ -269,7 +269,7 @@ export default function SkinsBrowser() {
   const viewData = loader.data;
 
   return (
-    <div className="card sbc">
+    <div className="card sbc p-3">
       <div className="h1">Skins Browser</div>
       <div className="small">
         Fetch skins by rarity from Steam Market. Progressive mode avoids rate
