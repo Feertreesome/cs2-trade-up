@@ -7,8 +7,8 @@ export default function useSkinsBrowser() {
   const [aggregate, setAggregate] = useState(true);
   const [normalOnly, setNormalOnly] = useState(true);
   const [expandExteriors, setExpandExteriors] = useState<ExpandMode>("all");
-  const [actualPrices, setActualPrices] = useState(true);
-  const [actualListings, setActualListings] = useState(true);
+  const [actualPrices, setActualPrices] = useState(false);
+  const [actualListings, setActualListings] = useState(false);
 
   const loader = useProgressiveLoader({
     rarity,

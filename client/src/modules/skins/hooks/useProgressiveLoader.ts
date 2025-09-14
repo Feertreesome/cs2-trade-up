@@ -27,7 +27,6 @@ export default function useProgressiveLoader(params: Params) {
   const [progress, setProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  //стим один хуй вернет всего 10 штук
   const pageSize = 30;
   const pageDelayMs = 2600;
 
@@ -62,7 +61,7 @@ export default function useProgressiveLoader(params: Params) {
         const j = await fetchPageWithRetry(
           `/api/skins/paged?rarity=${encodeURIComponent(rarity)}&start=${start}&count=${pageSize}&normalOnly=${normalOnly ? "1" : "0"}`
         );
-        flat.push(...j.items.map((i: any) => ({ ...i, rarity })));
+        flat.push(...j.items.map((i: any) => ({ ...i, rarity }))); 
         const fetched = j.items.length;
         if (!fetched) break;
         start += fetched;
