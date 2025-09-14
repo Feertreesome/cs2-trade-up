@@ -1,4 +1,8 @@
-import axios, { type AxiosRequestConfig, type AxiosResponse } from "axios";
+import axios, {
+  type AxiosRequestConfig,
+  type AxiosResponse,
+  type AxiosError,
+} from "axios";
 import { LRUCache } from "lru-cache";
 import { RATE_MAX_MS, RATE_MIN_MS, START_RATE_MS } from "../../config";
 
@@ -320,14 +324,23 @@ export const fetchListingTotalCount = async (
   const cached = memoryCache.get(cacheKey);
   if (cached !== undefined) return cached;
 
-  try {
-    // ВАЖНО: типизируем data
-    const payload = await steamGetData<ListingRenderResponse>(url);
-    const totalCount =
-      typeof payload?.total_count === "number" ? payload.total_count : null;
-    if (totalCount !== null) memoryCache.set(cacheKey, totalCount);
-    return totalCount;
-  } catch {
-    return null;
+  const maxAttempts = 3;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      // ВАЖНО: типизируем data
+      const payload = await steamGetData<ListingRenderResponse>(url);
+      const totalCount =
+        typeof payload?.total_count === "number" ? payload.total_count : null;
+      if (totalCount !== null) memoryCache.set(cacheKey, totalCount);
+      return totalCount;
+    } catch (error) {
+      const status = (error as AxiosError)?.response?.status;
+      if (status === 429 && attempt < maxAttempts - 1) {
+        await sleep(16_000);
+        continue;
+      }
+      return null;
+    }
   }
+  return null;
 };
