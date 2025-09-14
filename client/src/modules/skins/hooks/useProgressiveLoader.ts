@@ -26,10 +26,11 @@ export default function useProgressiveLoader(params: Params) {
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [elapsedMs, setElapsedMs] = useState<number | null>(null);
 
   //стим хуй вернет больше 10
   const pageSize = 30;
-  const pageDelayMs = 6000;
+  const pageDelayMs = 8000;
 
   async function fetchPageWithRetry(url: string) {
     let attempt = 0;
@@ -51,6 +52,8 @@ export default function useProgressiveLoader(params: Params) {
 
   async function loadProgressive() {
     setLoading(true); setError(null); setData(null); setProgress("Preparing…");
+    const startTime = Date.now();
+    setElapsedMs(0);
     try {
       const totals = await fetchTotals([rarity], normalOnly);
       const total = totals.totals[rarity] ?? 0;
@@ -65,9 +68,30 @@ export default function useProgressiveLoader(params: Params) {
         );
         flat.push(...j.items.map((i: any) => ({ ...i, rarity })));
         const fetched = j.items.length;
+        setElapsedMs(Date.now() - startTime);
+        if (!aggregate) {
+          const out: ApiFlatResp = {
+            rarities: [rarity],
+            total: flat.length,
+            items: [...flat],
+          };
+          setData(out);
+        } else {
+          const groups = aggregateFromFlat(flat, rarity);
+          const skins = Object.values(groups).sort((a, b) =>
+            a.baseName.localeCompare(b.baseName),
+          );
+          const out: ApiAggResp = {
+            rarities: [rarity],
+            total: skins.length,
+            skins,
+          };
+          setData(out);
+        }
         if (!fetched) break;
         start += fetched;
         await new Promise(r => setTimeout(r, pageDelayMs));
+        setElapsedMs(Date.now() - startTime);
       }
 
       if (!aggregate) {
@@ -142,6 +166,7 @@ export default function useProgressiveLoader(params: Params) {
     } catch (e: any) {
       setError(String(e?.message || e));
     } finally {
+      setElapsedMs(Date.now() - startTime);
       setLoading(false);
     }
   }
@@ -153,5 +178,6 @@ export default function useProgressiveLoader(params: Params) {
     error,
     loadProgressive,
     setData,
+    elapsedMs,
   };
 }
