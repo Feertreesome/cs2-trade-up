@@ -55,12 +55,16 @@ export default function useProgressiveLoader(params: Params) {
       const total = totals.totals[rarity] ?? 0;
 
       const flat: any[] = [];
-      for (let start = 0; start < total; start += pageSize) {
+      let start = 0;
+      while (start < total) {
         setProgress(`Loading ${start + 1}–${Math.min(start + pageSize, total)} / ${total}`);
         const j = await fetchPageWithRetry(
           `/api/skins/paged?rarity=${encodeURIComponent(rarity)}&start=${start}&count=${pageSize}&normalOnly=${normalOnly ? "1" : "0"}`
         );
-        flat.push(...j.items.map((i: any) => ({ ...i, rarity })));
+        flat.push(...j.items.map((i: any) => ({ ...i, rarity }))); 
+        const fetched = j.items.length;
+        if (!fetched) break;
+        start += fetched;
         await new Promise(r => setTimeout(r, pageDelayMs));
       }
 
