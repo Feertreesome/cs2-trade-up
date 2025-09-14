@@ -18,10 +18,17 @@ type ControlsBarProps = {
   expandExteriors: ExpandMode;
   setExpandExteriors: (next: ExpandMode) => void;
   expandOptions: ReadonlyArray<ExpandMode>;           // ← было: ExpandMode[]
+  actualPrices: boolean;
+  setActualPrices: (next: boolean) => void;
+  actualListings: boolean;
+  setActualListings: (next: boolean) => void;
   onLoadProgressive: () => void;
   onFetchNames: () => void;
   onShowOldList: () => void;
-  onCheckZero: () => void;
+  onAddCorrectPrice: () => void;
+  onFixZeroPrice: () => void;
+  onAddCorrectListings: () => void;
+  onFixZeroListings: () => void;
   hasOldList: boolean;
   loading: boolean;
 };
@@ -79,11 +86,32 @@ const ControlsBar: React.FC<ControlsBarProps> = (props) => {
         </select>
       </div>
 
+      <div>
+        <div className="label">Actual prices</div>
+        <input
+          type="checkbox"
+          checked={props.actualPrices}
+          onChange={(e) => props.setActualPrices(e.target.checked)}
+        />
+      </div>
+
+      <div>
+        <div className="label">Actual listings</div>
+        <input
+          type="checkbox"
+          checked={props.actualListings}
+          onChange={(e) => props.setActualListings(e.target.checked)}
+        />
+      </div>
+
       <div className="buttons" style={{ alignSelf: "end" }}>
         <button className="btn" onClick={props.onLoadProgressive} disabled={props.loading}>Load progressively</button>
         <button className="btn" onClick={props.onFetchNames} disabled={props.loading}>Get names</button>
         <button className="btn" onClick={props.onShowOldList} disabled={!props.hasOldList || props.loading}>Show old list</button>
-        <button className="btn" onClick={props.onCheckZero} disabled={props.loading}>Check Zero</button>
+        <button className="btn" onClick={props.onAddCorrectPrice} disabled={props.loading}>Add correct price</button>
+        <button className="btn" onClick={props.onFixZeroPrice} disabled={props.loading}>Fix zero price</button>
+        <button className="btn" onClick={props.onAddCorrectListings} disabled={props.loading}>Add correct listings</button>
+        <button className="btn" onClick={props.onFixZeroListings} disabled={props.loading}>Fix zero listings</button>
       </div>
     </div>
   );
