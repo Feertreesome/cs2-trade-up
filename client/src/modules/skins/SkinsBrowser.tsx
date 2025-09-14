@@ -13,19 +13,14 @@ export default function SkinsBrowser() {
     setRarity,
     aggregate,
     setAggregate,
-    prices,
-    setPrices,
     normalOnly,
     setNormalOnly,
     expandExteriors,
     setExpandExteriors,
-    limit,
-    setLimit,
-    data,
-    loading,
-    error,
-    hint,
-    load,
+    actualPrices,
+    setActualPrices,
+    actualListings,
+    setActualListings,
     loader,
   } = useSkinsBrowser();
 
@@ -47,7 +42,7 @@ export default function SkinsBrowser() {
     }
   }
 
-  const viewData = data || loader.data;
+  const viewData = loader.data;
 
   return (
     <div className="card sbc">
@@ -61,32 +56,24 @@ export default function SkinsBrowser() {
         rarity={rarity}
         setRarity={setRarity}
         rarityOptions={RARITIES}
-        limit={limit}
-        setLimit={setLimit}
         aggregate={aggregate}
         setAggregate={setAggregate}
-        prices={prices}
-        setPrices={setPrices}
         normalOnly={normalOnly}
         setNormalOnly={setNormalOnly}
         expandExteriors={expandExteriors}
         setExpandExteriors={setExpandExteriors}
         expandOptions={["none", "price", "all"]}
-        onLoad={load}
+        actualPrices={actualPrices}
+        setActualPrices={setActualPrices}
+        actualListings={actualListings}
+        setActualListings={setActualListings}
         onLoadProgressive={loader.loadProgressive}
-        onResume={loader.resume}
         onFetchNames={handleFetchNames}
-        loading={loading || loader.loading || savingNames}
-        canResume={loader.canResume}
+        loading={loader.loading || savingNames}
       />
 
       {(loader.progress || loader.loading) && (
         <ProgressBar text={loader.progress || "Loading…"} />
-      )}
-      {error && (
-        <div className="red" style={{ marginTop: 8 }}>
-          {error}
-        </div>
       )}
       {loader.error && (
         <div className="red" style={{ marginTop: 8 }}>
@@ -103,13 +90,7 @@ export default function SkinsBrowser() {
           {namesMessage}
         </div>
       )}
-      {hint && (
-        <div className="small" style={{ marginTop: 8 }}>
-          {hint}
-        </div>
-      )}
-
-      {!loader.loading && !loading && viewData && "skins" in viewData && (
+      {!loader.loading && viewData && "skins" in viewData && (
         <>
           <AggTable skins={viewData.skins} />
           <div className="small" style={{ marginTop: 8 }}>
@@ -117,7 +98,7 @@ export default function SkinsBrowser() {
           </div>
         </>
       )}
-      {!loader.loading && !loading && viewData && "items" in viewData && (
+      {!loader.loading && viewData && "items" in viewData && (
         <>
           <FlatTable items={viewData.items} />
           <div className="small" style={{ marginTop: 8 }}>
@@ -125,8 +106,7 @@ export default function SkinsBrowser() {
           </div>
         </>
       )}
-
-      {!loader.loading && !loading && !viewData && !error && !loader.error && (
+      {!loader.loading && !viewData && !loader.error && (
         <div className="small" style={{ marginTop: 8 }}>
           Pick params and compute. EXTERIORS: {EXTERIORS.join(" / ")}.
         </div>

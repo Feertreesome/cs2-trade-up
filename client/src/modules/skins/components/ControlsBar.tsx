@@ -9,15 +9,8 @@ type ControlsBarProps = {
   rarity: Rarity;
   setRarity: (next: Rarity) => void;
   rarityOptions: ReadonlyArray<Rarity>;               // ← было: Rarity[]
-
-  limit: number;
-  setLimit: (next: number) => void;
-
   aggregate: boolean;
   setAggregate: (next: boolean) => void;
-
-  prices: boolean;
-  setPrices: (next: boolean) => void;
 
   normalOnly: boolean;
   setNormalOnly: (next: boolean) => void;
@@ -25,21 +18,20 @@ type ControlsBarProps = {
   expandExteriors: ExpandMode;
   setExpandExteriors: (next: ExpandMode) => void;
   expandOptions: ReadonlyArray<ExpandMode>;           // ← было: ExpandMode[]
-
-  onLoad: () => void;
+  actualPrices: boolean;
+  setActualPrices: (next: boolean) => void;
+  actualListings: boolean;
+  setActualListings: (next: boolean) => void;
   onLoadProgressive: () => void;
-  onResume: () => void;
   onFetchNames: () => void;
-
   loading: boolean;
-  canResume: boolean;
 };
 
 const ControlsBar: React.FC<ControlsBarProps> = (props) => {
   return (
     <div className="controls-grid">
       <div>
-        <div className="label">Rarity</div>
+        <div className="label">Rarity <span className="help-icon" title="Select item rarity to search">?</span></div>
         <select
           className="input"
           value={props.rarity}
@@ -52,20 +44,7 @@ const ControlsBar: React.FC<ControlsBarProps> = (props) => {
       </div>
 
       <div>
-        <div className="label">Limit (Load)</div>
-        <input
-          className="input"
-          type="number"
-          min={1}
-          max={5000}
-          value={props.limit}
-          onChange={(e) => props.setLimit(Math.max(1, Math.min(5000, parseInt(e.target.value || "100", 10))))}
-        />
-        <div className="small">Use progressive to fetch all safely.</div>
-      </div>
-
-      <div>
-        <div className="label">Aggregate</div>
+        <div className="label">Aggregate <span className="help-icon" title="Group items by base name">?</span></div>
         <select
           className="input"
           value={props.aggregate ? "1" : "0"}
@@ -77,19 +56,7 @@ const ControlsBar: React.FC<ControlsBarProps> = (props) => {
       </div>
 
       <div>
-        <div className="label">Prices</div>
-        <select
-          className="input"
-          value={props.prices ? "1" : "0"}
-          onChange={(e) => props.setPrices(e.target.value === "1")}
-        >
-          <option value="0">No</option>
-          <option value="1">Yes</option>
-        </select>
-      </div>
-
-      <div>
-        <div className="label">Normal only</div>
+        <div className="label">Normal only <span className="help-icon" title="Exclude StatTrak and Souvenir">?</span></div>
         <select
           className="input"
           value={props.normalOnly ? "1" : "0"}
@@ -101,7 +68,7 @@ const ControlsBar: React.FC<ControlsBarProps> = (props) => {
       </div>
 
       <div>
-        <div className="label">Expand exteriors</div>
+        <div className="label">Expand exteriors <span className="help-icon" title="Add missing exteriors or only those with price">?</span></div>
         <select
           className="input"
           value={props.expandExteriors}
@@ -113,11 +80,29 @@ const ControlsBar: React.FC<ControlsBarProps> = (props) => {
         </select>
       </div>
 
+      <div>
+        <div className="label">Actual prices <span className="help-icon" title="Refresh prices from Steam for all items">?</span></div>
+        <input
+          type="checkbox"
+          checked={props.actualPrices}
+          onChange={(e) => props.setActualPrices(e.target.checked)}
+        />
+      </div>
+
+      <div>
+        <div className="label">Actual listings <span className="help-icon" title="Refresh listing counts from Steam for all items">?</span></div>
+        <input
+          type="checkbox"
+          checked={props.actualListings}
+          onChange={(e) => props.setActualListings(e.target.checked)}
+        />
+      </div>
+
       <div style={{ alignSelf: "end" }}>
-        <button className="btn" onClick={props.onLoad} disabled={props.loading}>Load</button>
-        <button className="btn" style={{ marginLeft: 8 }} onClick={props.onLoadProgressive} disabled={props.loading}>Load progressively</button>
-        <button className="btn" style={{ marginLeft: 8 }} onClick={props.onResume} disabled={props.loading || !props.canResume}>Resume</button>
+        <button className="btn" onClick={props.onLoadProgressive} disabled={props.loading}>Load progressively</button>
+        <span className="help-icon" title="Fetch results in batches">?</span>
         <button className="btn" style={{ marginLeft: 8 }} onClick={props.onFetchNames} disabled={props.loading}>Get names</button>
+        <span className="help-icon" title="Save all item names">?</span>
       </div>
     </div>
   );

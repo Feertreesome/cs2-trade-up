@@ -1,5 +1,11 @@
 import { RARITY_TO_TAG, searchByRarity } from "../steam/repo";
-import { type Exterior } from "./types";
+
+export type Exterior =
+  | "Factory New"
+  | "Minimal Wear"
+  | "Field-Tested"
+  | "Well-Worn"
+  | "Battle-Scarred";
 
 /** Supported rarities extracted from Steam mapping. */
 export const ALL_RARITIES = Object.keys(
