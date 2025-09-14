@@ -27,6 +27,7 @@ export default function useProgressiveLoader(params: Params) {
   const [progress, setProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  //стим хуй вернет больше 10
   const pageSize = 30;
   const pageDelayMs = 2600;
 
@@ -58,10 +59,11 @@ export default function useProgressiveLoader(params: Params) {
       let start = 0;
       while (start < total) {
         setProgress(`Loading ${start + 1}–${Math.min(start + pageSize, total)} / ${total}`);
+        //TODO: эту залупу переписать на норм метод чтоб глаза не выебало
         const j = await fetchPageWithRetry(
           `/api/skins/paged?rarity=${encodeURIComponent(rarity)}&start=${start}&count=${pageSize}&normalOnly=${normalOnly ? "1" : "0"}`
         );
-        flat.push(...j.items.map((i: any) => ({ ...i, rarity }))); 
+        flat.push(...j.items.map((i: any) => ({ ...i, rarity })));
         const fetched = j.items.length;
         if (!fetched) break;
         start += fetched;
