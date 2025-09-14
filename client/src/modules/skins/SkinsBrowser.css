@@ -10,6 +10,9 @@
 .sbc .btn:hover { background: #1d2a44; }
 .sbc .buttons { display: flex; flex-wrap: wrap; gap: 8px; }
 
+.sbc .btn-wrap { display: flex; align-items: center; gap: 4px; }
+.sbc .help { width: 16px; height: 16px; border-radius: 50%; border: 1px solid #2b3b58; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; cursor: help; color: var(--muted); }
+
 .sbc .spinner {
   width: 16px;
   height: 16px;

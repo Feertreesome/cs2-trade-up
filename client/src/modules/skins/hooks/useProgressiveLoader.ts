@@ -16,10 +16,12 @@ type Params = {
   aggregate: boolean;
   normalOnly: boolean;
   expandExteriors: ExpandMode;
+  actualPrices: boolean;
+  actualListings: boolean;
 };
 
 export default function useProgressiveLoader(params: Params) {
-  const { rarity, aggregate, normalOnly, expandExteriors } = params;
+  const { rarity, aggregate, normalOnly, expandExteriors, actualPrices, actualListings } = params;
   const [data, setData] = useState<ApiAggResp | ApiFlatResp | null>(null);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
@@ -53,21 +55,28 @@ export default function useProgressiveLoader(params: Params) {
       const total = totals.totals[rarity] ?? 0;
 
       const flat: any[] = [];
-      for (let start = 0; start < total; start += pageSize) {
+      let start = 0;
+      while (start < total) {
         setProgress(`Loading ${start + 1}–${Math.min(start + pageSize, total)} / ${total}`);
         const j = await fetchPageWithRetry(
           `/api/skins/paged?rarity=${encodeURIComponent(rarity)}&start=${start}&count=${pageSize}&normalOnly=${normalOnly ? "1" : "0"}`
         );
-        flat.push(...j.items.map((i: any) => ({ ...i, rarity })));
+        flat.push(...j.items.map((i: any) => ({ ...i, rarity }))); 
+        const fetched = j.items.length;
+        if (!fetched) break;
+        start += fetched;
         await new Promise(r => setTimeout(r, pageDelayMs));
       }
 
       if (!aggregate) {
         const out: ApiFlatResp = { rarities: [rarity], total: flat.length, items: flat };
-        const missing = flat.filter(x => x.price == null).map(x => x.market_hash_name);
-        if (missing.length) {
-          const pmap = await batchPriceOverview(Array.from(new Set(missing)));
-          out.items.forEach(x => { if (x.price == null) (x as any).price = pmap[x.market_hash_name] ?? null; });
+        if (actualListings) {
+          const tmap = await batchListingTotals(Array.from(new Set(flat.map(x => x.market_hash_name))));
+          out.items.forEach(x => { const n = tmap[x.market_hash_name]; if (typeof n === "number") (x as any).sell_listings = n; });
+        }
+        if (actualPrices) {
+          const pmap = await batchPriceOverview(Array.from(new Set(flat.map(x => x.market_hash_name))));
+          out.items.forEach(x => { const p = pmap[x.market_hash_name]; if (typeof p === "number") (x as any).price = p; });
         }
         setData(out); setProgress(null);
         return;
@@ -79,7 +88,7 @@ export default function useProgressiveLoader(params: Params) {
       const needPriceCheck: string[] = [];
       Object.values(groups).forEach(g => {
         const present = new Set(g.exteriors.map(e => e.exterior));
-        if (expandExteriors === "all" || expandExteriors === "price") {
+        if (expandExteriors === "all" || (expandExteriors === "price" && actualPrices)) {
           for (const ext of EXTERIORS) {
             if (present.has(ext)) continue;
             const mhn = `${g.baseName} (${ext})`;
@@ -91,7 +100,7 @@ export default function useProgressiveLoader(params: Params) {
           }
         }
       });
-      if (expandExteriors === "price" && needPriceCheck.length) {
+      if (expandExteriors === "price" && actualPrices && needPriceCheck.length) {
         const pmap = await batchPriceOverview(needPriceCheck);
         Object.values(groups).forEach(g => {
           for (const ext of EXTERIORS) {
@@ -103,21 +112,26 @@ export default function useProgressiveLoader(params: Params) {
         });
       }
 
-      // prices for all
-      const toPrice = Object.values(groups).flatMap(g => g.exteriors.filter(e => e.price == null).map(e => e.marketHashName));
-      if (toPrice.length) {
-        const pmap = await batchPriceOverview(Array.from(new Set(toPrice)));
-        Object.values(groups).forEach(g => g.exteriors.forEach(e => { if (e.price == null) e.price = pmap[e.marketHashName] ?? null; }));
+      if (actualPrices) {
+        const toPrice = Object.values(groups).flatMap(g => g.exteriors.map(e => e.marketHashName));
+        if (toPrice.length) {
+          const pmap = await batchPriceOverview(Array.from(new Set(toPrice)));
+          Object.values(groups).forEach(g => g.exteriors.forEach(e => {
+            const p = pmap[e.marketHashName];
+            if (p != null) e.price = p;
+          }));
+        }
       }
 
-      // fix zero listings with listing totals
-      const needTotals = Object.values(groups).flatMap(g => g.exteriors.filter(e => e.sell_listings === 0).map(e => e.marketHashName));
-      if (needTotals.length) {
-        const tmap = await batchListingTotals(Array.from(new Set(needTotals)));
-        Object.values(groups).forEach(g => g.exteriors.forEach(e => {
-          const n = tmap[e.marketHashName];
-          if (typeof n === "number" && n > e.sell_listings) e.sell_listings = n;
-        }));
+      if (actualListings) {
+        const needTotals = Object.values(groups).flatMap(g => g.exteriors.map(e => e.marketHashName));
+        if (needTotals.length) {
+          const tmap = await batchListingTotals(Array.from(new Set(needTotals)));
+          Object.values(groups).forEach(g => g.exteriors.forEach(e => {
+            const n = tmap[e.marketHashName];
+            if (typeof n === "number") e.sell_listings = n;
+          }));
+        }
       }
 
       const skins = Object.values(groups).sort((a, b) => a.baseName.localeCompare(b.baseName));
