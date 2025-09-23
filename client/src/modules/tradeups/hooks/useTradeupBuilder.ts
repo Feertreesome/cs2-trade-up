@@ -530,7 +530,9 @@ export default function useTradeupBuilder() {
     if (unresolvedRows.length) {
       const uniqueNames = Array.from(
         new Set(
-          unresolvedRows.map((row) => row.resolvedCollectionName ?? row.collectionId || "неизвестно"),
+          unresolvedRows.map(
+            (row) => row.resolvedCollectionName ?? row.collectionId ?? "неизвестно",
+          ),
         ),
       );
       setCalculationError(
