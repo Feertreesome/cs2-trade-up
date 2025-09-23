@@ -146,7 +146,11 @@ export default function useTradeupBuilder() {
       setSelectedTarget(null);
       setCalculation(null);
       setRows(createInitialRows());
-      setSelectedCollectionId(null);
+      setCalculationError(null);
+
+      const steamEntry = steamCollections.find((entry) => entry.tag === collectionTag);
+      const cachedCollectionId = targetsByCollection[collectionTag]?.collectionId;
+      setSelectedCollectionId(cachedCollectionId ?? steamEntry?.collectionId ?? null);
 
       if (targetsByCollection[collectionTag]) {
         const cached = targetsByCollection[collectionTag];
@@ -165,7 +169,7 @@ export default function useTradeupBuilder() {
         setLoadingTargets(false);
       }
     },
-    [targetsByCollection],
+    [steamCollections, targetsByCollection],
   );
 
   /** Загружает список Classified-входов и кеширует его по collectionTag. */
@@ -223,10 +227,11 @@ export default function useTradeupBuilder() {
   /** Заполняет таблицу входов данными из коллекции и запрашивает цены при необходимости. */
   const applyInputsToRows = React.useCallback(
     async (collectionId: string | null, inputs: CollectionInputSummary[]) => {
+      const effectiveCollectionId = collectionId ?? selectedCollectionId ?? "";
       const trimmed = inputs.slice(0, 10);
       const filled: TradeupInputFormRow[] = trimmed.map((input) => ({
         marketHashName: input.marketHashName,
-        collectionId: collectionId ?? "",
+        collectionId: effectiveCollectionId,
         float: defaultFloatForExterior(input.exterior),
         buyerPrice: input.price != null ? input.price.toFixed(2) : "",
       }));
@@ -240,7 +245,7 @@ export default function useTradeupBuilder() {
         await autofillPrices(missingNames);
       }
     },
-    [autofillPrices],
+    [autofillPrices, selectedCollectionId],
   );
 
   /**
@@ -264,14 +269,43 @@ export default function useTradeupBuilder() {
       setCalculationError(null);
       try {
         const response = await loadInputsForCollection(collectionTag);
-        const collectionId = response.collectionId ?? selectedCollectionId;
-        if (response.collectionId) setSelectedCollectionId(response.collectionId);
-        await applyInputsToRows(collectionId ?? null, response.inputs);
+        const resolvedCollectionId =
+          response.collectionId ??
+          targetsByCollection[collectionTag]?.collectionId ??
+          steamCollections.find((entry) => entry.tag === collectionTag)?.collectionId ??
+          catalogCollections.find((collection) =>
+            collection.covert.some((covert) => covert.baseName === baseName),
+          )?.id ??
+          selectedCollectionId ??
+          null;
+
+        if (resolvedCollectionId) {
+          setSelectedCollectionId(resolvedCollectionId);
+          setTargetsByCollection((prev) => {
+            const current = prev[collectionTag];
+            if (!current || current.collectionId === resolvedCollectionId) return prev;
+            return { ...prev, [collectionTag]: { ...current, collectionId: resolvedCollectionId } };
+          });
+          setInputsByCollection((prev) => {
+            const current = prev[collectionTag];
+            if (!current || current.collectionId === resolvedCollectionId) return prev;
+            return { ...prev, [collectionTag]: { ...current, collectionId: resolvedCollectionId } };
+          });
+        }
+
+        await applyInputsToRows(resolvedCollectionId, response.inputs);
       } catch (error) {
         // handled in loadInputsForCollection
       }
     },
-    [applyInputsToRows, loadInputsForCollection, selectedCollectionId],
+    [
+      applyInputsToRows,
+      catalogCollections,
+      loadInputsForCollection,
+      selectedCollectionId,
+      steamCollections,
+      targetsByCollection,
+    ],
   );
 
   /** Позволяет редактировать одну строку таблицы вручную. */
@@ -290,12 +324,12 @@ export default function useTradeupBuilder() {
     return rows
       .map((row) => ({
         marketHashName: row.marketHashName.trim(),
-        collectionId: row.collectionId || selectedCollectionId || "",
+        collectionId: row.collectionId.trim(),
         float: Number.parseFloat(row.float),
         buyerPrice: Number.parseFloat(row.buyerPrice),
       }))
       .filter((row) => row.marketHashName && Number.isFinite(row.float));
-  }, [rows, selectedCollectionId]);
+  }, [rows]);
 
   /** Средний float по заполненным слотам. */
   const averageFloat = React.useMemo(() => {
@@ -326,10 +360,22 @@ export default function useTradeupBuilder() {
       setCalculationError("Trade-up требует ровно 10 входов");
       return;
     }
-    if (!selectedCollectionId) {
+    const rowCollectionIds = new Set(parsedRows.map((row) => row.collectionId).filter(Boolean));
+
+    if (rowCollectionIds.size > 1) {
+      setCalculationError("Trade-up должен использовать предметы из одной коллекции");
+      return;
+    }
+
+    const [singleCollectionId] = rowCollectionIds.size === 1 ? Array.from(rowCollectionIds) : [];
+    const resolvedCollectionId = selectedCollectionId ?? singleCollectionId ?? null;
+
+    if (!resolvedCollectionId) {
       setCalculationError("Не удалось определить коллекцию для trade-up");
       return;
     }
+
+    setSelectedCollectionId(resolvedCollectionId);
     setCalculating(true);
     setCalculationError(null);
     try {
@@ -337,12 +383,12 @@ export default function useTradeupBuilder() {
         inputs: parsedRows.map((row) => ({
           marketHashName: row.marketHashName,
           float: row.float,
-          collectionId: row.collectionId || selectedCollectionId,
+          collectionId: row.collectionId || resolvedCollectionId,
           priceOverrideNet: Number.isFinite(row.buyerPrice)
             ? row.buyerPrice / buyerToNetRate
             : undefined,
         })),
-        targetCollectionIds: [selectedCollectionId],
+        targetCollectionIds: [resolvedCollectionId],
         options: { buyerToNetRate },
       };
       const result = await requestTradeupCalculation(payload);
