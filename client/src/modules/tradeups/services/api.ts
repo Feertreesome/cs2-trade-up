@@ -68,10 +68,22 @@ export interface TradeupOptionsPayload {
   buyerToNetRate?: number;
 }
 
+export interface TradeupTargetOverridePayload {
+  collectionId?: string | null;
+  collectionTag?: string | null;
+  baseName: string;
+  exterior?: Exterior | null;
+  marketHashName?: string | null;
+  minFloat?: number | null;
+  maxFloat?: number | null;
+  price?: number | null;
+}
+
 export interface TradeupCalculationPayload {
   inputs: TradeupInputPayload[];
   targetCollectionIds: string[];
   options?: TradeupOptionsPayload;
+  targetOverrides?: TradeupTargetOverridePayload[];
 }
 
 export interface TradeupOutcomeResponse {

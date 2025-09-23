@@ -15,3 +15,8 @@ pnpm dev
 ## Build
 cd server && pnpm run build
 cd ../client && pnpm run build
+
+## Data sync
+- `npm run sync:floats` — загружает актуальный список Covert-скинов из [ByMykel/CSGO-API](https://github.com/ByMykel/CSGO-API),
+  пересобирает `data/CollectionsWithFloat.ts` и прогоняет обновлённые идентификаторы коллекций.
+  После синхронизации перезапустите сервер, чтобы прогреть кеши trade-up каталога.

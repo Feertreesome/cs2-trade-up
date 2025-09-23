@@ -9,9 +9,11 @@ import {
   COLLECTIONS_WITH_FLOAT_MAP,
   COLLECTIONS_WITH_FLOAT_BY_NAME,
   COVERT_FLOAT_BY_BASENAME,
+  rebuildCollectionFloatCaches,
   type CollectionFloatCatalogEntry,
   type CovertFloatRange,
 } from "../../../../data/CollectionsWithFloat";
+import { STEAM_MAX_AUTO_LIMIT, STEAM_PAGE_SIZE } from "../../config";
 import {
   fetchCollectionTags,
   getPriceUSD,
@@ -67,10 +69,22 @@ export interface TradeupOptions {
   buyerToNetRate?: number;
 }
 
+export interface TargetOverrideRequest {
+  collectionId?: string | null;
+  collectionTag?: string | null;
+  baseName: string;
+  exterior?: Exterior | null;
+  marketHashName?: string | null;
+  minFloat?: number | null;
+  maxFloat?: number | null;
+  price?: number | null;
+}
+
 export interface TradeupRequestPayload {
   inputs: TradeupInputSlot[];
   targetCollectionIds: string[];
   options?: TradeupOptions;
+  targetOverrides?: TargetOverrideRequest[];
 }
 
 export interface TradeupInputSummary extends TradeupInputSlot {
@@ -122,15 +136,28 @@ const buildOutcome = async (
     entry: CovertFloatRange;
     collectionProbability: number;
     buyerToNetRate: number;
+    override?: TargetOverrideRequest;
   },
 ): Promise<TradeupOutcome> => {
-  const { averageFloat, collection, entry, collectionProbability, buyerToNetRate } = options;
-  const raw = averageFloat * (entry.maxFloat - entry.minFloat) + entry.minFloat;
-  const rollFloat = clamp(raw, entry.minFloat, entry.maxFloat);
-  const exterior = getExteriorByFloat(rollFloat);
+  const { averageFloat, collection, entry, collectionProbability, buyerToNetRate, override } =
+    options;
+
+  const minFloat = override?.minFloat ?? entry.minFloat;
+  const maxFloat = override?.maxFloat ?? entry.maxFloat;
+  const raw = averageFloat * (maxFloat - minFloat) + minFloat;
+  const rollFloat = clamp(raw, minFloat, maxFloat);
+  const exterior = override?.exterior ?? getExteriorByFloat(rollFloat);
   const wearRange = getWearRange(exterior);
-  const marketHashName = toMarketHashName(entry.baseName, exterior);
-  const { price: buyerPrice, error } = await getPriceUSD(marketHashName);
+  const marketHashName = override?.marketHashName ?? toMarketHashName(entry.baseName, exterior);
+
+  let buyerPrice = override?.price ?? null;
+  let priceError: unknown = undefined;
+  if (buyerPrice == null) {
+    const { price, error } = await getPriceUSD(marketHashName);
+    buyerPrice = price;
+    priceError = error;
+  }
+
   const netPrice = buyerPrice == null ? null : buyerPrice / buyerToNetRate;
   const probability = collectionProbability / collection.covert.length;
 
@@ -138,17 +165,17 @@ const buildOutcome = async (
     collectionId: collection.id,
     collectionName: collection.name,
     baseName: entry.baseName,
-    minFloat: entry.minFloat,
-    maxFloat: entry.maxFloat,
+    minFloat,
+    maxFloat,
     rollFloat,
     exterior,
     wearRange: { min: wearRange.min, max: wearRange.max },
     probability,
     buyerPrice,
     netPrice,
-    priceError: error,
+    priceError,
     marketHashName,
-    withinRange: rollFloat >= entry.minFloat && rollFloat <= entry.maxFloat,
+    withinRange: rollFloat >= minFloat && rollFloat <= maxFloat,
   };
 };
 
@@ -177,11 +204,32 @@ const enrichInput = async (
   };
 };
 
+let collectionCachesReady = false;
+
+const ensureCollectionCaches = () => {
+  if (!collectionCachesReady) {
+    rebuildCollectionFloatCaches();
+    collectionCachesReady = true;
+  }
+};
+
 /** Возвращает локальный справочник коллекций и их float-диапазонов. */
-export const getCollectionsCatalog = (): CollectionFloatCatalogEntry[] =>
-  COLLECTIONS_WITH_FLOAT.slice();
+export const getCollectionsCatalog = (): CollectionFloatCatalogEntry[] => {
+  ensureCollectionCaches();
+  return COLLECTIONS_WITH_FLOAT.slice();
+};
 
 const STEAM_TAG_TO_COLLECTION_ID = new Map<string, string | null>();
+
+export const resetTradeupCaches = () => {
+  collectionCachesReady = false;
+  STEAM_TAG_TO_COLLECTION_ID.clear();
+};
+
+export const warmTradeupCatalog = () => {
+  resetTradeupCaches();
+  ensureCollectionCaches();
+};
 
 export interface SteamCollectionSummary extends SteamCollectionTag {
   collectionId: string | null;
@@ -200,6 +248,7 @@ const findCollectionIdByTag = (tag: string): string | null => {
 };
 
 const guessCollectionIdByBaseNames = (baseNames: string[]): string | null => {
+  ensureCollectionCaches();
   for (const entry of COLLECTIONS_WITH_FLOAT) {
     if (entry.covert.some((covert) => baseNames.includes(covert.baseName))) {
       return entry.id;
@@ -209,6 +258,7 @@ const guessCollectionIdByBaseNames = (baseNames: string[]): string | null => {
 };
 
 export const fetchSteamCollections = async (): Promise<SteamCollectionSummary[]> => {
+  ensureCollectionCaches();
   const tags = await fetchCollectionTags();
   return tags.map((tag) => {
     const collection = COLLECTIONS_WITH_FLOAT_BY_NAME.get(tag.name.toLowerCase());
@@ -224,17 +274,22 @@ const fetchEntireCollection = async (options: {
   collectionTag: string;
   rarity?: keyof typeof RARITY_TO_TAG;
 }): Promise<SearchItem[]> => {
-  const pageSize = 100;
+  const pageSize = STEAM_PAGE_SIZE;
+  const hardLimit = STEAM_MAX_AUTO_LIMIT;
   const items: SearchItem[] = [];
   let start = 0;
   let total = 0;
 
   while (true) {
+    const remaining = hardLimit - start;
+    if (remaining <= 0) break;
+    const requestCount = Math.min(pageSize, remaining);
+
     const { items: pageItems, total: totalCount } = await searchByCollection({
       collectionTag: options.collectionTag,
       rarity: options.rarity,
       start,
-      count: pageSize,
+      count: requestCount,
       normalOnly: true,
     });
 
@@ -244,8 +299,8 @@ const fetchEntireCollection = async (options: {
     items.push(...pageItems);
     start += pageItems.length;
 
-    if (start >= totalCount || pageItems.length < pageSize) break;
-    if (start >= 600) break; // safety guard against runaway pagination
+    if (start >= totalCount || start >= hardLimit || pageItems.length < requestCount) break;
+    if (start >= Math.min(hardLimit, 600)) break; // safety guard against runaway pagination
   }
 
   return items;
@@ -276,6 +331,7 @@ export interface CollectionTargetsResult {
 export const fetchCollectionTargets = async (
   collectionTag: string,
 ): Promise<CollectionTargetsResult> => {
+  ensureCollectionCaches();
   const items = await fetchEntireCollection({ collectionTag, rarity: "Covert" });
   const grouped = new Map<string, CollectionTargetSummary>();
   const baseNames: string[] = [];
@@ -335,6 +391,7 @@ export interface CollectionInputsResult {
 export const fetchCollectionInputs = async (
   collectionTag: string,
 ): Promise<CollectionInputsResult> => {
+  ensureCollectionCaches();
   const items = await fetchEntireCollection({
     collectionTag,
     rarity: "Classified",
@@ -364,6 +421,7 @@ export const fetchCollectionInputs = async (
 export const calculateTradeup = async (
   payload: TradeupRequestPayload,
 ): Promise<TradeupCalculationResult> => {
+  ensureCollectionCaches();
   if (!payload?.inputs?.length) {
     throw new Error("At least one input is required");
   }
@@ -384,6 +442,20 @@ export const calculateTradeup = async (
     collectionCounts.set(slot.collectionId, (collectionCounts.get(slot.collectionId) ?? 0) + 1);
   }
 
+  const overridesByCollection = new Map<string, TargetOverrideRequest>();
+  for (const override of payload.targetOverrides ?? []) {
+    if (!override?.baseName) continue;
+    let collectionId = override.collectionId ?? null;
+    if (!collectionId && override.collectionTag) {
+      collectionId = findCollectionIdByTag(override.collectionTag);
+    }
+    if (!collectionId) continue;
+    const key = `${collectionId}:${override.baseName.toLowerCase()}`;
+    if (!overridesByCollection.has(key)) {
+      overridesByCollection.set(key, { ...override, collectionId });
+    }
+  }
+
   const targetCollections = payload.targetCollectionIds
     .map((id) => COLLECTIONS_WITH_FLOAT_MAP.get(id))
     .filter((collection): collection is CollectionFloatCatalogEntry => Boolean(collection));
@@ -402,6 +474,7 @@ export const calculateTradeup = async (
           entry,
           collectionProbability,
           buyerToNetRate,
+          override: overridesByCollection.get(`${collection.id}:${entry.baseName.toLowerCase()}`),
         }),
       );
     }),

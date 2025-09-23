@@ -1,7 +1,7 @@
 import express from "express";
 import cors from "cors";
 import { createSkinsRouter } from "./modules/skins";
-import { createTradeupsRouter } from "./modules/tradeups";
+import { createTradeupsRouter, warmTradeupCatalog } from "./modules/tradeups";
 import { getPriceUSD } from "./modules/steam/repo";
 
 /**
@@ -15,6 +15,9 @@ app.use(express.json({ limit: "128kb" }));
 // Основной модуль с /api/skins*
 app.use("/api/skins", createSkinsRouter());
 app.use("/api/tradeups", createTradeupsRouter());
+
+// Подготавливаем справочники trade-up каталога при старте сервера.
+warmTradeupCatalog();
 
 /**
  * POST /api/priceoverview/batch
