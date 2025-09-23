@@ -9,6 +9,7 @@ import {
   COLLECTIONS_WITH_FLOAT_MAP,
   COLLECTIONS_WITH_FLOAT_BY_NAME,
   COVERT_FLOAT_BY_BASENAME,
+  rebuildCollectionFloatCaches,
   type CollectionFloatCatalogEntry,
   type CovertFloatRange,
 } from "../../../../data/CollectionsWithFloat";
@@ -177,11 +178,32 @@ const enrichInput = async (
   };
 };
 
+let collectionCachesReady = false;
+
+const ensureCollectionCaches = () => {
+  if (!collectionCachesReady) {
+    rebuildCollectionFloatCaches();
+    collectionCachesReady = true;
+  }
+};
+
 /** Возвращает локальный справочник коллекций и их float-диапазонов. */
-export const getCollectionsCatalog = (): CollectionFloatCatalogEntry[] =>
-  COLLECTIONS_WITH_FLOAT.slice();
+export const getCollectionsCatalog = (): CollectionFloatCatalogEntry[] => {
+  ensureCollectionCaches();
+  return COLLECTIONS_WITH_FLOAT.slice();
+};
 
 const STEAM_TAG_TO_COLLECTION_ID = new Map<string, string | null>();
+
+export const resetTradeupCaches = () => {
+  collectionCachesReady = false;
+  STEAM_TAG_TO_COLLECTION_ID.clear();
+};
+
+export const warmTradeupCatalog = () => {
+  resetTradeupCaches();
+  ensureCollectionCaches();
+};
 
 export interface SteamCollectionSummary extends SteamCollectionTag {
   collectionId: string | null;
@@ -200,6 +222,7 @@ const findCollectionIdByTag = (tag: string): string | null => {
 };
 
 const guessCollectionIdByBaseNames = (baseNames: string[]): string | null => {
+  ensureCollectionCaches();
   for (const entry of COLLECTIONS_WITH_FLOAT) {
     if (entry.covert.some((covert) => baseNames.includes(covert.baseName))) {
       return entry.id;
@@ -209,6 +232,7 @@ const guessCollectionIdByBaseNames = (baseNames: string[]): string | null => {
 };
 
 export const fetchSteamCollections = async (): Promise<SteamCollectionSummary[]> => {
+  ensureCollectionCaches();
   const tags = await fetchCollectionTags();
   return tags.map((tag) => {
     const collection = COLLECTIONS_WITH_FLOAT_BY_NAME.get(tag.name.toLowerCase());
@@ -276,6 +300,7 @@ export interface CollectionTargetsResult {
 export const fetchCollectionTargets = async (
   collectionTag: string,
 ): Promise<CollectionTargetsResult> => {
+  ensureCollectionCaches();
   const items = await fetchEntireCollection({ collectionTag, rarity: "Covert" });
   const grouped = new Map<string, CollectionTargetSummary>();
   const baseNames: string[] = [];
@@ -335,6 +360,7 @@ export interface CollectionInputsResult {
 export const fetchCollectionInputs = async (
   collectionTag: string,
 ): Promise<CollectionInputsResult> => {
+  ensureCollectionCaches();
   const items = await fetchEntireCollection({
     collectionTag,
     rarity: "Classified",
@@ -364,6 +390,7 @@ export const fetchCollectionInputs = async (
 export const calculateTradeup = async (
   payload: TradeupRequestPayload,
 ): Promise<TradeupCalculationResult> => {
+  ensureCollectionCaches();
   if (!payload?.inputs?.length) {
     throw new Error("At least one input is required");
   }
