@@ -10,6 +10,7 @@ import { RATE_MAX_MS, RATE_MIN_MS, START_RATE_MS } from "../../config";
 const APP_ID = 730;
 const PRICE_URL = "https://steamcommunity.com/market/priceoverview/";
 const SEARCH_URL = "https://steamcommunity.com/market/search/render/";
+const APP_FILTERS_URL = `https://steamcommunity.com/market/appfilters/${APP_ID}`;
 const LISTING_URL = (marketHashName: string) =>
   `https://steamcommunity.com/market/listings/${APP_ID}/${encodeURIComponent(marketHashName)}/render`;
 
@@ -68,7 +69,9 @@ interface SearchRenderFacet {
   tags?: Record<string, SearchRenderFacetTag>;
 }
 
-interface SearchRenderFacetsResponse extends SearchRenderResponse {
+interface AppFiltersResponse {
+  success?: number | boolean | string;
+  message?: string;
   facets?: Record<string, SearchRenderFacet>;
 }
 
@@ -352,17 +355,32 @@ const parseFacetCount = (value?: string): number => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
-export const fetchCollectionTags = async (): Promise<SteamCollectionTag[]> => {
-  const params = new URLSearchParams({
-    appid: String(APP_ID),
-    norender: "1",
-    count: "0",
-    start: "0",
-    facets: "1",
+const fetchAppFilters = async (): Promise<Record<string, SearchRenderFacet>> => {
+  const cacheKey = "appfilters";
+  const cached = memoryCache.get(cacheKey);
+  if (cached) return cached;
+
+  const params = new URLSearchParams({ norender: "1" });
+  const url = `${APP_FILTERS_URL}?${params.toString()}`;
+
+  const payload = await steamGetData<AppFiltersResponse>(url, {
+    headers: { Referer: "https://steamcommunity.com/market/" },
   });
-  const url = `${SEARCH_URL}?${params.toString()}`;
-  const payload = await steamGetData<SearchRenderFacetsResponse>(url);
-  const facet = payload?.facets?.category_730_ItemSet;
+
+  const isSuccess = payload?.success === true || payload?.success === 1 || payload?.success === "1";
+  if (!isSuccess) {
+    const errorMessage = payload?.message ?? "Failed to fetch market app filters";
+    throw new Error(errorMessage);
+  }
+
+  const facets = payload?.facets ?? {};
+  memoryCache.set(cacheKey, facets);
+  return facets;
+};
+
+export const fetchCollectionTags = async (): Promise<SteamCollectionTag[]> => {
+  const facets = await fetchAppFilters();
+  const facet = facets?.category_730_ItemSet;
   if (!facet?.tags) return [];
 
   return Object.values(facet.tags).map((tag) => ({
