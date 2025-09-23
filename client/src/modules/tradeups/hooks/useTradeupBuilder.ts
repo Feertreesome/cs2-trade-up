@@ -111,7 +111,10 @@ export default function useTradeupBuilder() {
   const [targetsError, setTargetsError] = React.useState<string | null>(null);
 
   const [inputsByCollection, setInputsByCollection] = React.useState<
-    Record<string, { collectionId: string | null; inputs: CollectionInputSummary[] }>
+    Record<
+      string,
+      { collectionId: string | null; collectionTag: string; inputs: CollectionInputSummary[] }
+    >
   >({});
   const [inputsLoading, setInputsLoading] = React.useState(false);
   const [inputsError, setInputsError] = React.useState<string | null>(null);
@@ -529,20 +532,42 @@ export default function useTradeupBuilder() {
       const trimmed = sortedInputs.slice(0, 10);
       const offsetStep = desiredFloat != null && trimmed.length > 1 ? 0.00005 : 0;
       const centerIndex = (trimmed.length - 1) / 2;
-      const clampWithinTargetRange = (value: number) => {
-        if (!targetRange) return clampFloat(value);
-        if (value < targetRange.min) return clampFloat(targetRange.min);
-        if (value > targetRange.max) return clampFloat(targetRange.max);
-        return clampFloat(value);
-      };
 
       const filled: TradeupInputFormRow[] = trimmed.map((input, index) => {
-        const baselineRaw = desiredFloat ?? exteriorMidpoint(input.exterior) ?? null;
-        const baseline = baselineRaw == null ? null : clampWithinTargetRange(baselineRaw);
+        const bucketRange = EXTERIOR_FLOAT_RANGES[input.exterior] ?? null;
+        const rowRange = (() => {
+          if (bucketRange && targetRange) {
+            const min = Math.max(bucketRange.min, targetRange.min);
+            const max = Math.min(bucketRange.max, targetRange.max);
+            if (min <= max) {
+              return { min, max };
+            }
+            return bucketRange;
+          }
+          if (!targetRange) {
+            return bucketRange;
+          }
+          return bucketRange ?? targetRange ?? null;
+        })();
+
+        const clampWithinRowRange = (value: number) => {
+          if (rowRange) {
+            if (value < rowRange.min) return clampFloat(rowRange.min);
+            if (value > rowRange.max) return clampFloat(rowRange.max);
+            return clampFloat(value);
+          }
+          return clampFloat(value);
+        };
+
+        const rowMidpoint = rowRange ? (rowRange.min + rowRange.max) / 2 : null;
+        const baselineSource =
+          desiredFloat ?? rowMidpoint ?? exteriorMidpoint(input.exterior) ?? null;
+        const baseline =
+          baselineSource == null ? null : clampWithinRowRange(baselineSource);
         const adjusted =
           baseline == null
             ? null
-            : clampWithinTargetRange(baseline + offsetStep * (index - centerIndex));
+            : clampWithinRowRange(baseline + offsetStep * (index - centerIndex));
         return {
           marketHashName: input.marketHashName,
           collectionId: effectiveCollectionValue,
