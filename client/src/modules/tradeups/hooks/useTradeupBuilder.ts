@@ -91,6 +91,7 @@ interface SelectedTarget {
   marketHashName: string;
   minFloat?: number;
   maxFloat?: number;
+  price?: number | null;
 }
 
 export default function useTradeupBuilder() {
@@ -490,6 +491,7 @@ export default function useTradeupBuilder() {
         marketHashName: exterior.marketHashName,
         minFloat: exterior.minFloat,
         maxFloat: exterior.maxFloat,
+        price: exterior.price ?? null,
       });
       setCalculation(null);
       setCalculationError(null);
@@ -680,6 +682,21 @@ export default function useTradeupBuilder() {
     setCalculating(true);
     setCalculationError(null);
     try {
+      const targetOverrides =
+        selectedTarget && resolvedCollectionId
+          ? [
+              {
+                collectionId: resolvedCollectionId,
+                collectionTag: selectedTarget.collectionTag,
+                baseName: selectedTarget.baseName,
+                exterior: selectedTarget.exterior,
+                marketHashName: selectedTarget.marketHashName,
+                minFloat: selectedTarget.minFloat ?? null,
+                maxFloat: selectedTarget.maxFloat ?? null,
+                price: selectedTarget.price ?? null,
+              },
+            ]
+          : undefined;
       const payload = {
         inputs: rowsWithResolved.map((row) => ({
           marketHashName: row.marketHashName,
@@ -691,6 +708,7 @@ export default function useTradeupBuilder() {
         })),
         targetCollectionIds: [resolvedCollectionId],
         options: { buyerToNetRate },
+        targetOverrides,
       };
       const result = await requestTradeupCalculation(payload);
       setCalculation(result);
@@ -709,6 +727,7 @@ export default function useTradeupBuilder() {
     parsedRows,
     rememberSteamCollectionId,
     selectedCollectionId,
+    selectedTarget,
     steamCollectionsByTag,
   ]);
 

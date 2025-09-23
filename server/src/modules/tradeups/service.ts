@@ -68,10 +68,22 @@ export interface TradeupOptions {
   buyerToNetRate?: number;
 }
 
+export interface TargetOverrideRequest {
+  collectionId?: string | null;
+  collectionTag?: string | null;
+  baseName: string;
+  exterior?: Exterior | null;
+  marketHashName?: string | null;
+  minFloat?: number | null;
+  maxFloat?: number | null;
+  price?: number | null;
+}
+
 export interface TradeupRequestPayload {
   inputs: TradeupInputSlot[];
   targetCollectionIds: string[];
   options?: TradeupOptions;
+  targetOverrides?: TargetOverrideRequest[];
 }
 
 export interface TradeupInputSummary extends TradeupInputSlot {
@@ -123,15 +135,28 @@ const buildOutcome = async (
     entry: CovertFloatRange;
     collectionProbability: number;
     buyerToNetRate: number;
+    override?: TargetOverrideRequest;
   },
 ): Promise<TradeupOutcome> => {
-  const { averageFloat, collection, entry, collectionProbability, buyerToNetRate } = options;
-  const raw = averageFloat * (entry.maxFloat - entry.minFloat) + entry.minFloat;
-  const rollFloat = clamp(raw, entry.minFloat, entry.maxFloat);
-  const exterior = getExteriorByFloat(rollFloat);
+  const { averageFloat, collection, entry, collectionProbability, buyerToNetRate, override } =
+    options;
+
+  const minFloat = override?.minFloat ?? entry.minFloat;
+  const maxFloat = override?.maxFloat ?? entry.maxFloat;
+  const raw = averageFloat * (maxFloat - minFloat) + minFloat;
+  const rollFloat = clamp(raw, minFloat, maxFloat);
+  const exterior = override?.exterior ?? getExteriorByFloat(rollFloat);
   const wearRange = getWearRange(exterior);
-  const marketHashName = toMarketHashName(entry.baseName, exterior);
-  const { price: buyerPrice, error } = await getPriceUSD(marketHashName);
+  const marketHashName = override?.marketHashName ?? toMarketHashName(entry.baseName, exterior);
+
+  let buyerPrice = override?.price ?? null;
+  let priceError: unknown = undefined;
+  if (buyerPrice == null) {
+    const { price, error } = await getPriceUSD(marketHashName);
+    buyerPrice = price;
+    priceError = error;
+  }
+
   const netPrice = buyerPrice == null ? null : buyerPrice / buyerToNetRate;
   const probability = collectionProbability / collection.covert.length;
 
@@ -139,17 +164,17 @@ const buildOutcome = async (
     collectionId: collection.id,
     collectionName: collection.name,
     baseName: entry.baseName,
-    minFloat: entry.minFloat,
-    maxFloat: entry.maxFloat,
+    minFloat,
+    maxFloat,
     rollFloat,
     exterior,
     wearRange: { min: wearRange.min, max: wearRange.max },
     probability,
     buyerPrice,
     netPrice,
-    priceError: error,
+    priceError,
     marketHashName,
-    withinRange: rollFloat >= entry.minFloat && rollFloat <= entry.maxFloat,
+    withinRange: rollFloat >= minFloat && rollFloat <= maxFloat,
   };
 };
 
@@ -411,6 +436,20 @@ export const calculateTradeup = async (
     collectionCounts.set(slot.collectionId, (collectionCounts.get(slot.collectionId) ?? 0) + 1);
   }
 
+  const overridesByCollection = new Map<string, TargetOverrideRequest>();
+  for (const override of payload.targetOverrides ?? []) {
+    if (!override?.baseName) continue;
+    let collectionId = override.collectionId ?? null;
+    if (!collectionId && override.collectionTag) {
+      collectionId = findCollectionIdByTag(override.collectionTag);
+    }
+    if (!collectionId) continue;
+    const key = `${collectionId}:${override.baseName.toLowerCase()}`;
+    if (!overridesByCollection.has(key)) {
+      overridesByCollection.set(key, { ...override, collectionId });
+    }
+  }
+
   const targetCollections = payload.targetCollectionIds
     .map((id) => COLLECTIONS_WITH_FLOAT_MAP.get(id))
     .filter((collection): collection is CollectionFloatCatalogEntry => Boolean(collection));
@@ -429,6 +468,7 @@ export const calculateTradeup = async (
           entry,
           collectionProbability,
           buyerToNetRate,
+          override: overridesByCollection.get(`${collection.id}:${entry.baseName.toLowerCase()}`),
         }),
       );
     }),

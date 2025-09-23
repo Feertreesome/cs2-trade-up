@@ -184,6 +184,9 @@ export default function TradeupBuilder() {
                       >
                         {shortExterior(option.exterior)}
                         {floatHint && <span className="ms-1 small">({floatHint})</span>}
+                        {option.price != null && (
+                          <span className="ms-1 small text-muted">${formatNumber(option.price)}</span>
+                        )}
                       </button>
                     );
                   })}
