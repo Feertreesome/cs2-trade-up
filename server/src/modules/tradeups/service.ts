@@ -1,11 +1,24 @@
 import {
   COLLECTIONS_WITH_FLOAT,
   COLLECTIONS_WITH_FLOAT_MAP,
+  COLLECTIONS_WITH_FLOAT_BY_NAME,
+  COVERT_FLOAT_BY_BASENAME,
   type CollectionFloatCatalogEntry,
   type CovertFloatRange,
 } from "../../../../data/CollectionsWithFloat";
-import { getPriceUSD } from "../steam/repo";
-import type { Exterior } from "../skins/service";
+import {
+  fetchCollectionTags,
+  getPriceUSD,
+  searchByCollection,
+  RARITY_TO_TAG,
+  type SearchItem,
+  type SteamCollectionTag,
+} from "../steam/repo";
+import {
+  baseFromMarketHash,
+  parseMarketHashExterior,
+  type Exterior,
+} from "../skins/service";
 
 const DEFAULT_BUYER_TO_NET = 1.15;
 
@@ -150,6 +163,174 @@ const enrichInput = async (
 
 export const getCollectionsCatalog = (): CollectionFloatCatalogEntry[] =>
   COLLECTIONS_WITH_FLOAT.slice();
+
+const STEAM_TAG_TO_COLLECTION_ID = new Map<string, string | null>();
+
+export interface SteamCollectionSummary extends SteamCollectionTag {
+  collectionId: string | null;
+}
+
+const rememberCollectionId = (tag: string, collectionId: string | null) => {
+  STEAM_TAG_TO_COLLECTION_ID.set(tag, collectionId);
+  return collectionId;
+};
+
+const findCollectionIdByTag = (tag: string): string | null => {
+  if (STEAM_TAG_TO_COLLECTION_ID.has(tag)) {
+    return STEAM_TAG_TO_COLLECTION_ID.get(tag) ?? null;
+  }
+  return null;
+};
+
+const guessCollectionIdByBaseNames = (baseNames: string[]): string | null => {
+  for (const entry of COLLECTIONS_WITH_FLOAT) {
+    if (entry.covert.some((covert) => baseNames.includes(covert.baseName))) {
+      return entry.id;
+    }
+  }
+  return null;
+};
+
+export const fetchSteamCollections = async (): Promise<SteamCollectionSummary[]> => {
+  const tags = await fetchCollectionTags();
+  return tags.map((tag) => {
+    const collection = COLLECTIONS_WITH_FLOAT_BY_NAME.get(tag.name.toLowerCase());
+    const collectionId = rememberCollectionId(tag.tag, collection?.id ?? null);
+    return { ...tag, collectionId };
+  });
+};
+
+const fetchEntireCollection = async (options: {
+  collectionTag: string;
+  rarity?: keyof typeof RARITY_TO_TAG;
+}): Promise<SearchItem[]> => {
+  const pageSize = 100;
+  const items: SearchItem[] = [];
+  let start = 0;
+  let total = 0;
+
+  while (true) {
+    const { items: pageItems, total: totalCount } = await searchByCollection({
+      collectionTag: options.collectionTag,
+      rarity: options.rarity,
+      start,
+      count: pageSize,
+      normalOnly: true,
+    });
+
+    if (!items.length) total = totalCount;
+    if (!pageItems.length) break;
+
+    items.push(...pageItems);
+    start += pageItems.length;
+
+    if (start >= totalCount || pageItems.length < pageSize) break;
+    if (start >= 600) break; // safety guard against runaway pagination
+  }
+
+  return items;
+};
+
+export interface CollectionTargetExterior {
+  exterior: Exterior;
+  marketHashName: string;
+  price?: number | null;
+  minFloat?: number;
+  maxFloat?: number;
+}
+
+export interface CollectionTargetSummary {
+  baseName: string;
+  exteriors: CollectionTargetExterior[];
+}
+
+export interface CollectionTargetsResult {
+  collectionTag: string;
+  collectionId: string | null;
+  targets: CollectionTargetSummary[];
+}
+
+export const fetchCollectionTargets = async (
+  collectionTag: string,
+): Promise<CollectionTargetsResult> => {
+  const items = await fetchEntireCollection({ collectionTag, rarity: "Covert" });
+  const grouped = new Map<string, CollectionTargetSummary>();
+  const baseNames: string[] = [];
+
+  for (const item of items) {
+    const exterior = parseMarketHashExterior(item.market_hash_name);
+    const baseName = baseFromMarketHash(item.market_hash_name);
+    const floats = COVERT_FLOAT_BY_BASENAME.get(baseName);
+
+    let entry = grouped.get(baseName);
+    if (!entry) {
+      entry = { baseName, exteriors: [] };
+      grouped.set(baseName, entry);
+      baseNames.push(baseName);
+    }
+
+    entry.exteriors.push({
+      exterior,
+      marketHashName: item.market_hash_name,
+      price: item.price,
+      minFloat: floats?.minFloat,
+      maxFloat: floats?.maxFloat,
+    });
+  }
+
+  let collectionId = findCollectionIdByTag(collectionTag);
+  if (collectionId == null) {
+    collectionId = rememberCollectionId(
+      collectionTag,
+      guessCollectionIdByBaseNames(baseNames),
+    );
+  }
+
+  return {
+    collectionTag,
+    collectionId,
+    targets: Array.from(grouped.values()),
+  };
+};
+
+export interface CollectionInputSummary {
+  baseName: string;
+  marketHashName: string;
+  exterior: Exterior;
+  price?: number | null;
+}
+
+export interface CollectionInputsResult {
+  collectionTag: string;
+  collectionId: string | null;
+  inputs: CollectionInputSummary[];
+}
+
+export const fetchCollectionInputs = async (
+  collectionTag: string,
+): Promise<CollectionInputsResult> => {
+  const items = await fetchEntireCollection({
+    collectionTag,
+    rarity: "Classified",
+  });
+
+  const inputs: CollectionInputSummary[] = items.map((item) => ({
+    baseName: baseFromMarketHash(item.market_hash_name),
+    marketHashName: item.market_hash_name,
+    exterior: parseMarketHashExterior(item.market_hash_name),
+    price: item.price,
+  }));
+
+  let collectionId = findCollectionIdByTag(collectionTag);
+  if (collectionId == null && inputs.length) {
+    collectionId = rememberCollectionId(
+      collectionTag,
+      guessCollectionIdByBaseNames(inputs.map((input) => input.baseName)),
+    );
+  }
+
+  return { collectionTag, collectionId, inputs };
+};
 
 export const calculateTradeup = async (
   payload: TradeupRequestPayload,

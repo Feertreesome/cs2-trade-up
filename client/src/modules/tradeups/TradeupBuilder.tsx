@@ -8,13 +8,32 @@ const formatNumber = (value: number, digits = 2) =>
 const formatPercent = (value: number) =>
   Number.isFinite(value) ? `${(value * 100).toFixed(2)}%` : "—";
 
+const EXTERIOR_SHORT: Record<string, string> = {
+  "Factory New": "FN",
+  "Minimal Wear": "MW",
+  "Field-Tested": "FT",
+  "Well-Worn": "WW",
+  "Battle-Scarred": "BS",
+};
+
+const shortExterior = (exterior: string) => EXTERIOR_SHORT[exterior] ?? exterior;
+
 export default function TradeupBuilder() {
   const {
-    collections,
-    loadingCollections,
-    collectionError,
-    selectedCollections,
-    toggleCollection,
+    catalogCollections,
+    steamCollections,
+    loadSteamCollections,
+    loadingSteamCollections,
+    steamCollectionError,
+    activeCollectionTag,
+    selectCollection,
+    collectionTargets,
+    loadingTargets,
+    targetsError,
+    selectedTarget,
+    selectTarget,
+    inputsLoading,
+    inputsError,
     rows,
     updateRow,
     buyerFeePercent,
@@ -64,22 +83,38 @@ export default function TradeupBuilder() {
       <hr className="border-secondary" />
 
       <section>
-        <h3 className="h5">1. Выбор коллекций</h3>
-        {loadingCollections && <div className="text-muted">Загрузка коллекций…</div>}
-        {collectionError && <div className="text-danger">{collectionError}</div>}
-        {!loadingCollections && !collectionError && (
-          <div className="tradeup-collections">
-            {collections.map((collection) => (
-              <label key={collection.id} className="form-check-label">
-                <input
-                  type="checkbox"
-                  className="form-check-input me-2"
-                  checked={selectedCollections.includes(collection.id)}
-                  onChange={() => toggleCollection(collection.id)}
-                />
-                {collection.name}
-              </label>
-            ))}
+        <h3 className="h5">1. Выбор коллекции</h3>
+        <div className="d-flex flex-wrap gap-2 align-items-center mb-2">
+          <button
+            type="button"
+            className="btn btn-outline-light btn-sm"
+            onClick={() => loadSteamCollections()}
+            disabled={loadingSteamCollections}
+          >
+            {loadingSteamCollections ? "Загрузка…" : "Get all collections"}
+          </button>
+          {steamCollections.length === 0 && !loadingSteamCollections && (
+            <span className="text-muted small">Нажмите кнопку, чтобы получить список коллекций.</span>
+          )}
+        </div>
+        {steamCollectionError && <div className="text-danger mb-2">{steamCollectionError}</div>}
+        {steamCollections.length > 0 && (
+          <div className="tradeup-collections-list">
+            {steamCollections.map((collection) => {
+              const isActive = collection.tag === activeCollectionTag;
+              const supported = Boolean(collection.collectionId);
+              return (
+                <button
+                  type="button"
+                  key={collection.tag}
+                  className={`btn btn-sm ${isActive ? "btn-primary" : "btn-outline-light"}`}
+                  onClick={() => selectCollection(collection.tag)}
+                >
+                  {collection.name}
+                  {!supported && <span className="ms-2 badge text-bg-warning">нет float</span>}
+                </button>
+              );
+            })}
           </div>
         )}
         {selectedCollectionDetails.length > 0 && (
@@ -106,7 +141,58 @@ export default function TradeupBuilder() {
       <hr className="border-secondary" />
 
       <section>
-        <h3 className="h5">2. Слот входа</h3>
+        <h3 className="h5">2. Целевой скин</h3>
+        {!activeCollectionTag && (
+          <div className="text-muted">Сначала выберите коллекцию.</div>
+        )}
+        {targetsError && <div className="text-danger">{targetsError}</div>}
+        {loadingTargets && <div className="text-muted">Загрузка скинов…</div>}
+        {activeCollectionTag && !loadingTargets && collectionTargets.length === 0 && !targetsError && (
+          <div className="text-muted">Для этой коллекции не найдены Covert-скины.</div>
+        )}
+        {collectionTargets.length > 0 && (
+          <div className="tradeup-targets">
+            {collectionTargets.map((target) => (
+              <div key={target.baseName} className="tradeup-target card bg-secondary-subtle text-dark p-2">
+                <div className="fw-semibold">{target.baseName}</div>
+                <div className="tradeup-target-exteriors d-flex flex-wrap gap-2 mt-2">
+                  {target.exteriors.map((option) => {
+                    const isSelected =
+                      selectedTarget?.collectionTag === activeCollectionTag &&
+                      selectedTarget?.marketHashName === option.marketHashName;
+                    const floatHint =
+                      option.minFloat != null && option.maxFloat != null
+                        ? `${option.minFloat.toFixed(3)}-${option.maxFloat.toFixed(3)}`
+                        : null;
+                    return (
+                      <button
+                        type="button"
+                        key={option.marketHashName}
+                        className={`btn btn-sm ${isSelected ? "btn-primary" : "btn-outline-dark"}`}
+                        onClick={() => {
+                          if (activeCollectionTag) {
+                            selectTarget(activeCollectionTag, target.baseName, option);
+                          }
+                        }}
+                      >
+                        {shortExterior(option.exterior)}
+                        {floatHint && <span className="ms-1 small">({floatHint})</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        {inputsLoading && <div className="text-muted mt-2">Подбор входов…</div>}
+        {inputsError && <div className="text-danger mt-2">{inputsError}</div>}
+      </section>
+
+      <hr className="border-secondary" />
+
+      <section>
+        <h3 className="h5">3. Слот входа</h3>
         <div className="table-responsive">
           <table className="table table-dark table-sm align-middle tradeup-table">
             <thead>
@@ -143,7 +229,7 @@ export default function TradeupBuilder() {
                         onChange={(event) => updateRow(index, { collectionId: event.target.value })}
                       >
                         <option value="">—</option>
-                        {collections.map((collection) => (
+                        {catalogCollections.map((collection) => (
                           <option key={collection.id} value={collection.id}>
                             {collection.name}
                           </option>
@@ -201,7 +287,7 @@ export default function TradeupBuilder() {
 
       {calculation && (
         <section className="mt-4">
-          <h3 className="h5">3. Результаты</h3>
+          <h3 className="h5">4. Результаты</h3>
           <div className="tradeup-results card bg-secondary-subtle text-dark p-3">
             <div>Ожидаемый возврат (net): <strong>${formatNumber(calculation.totalOutcomeNet)}</strong></div>
             <div>

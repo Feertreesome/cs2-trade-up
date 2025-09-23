@@ -13,6 +13,45 @@ export interface TradeupCollection {
   covert: CovertFloatRange[];
 }
 
+export interface SteamCollectionSummary {
+  tag: string;
+  name: string;
+  count: number;
+  collectionId: string | null;
+}
+
+export interface CollectionTargetExterior {
+  exterior: Exterior;
+  marketHashName: string;
+  price?: number | null;
+  minFloat?: number;
+  maxFloat?: number;
+}
+
+export interface CollectionTargetSummary {
+  baseName: string;
+  exteriors: CollectionTargetExterior[];
+}
+
+export interface CollectionTargetsResponse {
+  collectionTag: string;
+  collectionId: string | null;
+  targets: CollectionTargetSummary[];
+}
+
+export interface CollectionInputSummary {
+  baseName: string;
+  marketHashName: string;
+  exterior: Exterior;
+  price?: number | null;
+}
+
+export interface CollectionInputsResponse {
+  collectionTag: string;
+  collectionId: string | null;
+  inputs: CollectionInputSummary[];
+}
+
 export interface TradeupInputPayload {
   marketHashName: string;
   float: number;
@@ -72,6 +111,31 @@ export async function fetchTradeupCollections() {
   }
   const payload = (await response.json()) as { collections: TradeupCollection[] };
   return payload.collections;
+}
+
+export async function fetchSteamCollections() {
+  const response = await fetch("/api/tradeups/collections/steam");
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+  const payload = (await response.json()) as { collections: SteamCollectionSummary[] };
+  return payload.collections;
+}
+
+export async function fetchCollectionTargets(collectionTag: string) {
+  const response = await fetch(`/api/tradeups/collections/${encodeURIComponent(collectionTag)}/targets`);
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+  return (await response.json()) as CollectionTargetsResponse;
+}
+
+export async function fetchCollectionInputs(collectionTag: string) {
+  const response = await fetch(`/api/tradeups/collections/${encodeURIComponent(collectionTag)}/inputs`);
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+  return (await response.json()) as CollectionInputsResponse;
 }
 
 export async function requestTradeupCalculation(payload: TradeupCalculationPayload) {

@@ -58,3 +58,13 @@ export const COLLECTIONS_WITH_FLOAT: CollectionFloatCatalogEntry[] = [
 export const COLLECTIONS_WITH_FLOAT_MAP = new Map(
   COLLECTIONS_WITH_FLOAT.map((entry) => [entry.id, entry] as const),
 );
+
+export const COLLECTIONS_WITH_FLOAT_BY_NAME = new Map(
+  COLLECTIONS_WITH_FLOAT.map((entry) => [entry.name.toLowerCase(), entry] as const),
+);
+
+export const COVERT_FLOAT_BY_BASENAME = new Map(
+  COLLECTIONS_WITH_FLOAT.flatMap((entry) =>
+    entry.covert.map((covert) => [covert.baseName, covert] as const),
+  ),
+);
