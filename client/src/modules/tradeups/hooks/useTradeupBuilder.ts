@@ -48,6 +48,17 @@ const EXTERIOR_FLOAT_RANGES: Record<Exterior, { min: number; max: number }> = {
   "Battle-Scarred": { min: 0.45, max: 1 },
 };
 
+const clampFloat = (value: number) => Math.min(1, Math.max(0, value));
+
+const exteriorMidpoint = (exterior: Exterior) => {
+  const range = EXTERIOR_FLOAT_RANGES[exterior];
+  if (!range) return null;
+  return (range.min + range.max) / 2;
+};
+
+const formatFloatValue = (value: number | null | undefined) =>
+  value == null ? "" : clampFloat(value).toFixed(5);
+
 const STEAM_TAG_VALUE_PREFIX = "steam-tag:";
 
 interface CollectionSelectOption {
@@ -55,14 +66,6 @@ interface CollectionSelectOption {
   label: string;
   supported: boolean;
 }
-
-/** Возвращает типовой float для выбранного износа (центр диапазона). */
-const defaultFloatForExterior = (exterior: Exterior) => {
-  const range = EXTERIOR_FLOAT_RANGES[exterior];
-  if (!range) return "";
-  const midpoint = (range.min + range.max) / 2;
-  return midpoint.toFixed(5);
-};
 
 const buildCollectionSelectValue = (
   collectionId?: string | null,
@@ -450,18 +453,59 @@ export default function useTradeupBuilder() {
 
   /** Заполняет таблицу входов данными из коллекции и запрашивает цены при необходимости. */
   const applyInputsToRows = React.useCallback(
-    async (collectionTag: string, collectionId: string | null, inputs: CollectionInputSummary[]) => {
+    async (
+      collectionTag: string,
+      collectionId: string | null,
+      inputs: CollectionInputSummary[],
+      options?: {
+        target?: {
+          exterior: Exterior;
+          minFloat?: number | null;
+          maxFloat?: number | null;
+        };
+      },
+    ) => {
       const effectiveCollectionValue = buildCollectionSelectValue(
         collectionId ?? selectedCollectionId,
         collectionTag,
       );
-      const trimmed = inputs.slice(0, 10);
-      const filled: TradeupInputFormRow[] = trimmed.map((input) => ({
-        marketHashName: input.marketHashName,
-        collectionId: effectiveCollectionValue,
-        float: defaultFloatForExterior(input.exterior),
-        buyerPrice: input.price != null ? input.price.toFixed(2) : "",
-      }));
+
+      const desiredFloat = (() => {
+        const target = options?.target;
+        if (!target) return null;
+        if (target.minFloat != null && target.maxFloat != null && target.maxFloat > target.minFloat) {
+          return clampFloat((target.minFloat + target.maxFloat) / 2);
+        }
+        const midpoint = exteriorMidpoint(target.exterior);
+        return midpoint != null ? clampFloat(midpoint) : null;
+      })();
+
+      const sortedInputs = desiredFloat != null
+        ? [...inputs].sort((a, b) => {
+            const aMid = exteriorMidpoint(a.exterior) ?? desiredFloat;
+            const bMid = exteriorMidpoint(b.exterior) ?? desiredFloat;
+            const diff = Math.abs(aMid - desiredFloat) - Math.abs(bMid - desiredFloat);
+            if (diff !== 0) return diff;
+            return a.marketHashName.localeCompare(b.marketHashName, "ru");
+          })
+        : inputs;
+
+      const trimmed = sortedInputs.slice(0, 10);
+      const offsetStep = desiredFloat != null && trimmed.length > 1 ? 0.00005 : 0;
+      const centerIndex = (trimmed.length - 1) / 2;
+      const filled: TradeupInputFormRow[] = trimmed.map((input, index) => {
+        const baseline = desiredFloat ?? exteriorMidpoint(input.exterior) ?? null;
+        const adjusted =
+          baseline == null
+            ? null
+            : clampFloat(baseline + offsetStep * (index - centerIndex));
+        return {
+          marketHashName: input.marketHashName,
+          collectionId: effectiveCollectionValue,
+          float: formatFloatValue(adjusted),
+          buyerPrice: input.price != null ? input.price.toFixed(2) : "",
+        };
+      });
       while (filled.length < 10) filled.push(makeEmptyRow());
       setRows(filled);
 
@@ -522,7 +566,13 @@ export default function useTradeupBuilder() {
           });
         }
 
-        await applyInputsToRows(collectionTag, resolvedCollectionId, response.inputs);
+        await applyInputsToRows(collectionTag, resolvedCollectionId, response.inputs, {
+          target: {
+            exterior: exterior.exterior,
+            minFloat: exterior.minFloat ?? null,
+            maxFloat: exterior.maxFloat ?? null,
+          },
+        });
       } catch (error) {
         // handled in loadInputsForCollection
       }
