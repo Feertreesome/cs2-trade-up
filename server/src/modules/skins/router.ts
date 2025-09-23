@@ -30,6 +30,8 @@ const getTotalsCached = async (
   return fresh;
 };
 
+let schemaCache: any | null = null;
+
 const handleError = (res: any, error: unknown) => {
   const status = (error as AxiosError)?.response?.status;
   if (status === 429) {
@@ -59,6 +61,22 @@ export const createSkinsRouter = (): Router => {
       const { perRarity, sum } = await getTotalsCached(rarityList, normalOnly);
       return response.json({ rarities: rarityList, totals: perRarity, sum });
     } catch (error) {
+      return handleError(response, error);
+    }
+  });
+
+  router.get("/schema", async (_request, response) => {
+    try {
+      if (!schemaCache) {
+        const filePath = path.join(process.cwd(), "server", "data", "schema.json");
+        const raw = await fs.readFile(filePath, "utf8");
+        schemaCache = JSON.parse(raw);
+      }
+      return response.json(schemaCache);
+    } catch (error: any) {
+      if (error?.code === "ENOENT") {
+        return response.status(404).json({ error: "schema.json not found" });
+      }
       return handleError(response, error);
     }
   });

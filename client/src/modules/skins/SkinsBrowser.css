@@ -37,6 +37,7 @@
   overflow-y: auto;
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
   padding: 24px;
+  color: #e3ecff;
 }
 
 .sbc-modal-header {
@@ -83,6 +84,21 @@
   border-radius: 10px;
   padding: 16px;
   flex: 1;
+  color: inherit;
+}
+
+.sbc-modal-card--info {
+  flex: 1.4;
+}
+
+.sbc-modal-card--list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sbc-modal-card--full {
+  margin-top: 16px;
 }
 
 .sbc-modal-card h4 {
@@ -108,6 +124,28 @@
   margin-bottom: 2px;
 }
 
+.sbc-modal-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.sbc-modal-list li {
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgba(26, 36, 54, 0.6);
+}
+
+.sbc-modal-list li.active {
+  background: rgba(79, 195, 247, 0.18);
+  color: #4fc3f7;
+  font-weight: 600;
+}
+
 .sbc-modal-price {
   font-size: 18px;
   font-weight: 600;
@@ -131,7 +169,7 @@
 }
 
 .sbc-modal-table thead th {
-  color: var(--muted);
+  color: #9fb8d8;
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -146,7 +184,7 @@
 }
 
 .sbc-modal-muted {
-  color: var(--muted);
+  color: #9fb2cc;
   font-size: 12px;
 }
 
