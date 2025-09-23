@@ -470,7 +470,43 @@ export default function useTradeupBuilder() {
         collectionTag,
       );
 
+      const targetRange = (() => {
+        const target = options?.target;
+        if (!target) return null;
+
+        const bucket = EXTERIOR_FLOAT_RANGES[target.exterior];
+        const clampToBounds = (value: number) => clampFloat(value);
+
+        const resolveCatalogRange = () => {
+          if (target.minFloat == null && target.maxFloat == null) return null;
+          const min =
+            target.minFloat != null ? clampToBounds(target.minFloat) : 0;
+          const max =
+            target.maxFloat != null ? clampToBounds(target.maxFloat) : 1;
+          const normalizedMin = Math.min(min, max);
+          const normalizedMax = Math.max(min, max);
+          return { min: normalizedMin, max: normalizedMax };
+        };
+
+        if (bucket) {
+          const bucketMin = clampToBounds(bucket.min);
+          const bucketMax = clampToBounds(bucket.max);
+          const catalogRange = resolveCatalogRange();
+          const min = Math.max(bucketMin, catalogRange?.min ?? bucketMin);
+          const max = Math.min(bucketMax, catalogRange?.max ?? bucketMax);
+          if (min <= max) {
+            return { min, max };
+          }
+          return { min: bucketMin, max: bucketMax };
+        }
+
+        return resolveCatalogRange();
+      })();
+
       const desiredFloat = (() => {
+        if (targetRange) {
+          return clampFloat((targetRange.min + targetRange.max) / 2);
+        }
         const target = options?.target;
         if (!target) return null;
         if (target.minFloat != null && target.maxFloat != null && target.maxFloat > target.minFloat) {
@@ -493,12 +529,20 @@ export default function useTradeupBuilder() {
       const trimmed = sortedInputs.slice(0, 10);
       const offsetStep = desiredFloat != null && trimmed.length > 1 ? 0.00005 : 0;
       const centerIndex = (trimmed.length - 1) / 2;
+      const clampWithinTargetRange = (value: number) => {
+        if (!targetRange) return clampFloat(value);
+        if (value < targetRange.min) return clampFloat(targetRange.min);
+        if (value > targetRange.max) return clampFloat(targetRange.max);
+        return clampFloat(value);
+      };
+
       const filled: TradeupInputFormRow[] = trimmed.map((input, index) => {
-        const baseline = desiredFloat ?? exteriorMidpoint(input.exterior) ?? null;
+        const baselineRaw = desiredFloat ?? exteriorMidpoint(input.exterior) ?? null;
+        const baseline = baselineRaw == null ? null : clampWithinTargetRange(baselineRaw);
         const adjusted =
           baseline == null
             ? null
-            : clampFloat(baseline + offsetStep * (index - centerIndex));
+            : clampWithinTargetRange(baseline + offsetStep * (index - centerIndex));
         return {
           marketHashName: input.marketHashName,
           collectionId: effectiveCollectionValue,
