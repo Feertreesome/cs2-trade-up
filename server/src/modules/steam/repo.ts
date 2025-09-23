@@ -10,6 +10,7 @@ import { RATE_MAX_MS, RATE_MIN_MS, START_RATE_MS } from "../../config";
 const APP_ID = 730;
 const PRICE_URL = "https://steamcommunity.com/market/priceoverview/";
 const SEARCH_URL = "https://steamcommunity.com/market/search/render/";
+const APP_FILTERS_URL = `https://steamcommunity.com/market/appfilters/${APP_ID}`;
 const LISTING_URL = (marketHashName: string) =>
   `https://steamcommunity.com/market/listings/${APP_ID}/${encodeURIComponent(marketHashName)}/render`;
 
@@ -54,6 +55,24 @@ interface SearchRenderResponse {
     };
     sale_price_text: string;
   }>;
+}
+
+interface SearchRenderFacetTag {
+  tag: string;
+  localized_name?: string;
+  localized_tag_name?: string;
+  localized_count?: string;
+}
+
+interface SearchRenderFacet {
+  localized_name?: string;
+  tags?: Record<string, SearchRenderFacetTag>;
+}
+
+interface AppFiltersResponse {
+  success?: number | boolean | string;
+  message?: string;
+  facets?: Record<string, SearchRenderFacet>;
 }
 
 /** Формат ответа listings/.../render (для наших целей достаточно total_count) */
@@ -276,6 +295,12 @@ export interface SearchItem {
   price: number | null;
 }
 
+export interface SteamCollectionTag {
+  tag: string;
+  name: string;
+  count: number;
+}
+
 /**
  * Поиск предметов по редкости через search/render.
  * Используем сортировку по name asc для стабильной пагинации.
@@ -314,6 +339,100 @@ export const searchByRarity = async ({
   const items: SearchItem[] = (payload?.results ?? []).map((result) => ({
     market_hash_name: result.hash_name,
     // Steam иногда возвращает sell_listings строкой, нормализуем в число
+    sell_listings: Number.parseInt(String(result.sell_listings ?? 0), 10) || 0,
+    price: parseSteamPriceText(result.sell_price_text ?? ""),
+  }));
+
+  const typed = { total, items };
+  memoryCache.set(cacheKey, typed);
+  return typed;
+};
+
+const parseFacetCount = (value?: string): number => {
+  if (!value) return 0;
+  const digits = value.replace(/[^0-9]/g, "");
+  const parsed = Number.parseInt(digits, 10);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const fetchAppFilters = async (): Promise<Record<string, SearchRenderFacet>> => {
+  const cacheKey = "appfilters";
+  const cached = memoryCache.get(cacheKey);
+  if (cached) return cached;
+
+  const params = new URLSearchParams({ norender: "1" });
+  const url = `${APP_FILTERS_URL}?${params.toString()}`;
+
+  const payload = await steamGetData<AppFiltersResponse>(url, {
+    headers: { Referer: "https://steamcommunity.com/market/" },
+  });
+
+  const isSuccess = payload?.success === true || payload?.success === 1 || payload?.success === "1";
+  if (!isSuccess) {
+    const errorMessage = payload?.message ?? "Failed to fetch market app filters";
+    throw new Error(errorMessage);
+  }
+
+  const facets = payload?.facets ?? {};
+  memoryCache.set(cacheKey, facets);
+  return facets;
+};
+
+export const fetchCollectionTags = async (): Promise<SteamCollectionTag[]> => {
+  const facets = await fetchAppFilters();
+  const facet = facets?.["730_ItemSet"] ?? facets?.category_730_ItemSet;
+  if (!facet?.tags) return [];
+
+  return Object.entries(facet.tags).map(([tagId, tag]) => {
+    const fallbackTag = tagId.startsWith("tag_") ? tagId : `tag_${tagId}`;
+    const resolvedTag = tag.tag || fallbackTag;
+    return {
+      tag: resolvedTag,
+      name: tag.localized_name ?? tag.localized_tag_name ?? resolvedTag,
+      count: parseFacetCount(tag.localized_count),
+    } satisfies SteamCollectionTag;
+  });
+};
+
+export const searchByCollection = async ({
+  collectionTag,
+  rarity,
+  start = 0,
+  count = 30,
+  normalOnly = true,
+}: {
+  collectionTag: string;
+  rarity?: keyof typeof RARITY_TO_TAG;
+  start?: number;
+  count?: number;
+  normalOnly?: boolean;
+}): Promise<{ total: number; items: SearchItem[] }> => {
+  const params = new URLSearchParams({
+    appid: String(APP_ID),
+    norender: "1",
+    start: String(start),
+    count: String(count),
+    sort_column: "name",
+    sort_dir: "asc",
+  });
+
+  if (normalOnly) {
+    params.append("category_730_Quality[]", "tag_normal");
+  }
+  params.append("category_730_ItemSet[]", collectionTag);
+  if (rarity) {
+    params.append("category_730_Rarity[]", RARITY_TO_TAG[rarity]);
+  }
+
+  const url = `${SEARCH_URL}?${params.toString()}`;
+  const cacheKey = `collection:${url}`;
+  const cached = memoryCache.get(cacheKey);
+  if (cached) return cached;
+
+  const payload = await steamGetData<SearchRenderResponse>(url);
+  const total = payload?.total_count ?? 0;
+  const items: SearchItem[] = (payload?.results ?? []).map((result) => ({
+    market_hash_name: result.hash_name,
     sell_listings: Number.parseInt(String(result.sell_listings ?? 0), 10) || 0,
     price: parseSteamPriceText(result.sell_price_text ?? ""),
   }));
