@@ -380,14 +380,18 @@ const fetchAppFilters = async (): Promise<Record<string, SearchRenderFacet>> => 
 
 export const fetchCollectionTags = async (): Promise<SteamCollectionTag[]> => {
   const facets = await fetchAppFilters();
-  const facet = facets?.category_730_ItemSet;
+  const facet = facets?.["730_ItemSet"] ?? facets?.category_730_ItemSet;
   if (!facet?.tags) return [];
 
-  return Object.values(facet.tags).map((tag) => ({
-    tag: tag.tag,
-    name: tag.localized_name ?? tag.localized_tag_name ?? tag.tag,
-    count: parseFacetCount(tag.localized_count),
-  }));
+  return Object.entries(facet.tags).map(([tagId, tag]) => {
+    const fallbackTag = tagId.startsWith("tag_") ? tagId : `tag_${tagId}`;
+    const resolvedTag = tag.tag || fallbackTag;
+    return {
+      tag: resolvedTag,
+      name: tag.localized_name ?? tag.localized_tag_name ?? resolvedTag,
+      count: parseFacetCount(tag.localized_count),
+    } satisfies SteamCollectionTag;
+  });
 };
 
 export const searchByCollection = async ({
