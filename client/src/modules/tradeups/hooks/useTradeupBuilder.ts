@@ -616,6 +616,10 @@ export default function useTradeupBuilder() {
         resolvedId = selectedCollectionId;
       }
 
+      if (!resolvedId && row.collectionId) {
+        resolvedId = row.collectionId;
+      }
+
       if (!resolvedName && resolvedId) {
         resolvedName = catalogMap.get(resolvedId)?.name ?? resolvedName;
       }
