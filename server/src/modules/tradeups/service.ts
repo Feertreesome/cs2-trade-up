@@ -13,6 +13,7 @@ import {
   type CollectionFloatCatalogEntry,
   type CovertFloatRange,
 } from "../../../../data/CollectionsWithFloat";
+import { STEAM_MAX_AUTO_LIMIT, STEAM_PAGE_SIZE } from "../../config";
 import {
   fetchCollectionTags,
   getPriceUSD,
@@ -273,17 +274,22 @@ const fetchEntireCollection = async (options: {
   collectionTag: string;
   rarity?: keyof typeof RARITY_TO_TAG;
 }): Promise<SearchItem[]> => {
-  const pageSize = 100;
+  const pageSize = STEAM_PAGE_SIZE;
+  const hardLimit = STEAM_MAX_AUTO_LIMIT;
   const items: SearchItem[] = [];
   let start = 0;
   let total = 0;
 
   while (true) {
+    const remaining = hardLimit - start;
+    if (remaining <= 0) break;
+    const requestCount = Math.min(pageSize, remaining);
+
     const { items: pageItems, total: totalCount } = await searchByCollection({
       collectionTag: options.collectionTag,
       rarity: options.rarity,
       start,
-      count: pageSize,
+      count: requestCount,
       normalOnly: true,
     });
 
@@ -293,8 +299,8 @@ const fetchEntireCollection = async (options: {
     items.push(...pageItems);
     start += pageItems.length;
 
-    if (start >= totalCount || pageItems.length < pageSize) break;
-    if (start >= 600) break; // safety guard against runaway pagination
+    if (start >= totalCount || start >= hardLimit || pageItems.length < requestCount) break;
+    if (start >= Math.min(hardLimit, 600)) break; // safety guard against runaway pagination
   }
 
   return items;
