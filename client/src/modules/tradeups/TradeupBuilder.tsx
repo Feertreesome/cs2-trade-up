@@ -25,8 +25,8 @@ const shortExterior = (exterior: string) => EXTERIOR_SHORT[exterior] ?? exterior
 
 export default function TradeupBuilder() {
   const {
-    catalogCollections,
     steamCollections,
+    collectionOptions,
     loadSteamCollections,
     loadingSteamCollections,
     steamCollectionError,
@@ -237,9 +237,10 @@ export default function TradeupBuilder() {
                         onChange={(event) => updateRow(index, { collectionId: event.target.value })}
                       >
                         <option value="">—</option>
-                        {catalogCollections.map((collection) => (
-                          <option key={collection.id} value={collection.id}>
-                            {collection.name}
+                        {collectionOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                            {!option.supported ? " (нет float)" : ""}
                           </option>
                         ))}
                       </select>

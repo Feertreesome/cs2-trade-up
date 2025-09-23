@@ -22,6 +22,10 @@ import {
 
 export interface TradeupInputFormRow {
   marketHashName: string;
+  /**
+   * Значение селекта коллекций. Может содержать как внутренний идентификатор коллекции,
+   * так и fallback на steam-tag (если float-справочник пока не знает эту коллекцию).
+   */
   collectionId: string;
   float: string;
   buyerPrice: string;
@@ -44,6 +48,14 @@ const EXTERIOR_FLOAT_RANGES: Record<Exterior, { min: number; max: number }> = {
   "Battle-Scarred": { min: 0.45, max: 1 },
 };
 
+const STEAM_TAG_VALUE_PREFIX = "steam-tag:";
+
+interface CollectionSelectOption {
+  value: string;
+  label: string;
+  supported: boolean;
+}
+
 /** Возвращает типовой float для выбранного износа (центр диапазона). */
 const defaultFloatForExterior = (exterior: Exterior) => {
   const range = EXTERIOR_FLOAT_RANGES[exterior];
@@ -51,6 +63,26 @@ const defaultFloatForExterior = (exterior: Exterior) => {
   const midpoint = (range.min + range.max) / 2;
   return midpoint.toFixed(5);
 };
+
+const buildCollectionSelectValue = (
+  collectionId?: string | null,
+  collectionTag?: string | null,
+) => {
+  if (collectionId) return collectionId;
+  if (collectionTag) return `${STEAM_TAG_VALUE_PREFIX}${collectionTag}`;
+  return "";
+};
+
+const readTagFromCollectionValue = (value: string) =>
+  value.startsWith(STEAM_TAG_VALUE_PREFIX)
+    ? value.slice(STEAM_TAG_VALUE_PREFIX.length)
+    : null;
+
+interface CollectionValueMeta {
+  collectionId: string | null;
+  tag: string | null;
+  name: string;
+}
 
 interface SelectedTarget {
   collectionTag: string;
@@ -110,11 +142,65 @@ export default function useTradeupBuilder() {
     return new Map(catalogCollections.map((collection) => [collection.id, collection] as const));
   }, [catalogCollections]);
 
+  const collectionValueMeta = React.useMemo(() => {
+    const meta = new Map<string, CollectionValueMeta>();
+    for (const entry of steamCollections) {
+      const value = buildCollectionSelectValue(entry.collectionId, entry.tag);
+      if (value) {
+        meta.set(value, { collectionId: entry.collectionId ?? null, tag: entry.tag, name: entry.name });
+      }
+      if (entry.collectionId) {
+        meta.set(entry.collectionId, {
+          collectionId: entry.collectionId,
+          tag: entry.tag,
+          name: entry.name,
+        });
+      }
+    }
+    for (const entry of catalogCollections) {
+      if (!meta.has(entry.id)) {
+        meta.set(entry.id, { collectionId: entry.id, tag: null, name: entry.name });
+      }
+    }
+    return meta;
+  }, [steamCollections, catalogCollections]);
+
+  const collectionOptions: CollectionSelectOption[] = React.useMemo(() => {
+    const map = new Map<string, CollectionSelectOption>();
+    const addOption = (value: string, label: string, supported: boolean) => {
+      if (!value) return;
+      const existing = map.get(value);
+      if (existing) {
+        if (!existing.supported && supported) {
+          map.set(value, { value, label, supported });
+        }
+        return;
+      }
+      map.set(value, { value, label, supported });
+    };
+
+    for (const entry of steamCollections) {
+      const value = buildCollectionSelectValue(entry.collectionId, entry.tag);
+      addOption(value, entry.name, Boolean(entry.collectionId && catalogMap.has(entry.collectionId)));
+    }
+
+    for (const entry of catalogCollections) {
+      addOption(entry.id, entry.name, true);
+    }
+
+    return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label, "ru"));
+  }, [steamCollections, catalogCollections, catalogMap]);
+
   const selectedCollectionDetails = React.useMemo(() => {
     if (!selectedCollectionId) return [];
     const entry = catalogMap.get(selectedCollectionId);
     return entry ? [entry] : [];
   }, [catalogMap, selectedCollectionId]);
+
+  const steamCollectionsByTag = React.useMemo(
+    () => new Map(steamCollections.map((entry) => [entry.tag, entry] as const)),
+    [steamCollections],
+  );
 
   /** Подтягивает живой список коллекций из Steam Community Market. */
   const loadSteamCollections = React.useCallback(async () => {
@@ -122,12 +208,39 @@ export default function useTradeupBuilder() {
       setSteamCollectionError(null);
       setLoadingSteamCollections(true);
       const list = await fetchSteamCollections();
-      setSteamCollections(list);
+      setSteamCollections((prev) => {
+        if (!prev.length) return list;
+        const previousByTag = new Map(prev.map((entry) => [entry.tag, entry] as const));
+        return list.map((entry) => {
+          const existing = previousByTag.get(entry.tag);
+          if (existing?.collectionId && !entry.collectionId) {
+            return { ...entry, collectionId: existing.collectionId };
+          }
+          return entry;
+        });
+      });
     } catch (error: any) {
       setSteamCollectionError(String(error?.message || error));
     } finally {
       setLoadingSteamCollections(false);
     }
+  }, []);
+
+  const rememberSteamCollectionId = React.useCallback((collectionTag: string, collectionId: string | null) => {
+    if (!collectionTag || !collectionId) return;
+    setSteamCollections((prev) => {
+      let updated = false;
+      const next = prev.map((entry) => {
+        if (entry.tag !== collectionTag) return entry;
+        if (entry.collectionId === collectionId) {
+          updated = true;
+          return entry;
+        }
+        updated = true;
+        return { ...entry, collectionId };
+      });
+      return updated ? next : prev;
+    });
   }, []);
 
   const activeTargets = React.useMemo(() => {
@@ -150,11 +263,18 @@ export default function useTradeupBuilder() {
 
       const steamEntry = steamCollections.find((entry) => entry.tag === collectionTag);
       const cachedCollectionId = targetsByCollection[collectionTag]?.collectionId;
-      setSelectedCollectionId(cachedCollectionId ?? steamEntry?.collectionId ?? null);
+      const initialCollectionId = cachedCollectionId ?? steamEntry?.collectionId ?? null;
+      setSelectedCollectionId(initialCollectionId ?? null);
+      if (initialCollectionId) {
+        rememberSteamCollectionId(collectionTag, initialCollectionId);
+      }
 
       if (targetsByCollection[collectionTag]) {
         const cached = targetsByCollection[collectionTag];
-        if (cached.collectionId) setSelectedCollectionId(cached.collectionId);
+        if (cached.collectionId) {
+          setSelectedCollectionId(cached.collectionId);
+          rememberSteamCollectionId(collectionTag, cached.collectionId);
+        }
         return;
       }
 
@@ -162,14 +282,17 @@ export default function useTradeupBuilder() {
         setLoadingTargets(true);
         const result = await fetchCollectionTargets(collectionTag);
         setTargetsByCollection((prev) => ({ ...prev, [collectionTag]: result }));
-        if (result.collectionId) setSelectedCollectionId(result.collectionId);
+        if (result.collectionId) {
+          setSelectedCollectionId(result.collectionId);
+          rememberSteamCollectionId(collectionTag, result.collectionId);
+        }
       } catch (error: any) {
         setTargetsError(String(error?.message || error));
       } finally {
         setLoadingTargets(false);
       }
     },
-    [steamCollections, targetsByCollection],
+    [rememberSteamCollectionId, steamCollections, targetsByCollection],
   );
 
   /** Загружает список Classified-входов и кеширует его по collectionTag. */
@@ -226,12 +349,15 @@ export default function useTradeupBuilder() {
 
   /** Заполняет таблицу входов данными из коллекции и запрашивает цены при необходимости. */
   const applyInputsToRows = React.useCallback(
-    async (collectionId: string | null, inputs: CollectionInputSummary[]) => {
-      const effectiveCollectionId = collectionId ?? selectedCollectionId ?? "";
+    async (collectionTag: string, collectionId: string | null, inputs: CollectionInputSummary[]) => {
+      const effectiveCollectionValue = buildCollectionSelectValue(
+        collectionId ?? selectedCollectionId,
+        collectionTag,
+      );
       const trimmed = inputs.slice(0, 10);
       const filled: TradeupInputFormRow[] = trimmed.map((input) => ({
         marketHashName: input.marketHashName,
-        collectionId: effectiveCollectionId,
+        collectionId: effectiveCollectionValue,
         float: defaultFloatForExterior(input.exterior),
         buyerPrice: input.price != null ? input.price.toFixed(2) : "",
       }));
@@ -281,6 +407,7 @@ export default function useTradeupBuilder() {
 
         if (resolvedCollectionId) {
           setSelectedCollectionId(resolvedCollectionId);
+          rememberSteamCollectionId(collectionTag, resolvedCollectionId);
           setTargetsByCollection((prev) => {
             const current = prev[collectionTag];
             if (!current || current.collectionId === resolvedCollectionId) return prev;
@@ -293,7 +420,7 @@ export default function useTradeupBuilder() {
           });
         }
 
-        await applyInputsToRows(resolvedCollectionId, response.inputs);
+        await applyInputsToRows(collectionTag, resolvedCollectionId, response.inputs);
       } catch (error) {
         // handled in loadInputsForCollection
       }
@@ -302,6 +429,7 @@ export default function useTradeupBuilder() {
       applyInputsToRows,
       catalogCollections,
       loadInputsForCollection,
+      rememberSteamCollectionId,
       selectedCollectionId,
       steamCollections,
       targetsByCollection,
@@ -360,7 +488,64 @@ export default function useTradeupBuilder() {
       setCalculationError("Trade-up требует ровно 10 входов");
       return;
     }
-    const rowCollectionIds = new Set(parsedRows.map((row) => row.collectionId).filter(Boolean));
+
+    const rowsWithResolved = parsedRows.map((row) => {
+      const meta = collectionValueMeta.get(row.collectionId);
+      const fallbackTag = meta?.tag ?? readTagFromCollectionValue(row.collectionId);
+      let resolvedId = meta?.collectionId ?? null;
+      let resolvedName = meta?.name ?? null;
+
+      if (!resolvedId && row.collectionId && catalogMap.has(row.collectionId)) {
+        resolvedId = row.collectionId;
+        resolvedName = resolvedName ?? catalogMap.get(row.collectionId)?.name ?? null;
+      }
+
+      if (!resolvedId && !row.collectionId && selectedCollectionId) {
+        resolvedId = selectedCollectionId;
+        resolvedName =
+          resolvedName ?? catalogMap.get(selectedCollectionId)?.name ?? resolvedName;
+      }
+
+      if (!resolvedId && fallbackTag) {
+        const steam = steamCollectionsByTag.get(fallbackTag);
+        if (steam?.collectionId) {
+          resolvedId = steam.collectionId;
+        }
+        resolvedName = resolvedName ?? steam?.name ?? resolvedName;
+      }
+
+      if (!resolvedName && resolvedId) {
+        resolvedName = catalogMap.get(resolvedId)?.name ?? resolvedName;
+      }
+
+      return {
+        ...row,
+        resolvedCollectionId: resolvedId,
+        resolvedCollectionName: resolvedName,
+        resolvedTag: fallbackTag,
+      };
+    });
+
+    const unresolvedRows = rowsWithResolved.filter((row) => !row.resolvedCollectionId);
+    if (unresolvedRows.length) {
+      const uniqueNames = Array.from(
+        new Set(
+          unresolvedRows.map((row) => row.resolvedCollectionName ?? row.collectionId || "неизвестно"),
+        ),
+      );
+      setCalculationError(
+        `Не удалось определить коллекцию для: ${uniqueNames
+          .map((name) => `"${name}"`)
+          .join(", ")}`,
+      );
+      return;
+    }
+
+    const rowCollectionIds = new Set(
+      rowsWithResolved
+        .map((row) => row.resolvedCollectionId)
+        .filter((value): value is string => Boolean(value)),
+    );
 
     if (rowCollectionIds.size > 1) {
       setCalculationError("Trade-up должен использовать предметы из одной коллекции");
@@ -376,14 +561,18 @@ export default function useTradeupBuilder() {
     }
 
     setSelectedCollectionId(resolvedCollectionId);
+    if (activeCollectionTag) {
+      rememberSteamCollectionId(activeCollectionTag, resolvedCollectionId);
+    }
+
     setCalculating(true);
     setCalculationError(null);
     try {
       const payload = {
-        inputs: parsedRows.map((row) => ({
+        inputs: rowsWithResolved.map((row) => ({
           marketHashName: row.marketHashName,
           float: row.float,
-          collectionId: row.collectionId || resolvedCollectionId,
+          collectionId: row.resolvedCollectionId ?? resolvedCollectionId,
           priceOverrideNet: Number.isFinite(row.buyerPrice)
             ? row.buyerPrice / buyerToNetRate
             : undefined,
@@ -399,11 +588,21 @@ export default function useTradeupBuilder() {
     } finally {
       setCalculating(false);
     }
-  }, [parsedRows, selectedCollectionId, buyerToNetRate]);
+  }, [
+    activeCollectionTag,
+    buyerToNetRate,
+    catalogMap,
+    collectionValueMeta,
+    parsedRows,
+    rememberSteamCollectionId,
+    selectedCollectionId,
+    steamCollectionsByTag,
+  ]);
 
   return {
     catalogCollections,
     steamCollections,
+    collectionOptions,
     loadSteamCollections,
     loadingSteamCollections,
     steamCollectionError,
