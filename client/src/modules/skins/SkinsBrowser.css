@@ -17,3 +17,140 @@
 .sbc .toast { padding: 8px 12px; border-radius: 6px; }
 .sbc .toast.success { background: #1d2a44; color: #aaffaa; }
 .sbc .toast.error { background: #401020; color: #ffaaaa; }
+
+.sbc-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(7, 11, 18, 0.78);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  padding: 16px;
+}
+
+.sbc-modal {
+  background: var(--card);
+  border-radius: 12px;
+  width: min(920px, 100%);
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  padding: 24px;
+}
+
+.sbc-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.sbc-modal-title {
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.sbc-modal-close {
+  border: none;
+  background: transparent;
+  color: #fff;
+  font-size: 26px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.sbc-modal-close:hover {
+  color: var(--acc);
+}
+
+.sbc-modal-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+@media (min-width: 768px) {
+  .sbc-modal-grid {
+    flex-direction: row;
+  }
+}
+
+.sbc-modal-card {
+  background: rgba(18, 24, 38, 0.95);
+  border: 1px solid #1f2a3d;
+  border-radius: 10px;
+  padding: 16px;
+  flex: 1;
+}
+
+.sbc-modal-card h4 {
+  margin: 0 0 12px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.sbc-modal-info {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 14px;
+}
+
+.sbc-modal-info .label {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 2px;
+}
+
+.sbc-modal-price {
+  font-size: 18px;
+  font-weight: 600;
+  color: #8ef08e;
+}
+
+.sbc-modal-price.loading {
+  color: var(--muted);
+}
+
+.sbc-modal-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.sbc-modal-table th,
+.sbc-modal-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid #1f2a3d;
+}
+
+.sbc-modal-table thead th {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.sbc-modal-table tbody tr.highlight {
+  background: rgba(79, 195, 247, 0.12);
+}
+
+.sbc-modal-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.sbc-modal-muted {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.sbc-modal-error {
+  color: #ff8e8e;
+  font-size: 12px;
+}

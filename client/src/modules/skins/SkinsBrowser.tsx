@@ -7,11 +7,26 @@ import AggTable from "./components/AggTable";
 import {
   EXTERIORS,
   RARITIES,
-  fetchAllNames,
   batchListingTotals,
   batchPriceOverview,
+  baseFromMhn,
+  fetchAllNames,
+  parseExterior,
+  type AggGroup,
+  type Exterior,
+  type Rarity,
 } from "./services";
 import useSkinsBrowser from "./hooks/useSkinsBrowser";
+import SkinModal from "./components/SkinModal";
+
+type SelectedSkin = {
+  marketHashName: string;
+  baseName: string;
+  rarity: Rarity;
+  exterior: Exterior;
+  price: number | null | undefined;
+  sellListings: number;
+};
 
 export default function SkinsBrowser() {
   const {
@@ -39,6 +54,8 @@ export default function SkinsBrowser() {
     { type: "success" | "error"; text: string } | null
   >(null);
   const skipSaveRef = React.useRef(false);
+  const [selectedSkin, setSelectedSkin] = React.useState<SelectedSkin | null>(null);
+  const [selectedGroup, setSelectedGroup] = React.useState<AggGroup | null>(null);
 
   React.useEffect(() => {
     if (!loader.loading && loader.data && !skipSaveRef.current) {
@@ -268,6 +285,47 @@ export default function SkinsBrowser() {
 
   const viewData = loader.data;
 
+  const flatGroups = React.useMemo(() => {
+    if (viewData && "items" in viewData) {
+      const map = new Map<string, AggGroup>();
+      viewData.items.forEach((item) => {
+        const baseName = baseFromMhn(item.market_hash_name);
+        const exterior = parseExterior(item.market_hash_name);
+        const existing = map.get(baseName);
+        if (existing) {
+          if (!existing.exteriors.some((ex) => ex.marketHashName === item.market_hash_name)) {
+            existing.exteriors.push({
+              exterior,
+              marketHashName: item.market_hash_name,
+              sell_listings: item.sell_listings,
+              price: item.price ?? null,
+            });
+          }
+        } else {
+          map.set(baseName, {
+            baseName,
+            rarity: item.rarity,
+            exteriors: [
+              {
+                exterior,
+                marketHashName: item.market_hash_name,
+                sell_listings: item.sell_listings,
+                price: item.price ?? null,
+              },
+            ],
+          });
+        }
+      });
+      return map;
+    }
+    return null;
+  }, [viewData]);
+
+  const handleCloseModal = () => {
+    setSelectedSkin(null);
+    setSelectedGroup(null);
+  };
+
   return (
     <div className="card sbc p-3">
       <div className="h1">Skins Browser</div>
@@ -326,7 +384,20 @@ export default function SkinsBrowser() {
             Items: {viewData.total}
             {loader.elapsedMs != null && ` | Time: ${(loader.elapsedMs / 1000).toFixed(1)}s`}
           </div>
-          <AggTable skins={viewData.skins} />
+          <AggTable
+            skins={viewData.skins}
+            onSelect={({ group, exterior }) => {
+              setSelectedSkin({
+                marketHashName: exterior.marketHashName,
+                baseName: group.baseName,
+                rarity: group.rarity,
+                exterior: exterior.exterior,
+                price: exterior.price,
+                sellListings: exterior.sell_listings,
+              });
+              setSelectedGroup(group);
+            }}
+          />
         </>
       )}
       {viewData && "items" in viewData && (
@@ -335,7 +406,34 @@ export default function SkinsBrowser() {
             Items: {viewData.total}
             {loader.elapsedMs != null && ` | Time: ${(loader.elapsedMs / 1000).toFixed(1)}s`}
           </div>
-          <FlatTable items={viewData.items} />
+          <FlatTable
+            items={viewData.items}
+            onSelect={(item) => {
+              const baseName = baseFromMhn(item.market_hash_name);
+              const exterior = parseExterior(item.market_hash_name);
+              const group = flatGroups?.get(baseName) ?? {
+                baseName,
+                rarity: item.rarity,
+                exteriors: [
+                  {
+                    exterior,
+                    marketHashName: item.market_hash_name,
+                    sell_listings: item.sell_listings,
+                    price: item.price ?? null,
+                  },
+                ],
+              };
+              setSelectedSkin({
+                marketHashName: item.market_hash_name,
+                baseName,
+                rarity: item.rarity,
+                exterior,
+                price: item.price,
+                sellListings: item.sell_listings,
+              });
+              setSelectedGroup(group);
+            }}
+          />
         </>
       )}
       {!loader.loading && !viewData && !loader.error && (
@@ -347,6 +445,13 @@ export default function SkinsBrowser() {
         <div className={`toast ${toast.type}`} style={{ marginTop: 8 }}>
           {toast.text}
         </div>
+      )}
+      {selectedSkin && (
+        <SkinModal
+          selected={selectedSkin}
+          group={selectedGroup}
+          onClose={handleCloseModal}
+        />
       )}
     </div>
   );

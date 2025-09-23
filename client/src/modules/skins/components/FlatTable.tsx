@@ -1,10 +1,21 @@
 import React from "react";
-import { parseExterior } from "../services";
+import { parseExterior, type Rarity } from "../services";
 
-type Item = { market_hash_name: string; sell_listings: number; price?: number | null };
+type Item = {
+  market_hash_name: string;
+  sell_listings: number;
+  price?: number | null;
+  rarity: Rarity;
+};
 type SortField = "name" | "price" | "listings";
 
-export default function FlatTable({ items }: { items: Item[] }) {
+export default function FlatTable({
+  items,
+  onSelect,
+}: {
+  items: Item[];
+  onSelect?: (item: Item) => void;
+}) {
   const [field, setField] = React.useState<SortField>("name");
   const [asc, setAsc] = React.useState(true);
 
@@ -37,7 +48,11 @@ export default function FlatTable({ items }: { items: Item[] }) {
       </thead>
       <tbody>
       {sorted.map((x, i) => (
-        <tr key={i}>
+        <tr
+          key={i}
+          style={{ cursor: onSelect ? "pointer" : undefined }}
+          onClick={() => onSelect?.(x)}
+        >
           <td>{x.market_hash_name}</td>
           <td>{parseExterior(x.market_hash_name)}</td>
           <td>{x.sell_listings}</td>

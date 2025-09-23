@@ -9,8 +9,8 @@
     "dev": "concurrently -k \"npm:server:dev\" \"npm:client:dev\"",
     "server:dev": "npm --workspace=cs2-tradeup-ev-server run dev",
     "client:dev": "npm --workspace=cs2-tradeup-ev-client run dev",
-    "lint": "eslint \"{client,server}/**/*.{ts,tsx}\"",
-    "lint:fix": "eslint \"{client,server}/**/*.{ts,tsx}\" --fix",
+    "lint": "ESLINT_USE_FLAT_CONFIG=false eslint \"{client,server}/**/*.{ts,tsx}\"",
+    "lint:fix": "ESLINT_USE_FLAT_CONFIG=false eslint \"{client,server}/**/*.{ts,tsx}\" --fix",
     "check": "npm run lint && tsc -b"
   },
   "devDependencies": {
