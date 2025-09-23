@@ -1,5 +1,6 @@
 import React from "react";
 import { EXTERIORS, type AggGroup } from "../services";
+import "./StyleTable.css";
 
 const fmt = (n: number | null | undefined) => (n == null ? "—" : `$${n.toFixed(2)}`);
 type SortField = "name" | "price" | "listings";
@@ -38,25 +39,40 @@ export default function AggTable({ skins }: { skins: AggGroup[] }) {
   const arrow = (f: SortField) => field === f ? (asc ? "▲" : "▼") : "";
 
   return (
-    <table className="table table-striped mt-2">
-      <thead>
-      <tr>
-        <th className="text-start" style={{cursor:"pointer"}} onClick={() => handle("name")}>Skin {arrow("name")}</th>
-        <th className="text-start">Exterior</th>
-        <th style={{cursor:"pointer"}} onClick={() => handle("listings")}>Listings {arrow("listings")}</th>
-        <th style={{cursor:"pointer"}} onClick={() => handle("price")}>Price {arrow("price")}</th>
-      </tr>
-      </thead>
-      <tbody>
-      {sorted.map((r, i) => (
-        <tr key={`${r.baseName}-${r.exterior}-${i}`}>
-          <td>{r.baseName}</td>
-          <td>{r.exterior}</td>
-          <td>{r.sell_listings}</td>
-          <td>{fmt(r.price)}</td>
-        </tr>
-      ))}
-      </tbody>
-    </table>
+    <div className="tableContainer">
+      <table className="table table-striped mt-2">
+        <thead>
+          <tr>
+            <th
+              className="text-start"
+              style={{ cursor: "pointer" }}
+              onClick={() => handle("name")}
+            >
+              Skin {arrow("name")}
+            </th>
+            <th className="text-start">Exterior</th>
+            <th
+              style={{ cursor: "pointer" }}
+              onClick={() => handle("listings")}
+            >
+              Listings {arrow("listings")}
+            </th>
+            <th style={{ cursor: "pointer" }} onClick={() => handle("price")}>
+              Price {arrow("price")}
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {sorted.map((r, i) => (
+            <tr key={`${r.baseName}-${r.exterior}-${i}`}>
+              <td>{r.baseName}</td>
+              <td>{r.exterior}</td>
+              <td>{r.sell_listings}</td>
+              <td>{fmt(r.price)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
