@@ -13,6 +13,9 @@ const SEARCH_URL = "https://steamcommunity.com/market/search/render/";
 const LISTING_URL = (marketHashName: string) =>
   `https://steamcommunity.com/market/listings/${APP_ID}/${encodeURIComponent(marketHashName)}/render`;
 
+const ensureTagPrefix = (tag: string) =>
+  (tag.startsWith("tag_") ? tag : `tag_${tag}`);
+
 /** Памятующий кеш для снижения нагрузки (разные типы — храним как any) */
 const memoryCache = new LRUCache<string, any>({
   max: 5000,
@@ -57,9 +60,40 @@ interface SearchRenderResponse {
 }
 
 /** Формат ответа listings/.../render (для наших целей достаточно total_count) */
+export interface SteamTag {
+  category: string;
+  internal_name: string;
+  localized_category_name?: string;
+  localized_tag_name: string;
+}
+
+interface ListingAsset {
+  classid?: string;
+  instanceid?: string;
+  market_hash_name?: string;
+  market_name?: string;
+  icon_url?: string;
+  tags?: SteamTag[];
+}
+
 interface ListingRenderResponse {
   total_count?: number;
+  assets?: Record<string, Record<string, Record<string, ListingAsset>>>;
 }
+
+const extractListingAsset = (
+  payload: ListingRenderResponse | null | undefined,
+): ListingAsset | null => {
+  const appAssets = payload?.assets?.[String(APP_ID)];
+  if (!appAssets) return null;
+  for (const contextAssets of Object.values(appAssets)) {
+    if (!contextAssets) continue;
+    for (const asset of Object.values(contextAssets)) {
+      if (asset) return asset;
+    }
+  }
+  return null;
+};
 
 /** Глобальная очередь с адаптивным троттлингом */
 let requestPauseMs = START_RATE_MS;
@@ -323,13 +357,56 @@ export const searchByRarity = async ({
   return typed;
 };
 
-/**
- * Возвращает точное количество листингов для конкретного предмета
- * по странице листингов (render), где есть total_count.
- */
-export const fetchListingTotalCount = async (
+export const searchByCollection = async ({
+  collectionTag,
+  rarityTag,
+  start = 0,
+  count = 30,
+  normalOnly = true,
+}: {
+  collectionTag: string;
+  rarityTag?: string | null;
+  start?: number;
+  count?: number;
+  normalOnly?: boolean;
+}): Promise<{ total: number; items: SearchItem[] }> => {
+  const params = new URLSearchParams({
+    appid: String(APP_ID),
+    norender: "1",
+    start: String(start),
+    count: String(count),
+    sort_column: "name",
+    sort_dir: "asc",
+    ...(normalOnly ? { "category_730_Quality[]": "tag_normal" } : {}),
+  });
+
+  params.append("category_730_ItemSet[]", ensureTagPrefix(collectionTag));
+  if (rarityTag) params.append("category_730_Rarity[]", ensureTagPrefix(rarityTag));
+
+  const url = `${SEARCH_URL}?${params.toString()}`;
+  const cacheKey = `search:${url}`;
+  const cached = memoryCache.get(cacheKey);
+  if (cached) return cached;
+
+  const payload = await steamGetData<SearchRenderResponse>(url);
+
+  const total = payload?.total_count ?? 0;
+  const items: SearchItem[] = (payload?.results ?? []).map((result) => ({
+    market_hash_name: result.hash_name,
+    sell_listings: Number.parseInt(String(result.sell_listings ?? 0), 10) || 0,
+    price: parseSteamPriceText(result.sell_price_text ?? ""),
+  }));
+
+  const typed = { total, items };
+  memoryCache.set(cacheKey, typed);
+  return typed;
+};
+
+type ListingInfo = { totalCount: number | null; asset: ListingAsset | null };
+
+export const fetchListingInfo = async (
   marketHashName: string,
-): Promise<number | null> => {
+): Promise<ListingInfo> => {
   const params = new URLSearchParams({
     start: "0",
     count: "1",
@@ -338,27 +415,47 @@ export const fetchListingTotalCount = async (
     format: "json",
   });
   const url = `${LISTING_URL(marketHashName)}?${params.toString()}`;
-  const cacheKey = `listingTotal:${url}`;
+  const cacheKey = `listing:${url}`;
   const cached = memoryCache.get(cacheKey);
-  if (cached !== undefined) return cached;
+  if (cached) return cached as ListingInfo;
 
   const maxAttempts = 3;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
-      // ВАЖНО: типизируем data
       const payload = await steamGetData<ListingRenderResponse>(url);
-      const totalCount =
-        typeof payload?.total_count === "number" ? payload.total_count : null;
-      if (totalCount !== null) memoryCache.set(cacheKey, totalCount);
-      return totalCount;
+      const info: ListingInfo = {
+        totalCount:
+          typeof payload?.total_count === "number" ? payload.total_count : null,
+        asset: extractListingAsset(payload),
+      };
+      memoryCache.set(cacheKey, info);
+      return info;
     } catch (error) {
       const status = (error as AxiosError)?.response?.status;
       if (status === 429 && attempt < maxAttempts - 1) {
         await sleep(16_000);
         continue;
       }
-      return null;
+      return { totalCount: null, asset: null };
     }
   }
-  return null;
+  return { totalCount: null, asset: null };
+};
+
+/**
+ * Возвращает точное количество листингов для конкретного предмета
+ * по странице листингов (render), где есть total_count.
+ */
+export const fetchListingTotalCount = async (
+  marketHashName: string,
+): Promise<number | null> => {
+  const { totalCount } = await fetchListingInfo(marketHashName);
+  return totalCount;
+};
+
+export const fetchListingAsset = async (
+  marketHashName: string,
+): Promise<ListingAsset | null> => {
+  const { asset } = await fetchListingInfo(marketHashName);
+  return asset;
 };

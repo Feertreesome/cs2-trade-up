@@ -4,23 +4,48 @@ import { EXTERIORS, type AggGroup } from "../services";
 const fmt = (n: number | null | undefined) => (n == null ? "—" : `$${n.toFixed(2)}`);
 type SortField = "name" | "price" | "listings";
 
-export default function AggTable({ skins }: { skins: AggGroup[] }) {
+type AggRow = {
+  baseName: string;
+  sell_listings: number;
+  price: number | null;
+  marketHashName: string;
+  group: AggGroup;
+  exteriorData: AggGroup["exteriors"][number];
+};
+
+export default function AggTable({
+  skins,
+  onSelect,
+}: {
+  skins: AggGroup[];
+  onSelect?: (payload: {
+    group: AggGroup;
+    exterior: AggGroup["exteriors"][number];
+  }) => void;
+}) {
   const [field, setField] = React.useState<SortField>("name");
   const [asc, setAsc] = React.useState(true);
 
-  const rows = React.useMemo(() =>
-    skins.flatMap((g) =>
-      g.exteriors
-        .slice()
-        .sort((a, b) => EXTERIORS.indexOf(a.exterior) - EXTERIORS.indexOf(b.exterior))
-        .map((e) => ({
-          baseName: g.baseName,
-          exterior: e.exterior,
-          sell_listings: e.sell_listings,
-          price: e.price,
-        })),
-    ),
-  [skins]);
+  const rows = React.useMemo(
+    () =>
+      skins.flatMap((g) =>
+        g.exteriors
+          .slice()
+          .sort(
+            (a, b) =>
+              EXTERIORS.indexOf(a.exterior) - EXTERIORS.indexOf(b.exterior),
+          )
+          .map<AggRow>((e) => ({
+            baseName: g.baseName,
+            sell_listings: e.sell_listings,
+            price: e.price ?? null,
+            marketHashName: e.marketHashName,
+            group: g,
+            exteriorData: e,
+          })),
+      ),
+    [skins],
+  );
 
   const sorted = React.useMemo(() => {
     return [...rows].sort((a, b) => {
@@ -49,9 +74,15 @@ export default function AggTable({ skins }: { skins: AggGroup[] }) {
       </thead>
       <tbody>
       {sorted.map((r, i) => (
-        <tr key={`${r.baseName}-${r.exterior}-${i}`}>
+        <tr
+          key={`${r.baseName}-${r.exteriorData.exterior}-${i}`}
+          style={{ cursor: onSelect ? "pointer" : undefined }}
+          onClick={() =>
+            onSelect?.({ group: r.group, exterior: r.exteriorData })
+          }
+        >
           <td>{r.baseName}</td>
-          <td>{r.exterior}</td>
+          <td>{r.exteriorData.exterior}</td>
           <td>{r.sell_listings}</td>
           <td>{fmt(r.price)}</td>
         </tr>

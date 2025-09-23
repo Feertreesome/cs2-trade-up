@@ -7,6 +7,7 @@ import { searchByRarity, fetchListingTotalCount } from "../steam/repo";
 import { STEAM_PAGE_SIZE } from "../../config";
 import { parseBoolean } from "./validators";
 import { ALL_RARITIES, getTotals } from "./service";
+import { fetchSkinDetails } from "./details";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -29,6 +30,8 @@ const getTotalsCached = async (
   totalsCache.set(key, fresh);
   return fresh;
 };
+
+let schemaCache: any | null = null;
 
 const handleError = (res: any, error: unknown) => {
   const status = (error as AxiosError)?.response?.status;
@@ -59,6 +62,22 @@ export const createSkinsRouter = (): Router => {
       const { perRarity, sum } = await getTotalsCached(rarityList, normalOnly);
       return response.json({ rarities: rarityList, totals: perRarity, sum });
     } catch (error) {
+      return handleError(response, error);
+    }
+  });
+
+  router.get("/schema", async (_request, response) => {
+    try {
+      if (!schemaCache) {
+        const filePath = path.join(process.cwd(), "server", "data", "schema.json");
+        const raw = await fs.readFile(filePath, "utf8");
+        schemaCache = JSON.parse(raw);
+      }
+      return response.json(schemaCache);
+    } catch (error: any) {
+      if (error?.code === "ENOENT") {
+        return response.status(404).json({ error: "schema.json not found" });
+      }
       return handleError(response, error);
     }
   });
@@ -152,6 +171,27 @@ export const createSkinsRouter = (): Router => {
       }
 
       return response.json({ totals: result });
+    } catch (error) {
+      return handleError(response, error);
+    }
+  });
+
+  router.get("/details", async (request, response) => {
+    try {
+      const marketHashName = String(request.query.marketHashName ?? "").trim();
+      if (!marketHashName) {
+        return response.status(400).json({ error: "marketHashName required" });
+      }
+      const rarity = String(request.query.rarity ?? "").trim();
+      if (!ALL_RARITIES.includes(rarity as any)) {
+        return response.status(400).json({ error: "Invalid rarity" });
+      }
+
+      const details = await fetchSkinDetails({
+        marketHashName,
+        rarity: rarity as (typeof ALL_RARITIES)[number],
+      });
+      return response.json(details);
     } catch (error) {
       return handleError(response, error);
     }
