@@ -16,3 +16,33 @@ export type AggGroup = {
 export type ApiFlatResp = { rarities: Rarity[]; total: number; items: FlatItem[]; meta?: any };
 export type ApiAggResp  = { rarities: Rarity[]; total: number; skins: AggGroup[]; meta?: any };
 
+export type SkinDetailExterior = {
+  exterior: Exterior;
+  marketHashName: string;
+  price: number | null;
+  sellListings: number | null;
+};
+
+export type SkinDetailLowerItem = {
+  baseName: string;
+  exterior: Exterior;
+  marketHashName: string;
+  price: number | null;
+  sellListings: number | null;
+};
+
+export type SkinDetails = {
+  marketHashName: string;
+  baseName: string;
+  rarity: Rarity;
+  collection: string | null;
+  price: number | null;
+  sellListings: number | null;
+  exteriors: SkinDetailExterior[];
+  sameRarity: string[];
+  lowerRarity: {
+    rarity: Rarity;
+    items: SkinDetailLowerItem[];
+  } | null;
+};
+

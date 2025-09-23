@@ -7,6 +7,7 @@ import { searchByRarity, fetchListingTotalCount } from "../steam/repo";
 import { STEAM_PAGE_SIZE } from "../../config";
 import { parseBoolean } from "./validators";
 import { ALL_RARITIES, getTotals } from "./service";
+import { fetchSkinDetails } from "./details";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -170,6 +171,27 @@ export const createSkinsRouter = (): Router => {
       }
 
       return response.json({ totals: result });
+    } catch (error) {
+      return handleError(response, error);
+    }
+  });
+
+  router.get("/details", async (request, response) => {
+    try {
+      const marketHashName = String(request.query.marketHashName ?? "").trim();
+      if (!marketHashName) {
+        return response.status(400).json({ error: "marketHashName required" });
+      }
+      const rarity = String(request.query.rarity ?? "").trim();
+      if (!ALL_RARITIES.includes(rarity as any)) {
+        return response.status(400).json({ error: "Invalid rarity" });
+      }
+
+      const details = await fetchSkinDetails({
+        marketHashName,
+        rarity: rarity as (typeof ALL_RARITIES)[number],
+      });
+      return response.json(details);
     } catch (error) {
       return handleError(response, error);
     }

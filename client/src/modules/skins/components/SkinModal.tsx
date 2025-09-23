@@ -1,17 +1,11 @@
 import React from "react";
 import {
   EXTERIORS,
-  batchListingTotals,
-  batchPriceOverview,
-  fetchSkinsSchema,
-  getAvailableExteriors,
-  getCaseSkinsByRarity,
-  getCollectionForSkin,
-  LOWER_RARITY_MAP,
+  fetchSkinDetails,
   type AggGroup,
   type Exterior,
   type Rarity,
-  type SkinsSchema,
+  type SkinDetails,
 } from "../services";
 
 type SkinSummary = {
@@ -53,7 +47,7 @@ const normalizeGroup = (
 
 const orderByExterior = (
   exteriors: AggGroup["exteriors"],
-) =>
+): AggGroup["exteriors"] =>
   exteriors
     .slice()
     .sort(
@@ -71,26 +65,40 @@ const extractNames = (baseName: string) => {
   };
 };
 
-type LowerRarityRow = {
-  baseName: string;
+type ExteriorRow = {
   exterior: Exterior;
   marketHashName: string;
   price: number | null;
   sellListings: number | null;
 };
 
-const useSchemaData = () => {
-  const [schema, setSchema] = React.useState<SkinsSchema | null>(null);
+const mapFallbackExteriors = (
+  group: AggGroup,
+): ExteriorRow[] =>
+  orderByExterior(group.exteriors).map((ext) => ({
+    exterior: ext.exterior,
+    marketHashName: ext.marketHashName,
+    price: ext.price ?? null,
+    sellListings: ext.sell_listings ?? null,
+  }));
+
+const useSkinDetails = (selected: SkinSummary) => {
+  const [data, setData] = React.useState<SkinDetails | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     let cancelled = false;
+    setLoading(true);
     setError(null);
+    setData(null);
 
-    fetchSkinsSchema()
-      .then((data) => {
-        if (!cancelled) setSchema(data);
+    fetchSkinDetails({
+      marketHashName: selected.marketHashName,
+      rarity: selected.rarity,
+    })
+      .then((details) => {
+        if (!cancelled) setData(details);
       })
       .catch((e: any) => {
         if (!cancelled) setError(String(e?.message || e));
@@ -102,141 +110,9 @@ const useSchemaData = () => {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [selected.marketHashName, selected.rarity]);
 
-  return { schema, loading, error } as const;
-};
-
-const useLowerRaritySkins = (
-  schema: SkinsSchema | null,
-  collection: string | null,
-  rarity: Rarity,
-) => {
-  const [rows, setRows] = React.useState<LowerRarityRow[]>([]);
-  const [loading, setLoading] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
-
-  const lowerRarity = LOWER_RARITY_MAP[rarity];
-
-  React.useEffect(() => {
-    let cancelled = false;
-
-    if (!schema || !collection || !lowerRarity) {
-      setRows([]);
-      setLoading(false);
-      setError(null);
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    const baseNames = getCaseSkinsByRarity(schema, collection, lowerRarity)
-      .slice()
-      .sort((a, b) => a.localeCompare(b));
-
-    if (!baseNames.length) {
-      setRows([]);
-      setLoading(false);
-      setError(null);
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    const combos = baseNames.flatMap((name) => {
-      const exteriors = getAvailableExteriors(schema, collection, name);
-      return exteriors.map<LowerRarityRow>((exterior) => ({
-        baseName: name,
-        exterior,
-        marketHashName: `${name} (${exterior})`,
-        price: null,
-        sellListings: null,
-      }));
-    });
-
-    if (!combos.length) {
-      setRows([]);
-      setLoading(false);
-      setError(null);
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    const uniqueNames = Array.from(
-      new Set(combos.map((combo) => combo.marketHashName)),
-    );
-
-    const load = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const [priceMap, listingMap] = await Promise.all([
-          uniqueNames.length
-            ? batchPriceOverview(uniqueNames)
-            : Promise.resolve<Record<string, number | null>>({}),
-          uniqueNames.length
-            ? batchListingTotals(uniqueNames)
-            : Promise.resolve<Record<string, number | null>>({}),
-        ]);
-        if (cancelled) return;
-        const nextRows = combos.map((combo) => ({
-          ...combo,
-          price: priceMap?.[combo.marketHashName] ?? null,
-          sellListings: listingMap?.[combo.marketHashName] ?? null,
-        }));
-        setRows(nextRows);
-      } catch (e: any) {
-        if (!cancelled) setError(String(e?.message || e));
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
-
-    void load();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [schema, collection, lowerRarity]);
-
-  return { lowerRarity, rows, loading, error } as const;
-};
-
-const useActualPrice = (selected: SkinSummary) => {
-  const [price, setPrice] = React.useState<number | null | undefined>(
-    selected.price,
-  );
-  const [loading, setLoading] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
-
-  React.useEffect(() => {
-    let cancelled = false;
-    setPrice(selected.price);
-    setError(null);
-    setLoading(true);
-
-    const load = async () => {
-      try {
-        const map = await batchPriceOverview([selected.marketHashName]);
-        if (cancelled) return;
-        const fetched = map[selected.marketHashName];
-        setPrice(fetched ?? null);
-      } catch (e: any) {
-        if (!cancelled) setError(String(e?.message || e));
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
-
-    void load();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [selected.marketHashName, selected.price]);
-
-  return { price, loading, error } as const;
+  return { data, loading, error } as const;
 };
 
 const useModalLifecycle = (onClose: () => void) => {
@@ -254,6 +130,14 @@ const useModalLifecycle = (onClose: () => void) => {
   }, [onClose]);
 };
 
+const sortExteriors = (rows: ExteriorRow[]) =>
+  rows
+    .slice()
+    .sort(
+      (a, b) =>
+        EXTERIORS.indexOf(a.exterior) - EXTERIORS.indexOf(b.exterior),
+    );
+
 const SkinModal: React.FC<Props> = ({ selected, group, onClose }) => {
   useModalLifecycle(onClose);
 
@@ -261,39 +145,45 @@ const SkinModal: React.FC<Props> = ({ selected, group, onClose }) => {
     () => normalizeGroup(selected, group),
     [selected, group],
   );
-  const allExteriors = React.useMemo(
-    () => orderByExterior(resolvedGroup.exteriors),
+  const fallbackExteriors = React.useMemo(
+    () => mapFallbackExteriors(resolvedGroup),
     [resolvedGroup],
   );
   const { weapon, skin } = React.useMemo(
     () => extractNames(selected.baseName),
     [selected.baseName],
   );
-  const { price, loading, error } = useActualPrice(selected);
   const {
-    schema,
-    loading: schemaLoading,
-    error: schemaError,
-  } = useSchemaData();
+    data: details,
+    loading: detailsLoading,
+    error: detailsError,
+  } = useSkinDetails(selected);
 
-  const collection = React.useMemo(
-    () => (schema ? getCollectionForSkin(schema, selected.baseName) : null),
-    [schema, selected.baseName],
-  );
+  const exteriorRows = React.useMemo(() => {
+    if (details?.exteriors?.length) {
+      return sortExteriors(details.exteriors);
+    }
+    return fallbackExteriors;
+  }, [details, fallbackExteriors]);
 
-  const sameRaritySkins = React.useMemo(() => {
-    if (!schema || !collection) return [];
-    return getCaseSkinsByRarity(schema, collection, selected.rarity)
-      .slice()
-      .sort((a, b) => a.localeCompare(b));
-  }, [schema, collection, selected.rarity]);
+  const collectionLabel = detailsLoading
+    ? "Загрузка…"
+    : details?.collection ?? "Неизвестно";
 
-  const {
-    lowerRarity,
-    rows: lowerRows,
-    loading: lowerLoading,
-    error: lowerError,
-  } = useLowerRaritySkins(schema, collection, selected.rarity);
+  const sameRarityList = React.useMemo(() => {
+    if (!details?.sameRarity?.length) return [];
+    const unique = Array.from(new Set(details.sameRarity));
+    unique.sort((a, b) => a.localeCompare(b));
+    return unique;
+  }, [details]);
+
+  const lowerSection = details?.lowerRarity ?? null;
+  const displayPrice = detailsLoading
+    ? null
+    : details?.price ?? selected.price ?? null;
+  const displayListings = detailsLoading
+    ? selected.sellListings
+    : details?.sellListings ?? selected.sellListings;
 
   return (
     <div
@@ -332,11 +222,7 @@ const SkinModal: React.FC<Props> = ({ selected, group, onClose }) => {
             <div className="sbc-modal-info">
               <div>
                 <div className="label">Коллекция</div>
-                <div>
-                  {schemaLoading
-                    ? "Загрузка…"
-                    : collection ?? "Неизвестно"}
-                </div>
+                <div>{collectionLabel}</div>
               </div>
               <div>
                 <div className="label">Оружие</div>
@@ -352,34 +238,33 @@ const SkinModal: React.FC<Props> = ({ selected, group, onClose }) => {
               </div>
               <div>
                 <div className="label">Листов на продаже</div>
-                <div>{selected.sellListings}</div>
+                <div>{displayListings}</div>
               </div>
               <div>
                 <div className="label">Актуальная цена</div>
                 <div
-                  className={`sbc-modal-price${loading ? " loading" : ""}`}
+                  className={`sbc-modal-price${detailsLoading ? " loading" : ""}`}
                 >
-                  {loading ? "Загрузка…" : fmt(price)}
+                  {detailsLoading ? "Загрузка…" : fmt(displayPrice)}
                 </div>
               </div>
-              {error && <div className="sbc-modal-error">{error}</div>}
-              {schemaError && (
-                <div className="sbc-modal-error">{schemaError}</div>
+              {detailsError && (
+                <div className="sbc-modal-error">{detailsError}</div>
               )}
             </div>
           </div>
 
           <div className="sbc-modal-card sbc-modal-card--list">
             <h4>Скины этой редкости</h4>
-            {schemaLoading ? (
+            {detailsLoading ? (
               <div className="sbc-modal-muted">Загрузка…</div>
-            ) : !collection ? (
+            ) : !details?.collection ? (
               <div className="sbc-modal-muted">
                 Коллекция не найдена для этого предмета.
               </div>
-            ) : sameRaritySkins.length ? (
+            ) : sameRarityList.length ? (
               <ul className="sbc-modal-list">
-                {sameRaritySkins.map((name) => (
+                {sameRarityList.map((name) => (
                   <li
                     key={name}
                     className={
@@ -409,7 +294,7 @@ const SkinModal: React.FC<Props> = ({ selected, group, onClose }) => {
               </tr>
             </thead>
             <tbody>
-              {allExteriors.map((ext) => (
+              {exteriorRows.map((ext) => (
                 <tr
                   key={ext.marketHashName}
                   className={
@@ -419,13 +304,13 @@ const SkinModal: React.FC<Props> = ({ selected, group, onClose }) => {
                   }
                 >
                   <td className="text-start">{ext.exterior}</td>
-                  <td>{ext.sell_listings}</td>
+                  <td>{ext.sellListings ?? "—"}</td>
                   <td>{fmt(ext.price)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-          {!allExteriors.length && (
+          {!exteriorRows.length && (
             <div className="sbc-modal-muted">Нет данных по другим состояниям.</div>
           )}
         </div>
@@ -433,20 +318,19 @@ const SkinModal: React.FC<Props> = ({ selected, group, onClose }) => {
         <div className="sbc-modal-card sbc-modal-card--full">
           <h4>
             На одну редкость ниже
-            {lowerRarity ? ` (${lowerRarity})` : ""}
+            {lowerSection?.rarity ? ` (${lowerSection.rarity})` : ""}
           </h4>
-          {lowerError && <div className="sbc-modal-error">{lowerError}</div>}
-          {!collection ? (
+          {!details?.collection ? (
             <div className="sbc-modal-muted">
               Невозможно определить коллекцию для загрузки данных.
             </div>
-          ) : !lowerRarity ? (
+          ) : detailsLoading ? (
+            <div className="sbc-modal-muted">Загрузка…</div>
+          ) : !lowerSection ? (
             <div className="sbc-modal-muted">
               Для {selected.rarity} нет более низкой редкости.
             </div>
-          ) : lowerLoading ? (
-            <div className="sbc-modal-muted">Загрузка…</div>
-          ) : lowerRows.length ? (
+          ) : lowerSection.items.length ? (
             <table className="sbc-modal-table">
               <thead>
                 <tr>
@@ -457,7 +341,7 @@ const SkinModal: React.FC<Props> = ({ selected, group, onClose }) => {
                 </tr>
               </thead>
               <tbody>
-                {lowerRows.map((row) => (
+                {lowerSection.items.map((row) => (
                   <tr key={row.marketHashName}>
                     <td className="text-start">{row.baseName}</td>
                     <td className="text-start">{row.exterior}</td>
@@ -469,7 +353,7 @@ const SkinModal: React.FC<Props> = ({ selected, group, onClose }) => {
             </table>
           ) : (
             <div className="sbc-modal-muted">
-              В коллекции нет предметов редкости {lowerRarity}.
+              В коллекции нет предметов редкости {lowerSection.rarity}.
             </div>
           )}
         </div>

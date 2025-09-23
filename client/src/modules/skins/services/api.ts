@@ -1,4 +1,4 @@
-import type { Rarity } from "./types";
+import type { Rarity, SkinDetails } from "./types";
 
 export async function fetchTotals(rarities: Rarity[], normalOnly: boolean, maxRetries = 4) {
   const qs = new URLSearchParams({
@@ -92,4 +92,17 @@ export async function batchListingTotals(names: string[], chunk = 20, maxRetries
     await new Promise(r => setTimeout(r, 400));
   }
   return out;
+}
+
+export async function fetchSkinDetails(params: {
+  marketHashName: string;
+  rarity: Rarity;
+}) {
+  const query = new URLSearchParams({
+    marketHashName: params.marketHashName,
+    rarity: params.rarity,
+  });
+  const response = await fetch(`/api/skins/details?${query.toString()}`);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json() as Promise<SkinDetails>;
 }
