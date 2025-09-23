@@ -2,6 +2,11 @@ import React from "react";
 import useTradeupBuilder from "./hooks/useTradeupBuilder";
 import "./TradeupBuilder.css";
 
+/**
+ * Основной компонент-конструктор. Комбинирует хук useTradeupBuilder и отображает все шаги:
+ * загрузку коллекций из Steam, выбор целевого скина, заполнение входов и показ результатов.
+ */
+
 const formatNumber = (value: number, digits = 2) =>
   Number.isFinite(value) ? value.toFixed(digits) : "—";
 
@@ -82,6 +87,7 @@ export default function TradeupBuilder() {
 
       <hr className="border-secondary" />
 
+      {/* Шаг 1: выбираем коллекцию и смотрим подсказки по float-диапазонам. */}
       <section>
         <h3 className="h5">1. Выбор коллекции</h3>
         <div className="d-flex flex-wrap gap-2 align-items-center mb-2">
@@ -140,6 +146,7 @@ export default function TradeupBuilder() {
 
       <hr className="border-secondary" />
 
+      {/* Шаг 2: выбираем конкретный Covert-результат и подтягиваем доступные входы. */}
       <section>
         <h3 className="h5">2. Целевой скин</h3>
         {!activeCollectionTag && (
@@ -191,6 +198,7 @@ export default function TradeupBuilder() {
 
       <hr className="border-secondary" />
 
+      {/* Шаг 3: управляем входами и запускаем перерасчёт. */}
       <section>
         <h3 className="h5">3. Слот входа</h3>
         <div className="table-responsive">
@@ -285,6 +293,7 @@ export default function TradeupBuilder() {
         {calculationError && <div className="text-danger mt-2">{calculationError}</div>}
       </section>
 
+      {/* Шаг 4: отображаем итоговую экономику и вероятности. */}
       {calculation && (
         <section className="mt-4">
           <h3 className="h5">4. Результаты</h3>

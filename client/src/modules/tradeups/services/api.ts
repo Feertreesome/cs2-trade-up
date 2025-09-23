@@ -1,6 +1,11 @@
 import type { Exterior } from "../../skins/services/types";
 import { batchPriceOverview } from "../../skins/services/api";
 
+/**
+ * Клиентский слой работы с trade-up API. Предоставляет функции для загрузки коллекций,
+ * целей, входов и для отправки данных на расчёт EV.
+ */
+
 export interface CovertFloatRange {
   baseName: string;
   minFloat: number;
@@ -104,6 +109,7 @@ export interface TradeupCalculationResponse {
   warnings: string[];
 }
 
+/** Загружает локальный справочник коллекций с float-диапазонами. */
 export async function fetchTradeupCollections() {
   const response = await fetch("/api/tradeups/collections");
   if (!response.ok) {
@@ -113,6 +119,7 @@ export async function fetchTradeupCollections() {
   return payload.collections;
 }
 
+/** Запрашивает живой список коллекций из Steam (возвращает теги и статистику). */
 export async function fetchSteamCollections() {
   const response = await fetch("/api/tradeups/collections/steam");
   if (!response.ok) {
@@ -122,6 +129,7 @@ export async function fetchSteamCollections() {
   return payload.collections;
 }
 
+/** Получает список Covert-результатов для конкретного Steam tag'а. */
 export async function fetchCollectionTargets(collectionTag: string) {
   const response = await fetch(`/api/tradeups/collections/${encodeURIComponent(collectionTag)}/targets`);
   if (!response.ok) {
@@ -130,6 +138,7 @@ export async function fetchCollectionTargets(collectionTag: string) {
   return (await response.json()) as CollectionTargetsResponse;
 }
 
+/** Выгружает Classified-входы для коллекции (используется при автозаполнении таблицы). */
 export async function fetchCollectionInputs(collectionTag: string) {
   const response = await fetch(`/api/tradeups/collections/${encodeURIComponent(collectionTag)}/inputs`);
   if (!response.ok) {
@@ -138,6 +147,7 @@ export async function fetchCollectionInputs(collectionTag: string) {
   return (await response.json()) as CollectionInputsResponse;
 }
 
+/** Отправляет состав trade-up'а на сервер для расчёта EV и вероятностей. */
 export async function requestTradeupCalculation(payload: TradeupCalculationPayload) {
   const response = await fetch("/api/tradeups/calculate", {
     method: "POST",

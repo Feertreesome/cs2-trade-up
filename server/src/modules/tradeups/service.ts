@@ -1,3 +1,9 @@
+/**
+ * Модуль бизнес-логики trade-up калькулятора. Содержит функции, которые
+ * переиспользуются в HTTP-роутере и в клиентском приложении через API.
+ * Здесь же реализованы вспомогательные структуры и кеши для сопоставления
+ * коллекций Steam с нашим справочником float-диапазонов.
+ */
 import {
   COLLECTIONS_WITH_FLOAT,
   COLLECTIONS_WITH_FLOAT_MAP,
@@ -30,14 +36,17 @@ const WEAR_BUCKETS: Array<{ exterior: Exterior; min: number; max: number }> = [
   { exterior: "Battle-Scarred", min: 0.45, max: 1 },
 ];
 
+/** Ограничивает значение указанным диапазоном. */
 const clamp = (value: number, min: number, max: number) =>
   Math.max(min, Math.min(max, value));
 
+/** Возвращает наименование степени износа, соответствующее float-значению. */
 const getExteriorByFloat = (float: number): Exterior => {
   const bucket = WEAR_BUCKETS.find((entry) => float >= entry.min && float <= entry.max);
   return bucket?.exterior ?? "Battle-Scarred";
 };
 
+/** Находит числовой диапазон wear-ступени. */
 const getWearRange = (exterior: Exterior) =>
   WEAR_BUCKETS.find((entry) => entry.exterior === exterior) ?? WEAR_BUCKETS[WEAR_BUCKETS.length - 1];
 
@@ -99,9 +108,13 @@ export interface TradeupCalculationResult {
   warnings: string[];
 }
 
+/** Собирает market_hash_name из базового названия и износа. */
 const toMarketHashName = (baseName: string, exterior: Exterior) =>
   `${baseName} (${exterior})`;
 
+/**
+ * Собирает подробности по одному потенциальному исходу trade-up'а и подтягивает цену из Steam.
+ */
 const buildOutcome = async (
   options: {
     averageFloat: number;
@@ -139,6 +152,9 @@ const buildOutcome = async (
   };
 };
 
+/**
+ * Обогащает входные слоты ценой: либо из пользовательского ввода, либо из Steam через API.
+ */
 const enrichInput = async (
   input: TradeupInputSlot,
   buyerToNetRate: number,
@@ -161,6 +177,7 @@ const enrichInput = async (
   };
 };
 
+/** Возвращает локальный справочник коллекций и их float-диапазонов. */
 export const getCollectionsCatalog = (): CollectionFloatCatalogEntry[] =>
   COLLECTIONS_WITH_FLOAT.slice();
 
@@ -200,6 +217,9 @@ export const fetchSteamCollections = async (): Promise<SteamCollectionSummary[]>
   });
 };
 
+/**
+ * Выгружает страницу за страницей весь список предметов конкретной коллекции.
+ */
 const fetchEntireCollection = async (options: {
   collectionTag: string;
   rarity?: keyof typeof RARITY_TO_TAG;
@@ -250,6 +270,9 @@ export interface CollectionTargetsResult {
   targets: CollectionTargetSummary[];
 }
 
+/**
+ * Загружает Covert-предметы коллекции, группирует их по базовому названию и дополняет float-диапазоном.
+ */
 export const fetchCollectionTargets = async (
   collectionTag: string,
 ): Promise<CollectionTargetsResult> => {
@@ -306,6 +329,9 @@ export interface CollectionInputsResult {
   inputs: CollectionInputSummary[];
 }
 
+/**
+ * Получает список Classified-предметов коллекции, которые могут служить входами.
+ */
 export const fetchCollectionInputs = async (
   collectionTag: string,
 ): Promise<CollectionInputsResult> => {
@@ -332,6 +358,9 @@ export const fetchCollectionInputs = async (
   return { collectionTag, collectionId, inputs };
 };
 
+/**
+ * Основной расчёт: принимает 10 входов, список целевых коллекций и возвращает распределение исходов.
+ */
 export const calculateTradeup = async (
   payload: TradeupRequestPayload,
 ): Promise<TradeupCalculationResult> => {

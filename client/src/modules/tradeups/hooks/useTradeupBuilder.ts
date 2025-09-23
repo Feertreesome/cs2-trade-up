@@ -15,6 +15,11 @@ import {
   type TradeupCollection,
 } from "../services/api";
 
+/**
+ * Хук инкапсулирует весь state и бизнес-логику для TradeupBuilder:
+ * загрузку справочников, выбор целей, управление входами и отправку расчёта на сервер.
+ */
+
 export interface TradeupInputFormRow {
   marketHashName: string;
   collectionId: string;
@@ -39,6 +44,7 @@ const EXTERIOR_FLOAT_RANGES: Record<Exterior, { min: number; max: number }> = {
   "Battle-Scarred": { min: 0.45, max: 1 },
 };
 
+/** Возвращает типовой float для выбранного износа (центр диапазона). */
 const defaultFloatForExterior = (exterior: Exterior) => {
   const range = EXTERIOR_FLOAT_RANGES[exterior];
   if (!range) return "";
@@ -87,6 +93,7 @@ export default function useTradeupBuilder() {
 
   const buyerToNetRate = 1 + Math.max(0, buyerFeePercent) / 100;
 
+  // При первом рендере подтягиваем встроенный каталог коллекций для подсказок.
   React.useEffect(() => {
     async function loadCatalog() {
       try {
@@ -109,6 +116,7 @@ export default function useTradeupBuilder() {
     return entry ? [entry] : [];
   }, [catalogMap, selectedCollectionId]);
 
+  /** Подтягивает живой список коллекций из Steam Community Market. */
   const loadSteamCollections = React.useCallback(async () => {
     try {
       setSteamCollectionError(null);
@@ -127,6 +135,9 @@ export default function useTradeupBuilder() {
     return targetsByCollection[activeCollectionTag]?.targets ?? [];
   }, [activeCollectionTag, targetsByCollection]);
 
+  /**
+   * Выбор коллекции: сбрасывает форму, подгружает цели и при наличии — collectionId из справочника.
+   */
   const selectCollection = React.useCallback(
     async (collectionTag: string) => {
       setActiveCollectionTag(collectionTag);
@@ -157,6 +168,7 @@ export default function useTradeupBuilder() {
     [targetsByCollection],
   );
 
+  /** Загружает список Classified-входов и кеширует его по collectionTag. */
   const loadInputsForCollection = React.useCallback(
     async (collectionTag: string) => {
       const cached = inputsByCollection[collectionTag];
@@ -180,6 +192,7 @@ export default function useTradeupBuilder() {
     [inputsByCollection],
   );
 
+  /** Подтягивает buyer-цены для выбранных market_hash_name и обновляет таблицу. */
   const autofillPrices = React.useCallback(
     async (namesOverride?: string[]) => {
       const lookupNames =
@@ -207,6 +220,7 @@ export default function useTradeupBuilder() {
     [rows],
   );
 
+  /** Заполняет таблицу входов данными из коллекции и запрашивает цены при необходимости. */
   const applyInputsToRows = React.useCallback(
     async (collectionId: string | null, inputs: CollectionInputSummary[]) => {
       const trimmed = inputs.slice(0, 10);
@@ -229,6 +243,9 @@ export default function useTradeupBuilder() {
     [autofillPrices],
   );
 
+  /**
+   * При выборе конкретного Covert-результата подбираем входы коллекции и фиксируем активную цель.
+   */
   const selectTarget = React.useCallback(
     async (
       collectionTag: string,
@@ -257,6 +274,7 @@ export default function useTradeupBuilder() {
     [applyInputsToRows, loadInputsForCollection, selectedCollectionId],
   );
 
+  /** Позволяет редактировать одну строку таблицы вручную. */
   const updateRow = React.useCallback(
     (index: number, patch: Partial<TradeupInputFormRow>) => {
       setRows((prev) => {
@@ -267,6 +285,7 @@ export default function useTradeupBuilder() {
     },
   []);
 
+  /** Приводим строки формы к числовому виду и фильтруем пустые значения. */
   const parsedRows = React.useMemo(() => {
     return rows
       .map((row) => ({
@@ -278,12 +297,14 @@ export default function useTradeupBuilder() {
       .filter((row) => row.marketHashName && Number.isFinite(row.float));
   }, [rows, selectedCollectionId]);
 
+  /** Средний float по заполненным слотам. */
   const averageFloat = React.useMemo(() => {
     if (!parsedRows.length) return 0;
     const sum = parsedRows.reduce((acc, row) => acc + row.float, 0);
     return sum / parsedRows.length;
   }, [parsedRows]);
 
+  /** Суммарная стоимость в buyer-ценах. */
   const totalBuyerCost = React.useMemo(() => {
     return parsedRows.reduce(
       (sum, row) => sum + (Number.isFinite(row.buyerPrice) ? row.buyerPrice : 0),
@@ -293,6 +314,9 @@ export default function useTradeupBuilder() {
 
   const totalNetCost = totalBuyerCost / buyerToNetRate;
 
+  /**
+   * Отправляет форму на сервер. Перед вызовом проверяем, что заполнено 10 корректных входов.
+   */
   const calculate = React.useCallback(async () => {
     if (parsedRows.length === 0) {
       setCalculationError("Нужно добавить хотя бы один вход");

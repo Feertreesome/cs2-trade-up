@@ -8,6 +8,9 @@ import {
   type TradeupRequestPayload,
 } from "./service";
 
+/**
+ * Приводит тело запроса к валидной структуре TradeupRequestPayload, фильтруя лишние поля.
+ */
 const parseBody = (body: any): TradeupRequestPayload => {
   const inputs = Array.isArray(body?.inputs) ? body.inputs : [];
   const targetCollectionIds = Array.isArray(body?.targetCollectionIds)
@@ -30,14 +33,19 @@ const parseBody = (body: any): TradeupRequestPayload => {
   };
 };
 
+/**
+ * HTTP-роутер trade-up калькулятора. Используйте его при монтировании Express-приложения.
+ */
 export const createTradeupsRouter = () => {
   const router = Router();
 
+  /** Локальный справочник коллекций с подготовленными float-диапазонами. */
   router.get("/collections", (_request, response) => {
     const collections = getCollectionsCatalog();
     response.json({ collections });
   });
 
+  /** Живой список коллекций из Steam Community Market. */
   router.get("/collections/steam", async (_request, response) => {
     try {
       const collections = await fetchSteamCollections();
@@ -47,6 +55,9 @@ export const createTradeupsRouter = () => {
     }
   });
 
+  /**
+   * Детализация Covert-результатов по выбранной коллекции. Нужна для выбора цели на клиенте.
+   */
   router.get("/collections/:collectionTag/targets", async (request, response) => {
     const collectionTag = String(request.params?.collectionTag ?? "").trim();
     if (!collectionTag) {
@@ -60,6 +71,7 @@ export const createTradeupsRouter = () => {
     }
   });
 
+  /** Список Classified-входов, которыми можно заполнить слоты trade-up'а. */
   router.get("/collections/:collectionTag/inputs", async (request, response) => {
     const collectionTag = String(request.params?.collectionTag ?? "").trim();
     if (!collectionTag) {
@@ -73,6 +85,7 @@ export const createTradeupsRouter = () => {
     }
   });
 
+  /** Запускает расчёт EV и распределения исходов. */
   router.post("/calculate", async (request, response) => {
     try {
       const payload = parseBody(request.body);
