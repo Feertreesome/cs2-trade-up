@@ -144,9 +144,9 @@ export const createSkinsRouter = (): Router => {
       for (let i = 0; i < names.length; i += concurrency) {
         const slice = names.slice(i, i + concurrency);
         const totals = await Promise.all(
-          slice.map((name) => fetchListingTotalCount(String(name))),
+          slice.map((name: string) => fetchListingTotalCount(String(name))),
         );
-        slice.forEach((name, idx) => {
+        slice.forEach((name: string, idx: number) => {
           result[name] = totals[idx];
         });
       }

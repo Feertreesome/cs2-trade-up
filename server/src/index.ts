@@ -2,11 +2,14 @@ import express from "express";
 import cors from "cors";
 import { createSkinsRouter } from "./modules/skins";
 import { getPriceUSD } from "./modules/steam/repo";
+import { refreshCollectionFloatCaches } from "./modules/tradeups/service";
 
 /**
  * Точка входа API: здесь только то, что нужно SkinsBrowserComponent.
  * Включает JSON-парсер и CORS, монтирует /api/skins и батч для цен.
  */
+refreshCollectionFloatCaches();
+
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "128kb" }));
