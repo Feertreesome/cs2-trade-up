@@ -42,9 +42,19 @@ const WEAR_BUCKETS: Array<{ exterior: Exterior; min: number; max: number }> = [
 const clamp = (value: number, min: number, max: number) =>
   Math.max(min, Math.min(max, value));
 
+/** Возвращает наименование степени износа, соответствующее float-значению. */
+const getExteriorByFloat = (float: number): Exterior => {
+  const bucket = WEAR_BUCKETS.find((entry) => float >= entry.min && float <= entry.max);
+  return bucket?.exterior ?? "Battle-Scarred";
+};
+
+/** Находит числовой диапазон wear-ступени. */
+const getWearRange = (exterior: Exterior) =>
+  WEAR_BUCKETS.find((entry) => entry.exterior === exterior) ?? WEAR_BUCKETS[WEAR_BUCKETS.length - 1];
+
 export interface TradeupInputSlot {
   marketHashName: string;
-  exterior: Exterior;
+  float: number;
   /** Идентификатор коллекции, к которой относится входной предмет. */
   collectionId: string;
   /**
@@ -83,42 +93,32 @@ export interface TradeupInputSummary extends TradeupInputSlot {
   priceError?: unknown;
 }
 
-export interface TradeupOutcomeWear {
-  exterior: Exterior;
-  range: { min: number; max: number };
-  share: number;
-  marketHashName: string;
-  buyerPrice?: number | null;
-  netPrice?: number | null;
-  priceError?: unknown;
-}
-
 export interface TradeupOutcome {
   collectionId: string;
   collectionName: string;
   baseName: string;
-  floatRange: { min: number; max: number };
+  minFloat: number;
+  maxFloat: number;
+  rollFloat: number;
+  exterior: Exterior;
+  wearRange: { min: number; max: number };
   probability: number;
-  wears: TradeupOutcomeWear[];
-  worstBuyer?: number | null;
-  expectedBuyer?: number | null;
-  worstNet?: number | null;
-  expectedNet?: number | null;
+  buyerPrice?: number | null;
+  netPrice?: number | null;
+  priceError?: unknown;
+  marketHashName: string;
+  withinRange: boolean;
 }
 
 export interface TradeupCalculationResult {
-  averageRange: { min: number; max: number };
+  averageFloat: number;
   inputs: TradeupInputSummary[];
   outcomes: TradeupOutcome[];
   totalInputNet: number;
-  expectedOutcomeNet: number;
-  worstOutcomeNet: number;
+  totalOutcomeNet: number;
   expectedValue: number;
-  worstValue: number;
-  maxBudgetPerSlotExpected: number;
-  maxBudgetPerSlotWorst: number;
-  positiveOutcomeProbabilityExpected: number;
-  positiveOutcomeProbabilityWorst: number;
+  maxBudgetPerSlot: number;
+  positiveOutcomeProbability: number;
   warnings: string[];
 }
 
@@ -126,36 +126,12 @@ export interface TradeupCalculationResult {
 const toMarketHashName = (baseName: string, exterior: Exterior) =>
   `${baseName} (${exterior})`;
 
-interface FloatRange {
-  min: number;
-  max: number;
-}
-
-const clampRange = (range: FloatRange, min: number, max: number): FloatRange => ({
-  min: clamp(range.min, min, max),
-  max: clamp(range.max, min, max),
-});
-
-const projectAverageRange = (average: FloatRange, entry: FloatRange): FloatRange => {
-  const span = entry.max - entry.min;
-  if (span <= 0) {
-    const point = clamp(entry.min, 0, 1);
-    return { min: point, max: point };
-  }
-  const projectedMin = entry.min + span * clamp(average.min, 0, 1);
-  const projectedMax = entry.min + span * clamp(average.max, 0, 1);
-  const min = clamp(projectedMin, entry.min, entry.max);
-  const max = clamp(projectedMax, entry.min, entry.max);
-  return { min: Math.min(min, max), max: Math.max(min, max) };
-};
-
 /**
- * Собирает подробности по одному потенциальному исходу trade-up'а и подтягивает цены по всем
- * возможным wear-ступеням, которые пересекаются с теоретическим диапазоном float.
+ * Собирает подробности по одному потенциальному исходу trade-up'а и подтягивает цену из Steam.
  */
 const buildOutcome = async (
   options: {
-    averageRange: FloatRange;
+    averageFloat: number;
     collection: CollectionFloatCatalogEntry;
     entry: CovertFloatRange;
     collectionProbability: number;
@@ -163,106 +139,43 @@ const buildOutcome = async (
     override?: TargetOverrideRequest;
   },
 ): Promise<TradeupOutcome> => {
-  const { averageRange, collection, entry, collectionProbability, buyerToNetRate, override } =
+  const { averageFloat, collection, entry, collectionProbability, buyerToNetRate, override } =
     options;
 
-  const resolvedMin = clamp(override?.minFloat ?? entry.minFloat, 0, 1);
-  const resolvedMax = clamp(override?.maxFloat ?? entry.maxFloat, 0, 1);
-  const entryRange: FloatRange = {
-    min: Math.min(resolvedMin, resolvedMax),
-    max: Math.max(resolvedMin, resolvedMax),
-  };
+  const minFloat = override?.minFloat ?? entry.minFloat;
+  const maxFloat = override?.maxFloat ?? entry.maxFloat;
+  const raw = averageFloat * (maxFloat - minFloat) + minFloat;
+  const rollFloat = clamp(raw, minFloat, maxFloat);
+  const exterior = override?.exterior ?? getExteriorByFloat(rollFloat);
+  const wearRange = getWearRange(exterior);
+  const marketHashName = override?.marketHashName ?? toMarketHashName(entry.baseName, exterior);
 
-  const floatRange = projectAverageRange(averageRange, entryRange);
-  const rangeWidth = Math.max(floatRange.max - floatRange.min, 0);
-
-  const overrideMatchesBase =
-    override?.marketHashName &&
-    baseFromMarketHash(override.marketHashName) === entry.baseName;
-  const overrideExterior = overrideMatchesBase
-    ? parseMarketHashExterior(override!.marketHashName!)
-    : null;
-
-  const wears: TradeupOutcomeWear[] = [];
-  let fallbackAssigned = false;
-
-  for (const bucket of WEAR_BUCKETS) {
-    const overlapMin = Math.max(bucket.min, floatRange.min);
-    const overlapMax = Math.min(bucket.max, floatRange.max);
-    if (overlapMin > overlapMax) {
-      continue;
-    }
-
-    let share = 0;
-    if (rangeWidth > 0) {
-      share = (overlapMax - overlapMin) / rangeWidth;
-    } else if (!fallbackAssigned && floatRange.min >= bucket.min && floatRange.min <= bucket.max) {
-      share = 1;
-      fallbackAssigned = true;
-    }
-
-    if (share <= 0) {
-      continue;
-    }
-
-    const marketHashName = toMarketHashName(entry.baseName, bucket.exterior);
-    let buyerPrice: number | null | undefined = null;
-    let priceError: unknown = undefined;
-
-    if (overrideMatchesBase && overrideExterior === bucket.exterior && override?.price != null) {
-      buyerPrice = override.price;
-    } else {
-      const { price, error } = await getPriceUSD(marketHashName);
-      buyerPrice = price;
-      priceError = error;
-    }
-
-    const netPrice = buyerPrice == null ? null : buyerPrice / buyerToNetRate;
-
-    wears.push({
-      exterior: bucket.exterior,
-      range: clampRange({ min: overlapMin, max: overlapMax }, entryRange.min, entryRange.max),
-      share,
-      marketHashName,
-      buyerPrice: buyerPrice ?? null,
-      netPrice,
-      priceError,
-    });
+  let buyerPrice = override?.price ?? null;
+  let priceError: unknown = undefined;
+  if (buyerPrice == null) {
+    const { price, error } = await getPriceUSD(marketHashName);
+    buyerPrice = price;
+    priceError = error;
   }
 
-  let worstBuyer: number | null = null;
-  let expectedBuyer = 0;
-  let buyerShareWithPrice = 0;
-  let worstNet: number | null = null;
-  let expectedNet = 0;
-  let netShareWithPrice = 0;
-
-  for (const wear of wears) {
-    if (wear.buyerPrice != null) {
-      expectedBuyer += wear.share * wear.buyerPrice;
-      buyerShareWithPrice += wear.share;
-      worstBuyer = worstBuyer == null ? wear.buyerPrice : Math.min(worstBuyer, wear.buyerPrice);
-    }
-    if (wear.netPrice != null) {
-      expectedNet += wear.share * wear.netPrice;
-      netShareWithPrice += wear.share;
-      worstNet = worstNet == null ? wear.netPrice : Math.min(worstNet, wear.netPrice);
-    }
-  }
-
+  const netPrice = buyerPrice == null ? null : buyerPrice / buyerToNetRate;
   const probability = collectionProbability / collection.covert.length;
 
   return {
     collectionId: collection.id,
     collectionName: collection.name,
     baseName: entry.baseName,
-    floatRange,
+    minFloat,
+    maxFloat,
+    rollFloat,
+    exterior,
+    wearRange: { min: wearRange.min, max: wearRange.max },
     probability,
-    wears,
-    worstBuyer,
-    expectedBuyer: buyerShareWithPrice > 0 ? expectedBuyer : null,
-    worstNet,
-    expectedNet: netShareWithPrice > 0 ? expectedNet : null,
+    buyerPrice,
+    netPrice,
+    priceError,
+    marketHashName,
+    withinRange: rollFloat >= minFloat && rollFloat <= maxFloat,
   };
 };
 
@@ -516,27 +429,13 @@ export const calculateTradeup = async (
     ? payload.options.buyerToNetRate
     : DEFAULT_BUYER_TO_NET;
 
-  const inputs = payload.inputs.map((slot) => ({ ...slot }));
+  const inputs = payload.inputs.map((slot) => ({
+    ...slot,
+    float: clamp(slot.float, 0, 1),
+  }));
 
   const totalInputs = inputs.length;
-  if (!totalInputs) {
-    throw new Error("At least one input is required");
-  }
-
-  const wearBuckets = inputs.map((slot) => {
-    const bucket = WEAR_BUCKETS.find((entry) => entry.exterior === slot.exterior);
-    if (!bucket) {
-      throw new Error(`Unknown exterior: ${slot.exterior}`);
-    }
-    return bucket;
-  });
-
-  const averageRange = wearBuckets.reduce(
-    (acc, bucket) => {
-      return { min: acc.min + bucket.min / totalInputs, max: acc.max + bucket.max / totalInputs };
-    },
-    { min: 0, max: 0 },
-  );
+  const averageFloat = inputs.reduce((sum, slot) => sum + slot.float, 0) / totalInputs;
 
   const collectionCounts = new Map<string, number>();
   for (const slot of inputs) {
@@ -570,7 +469,7 @@ export const calculateTradeup = async (
       const collectionProbability = (collectionCounts.get(collection.id) ?? 0) / totalInputs;
       return collection.covert.map((entry) =>
         buildOutcome({
-          averageRange,
+          averageFloat,
           collection,
           entry,
           collectionProbability,
@@ -589,31 +488,15 @@ export const calculateTradeup = async (
     (sum, slot) => sum + (slot.netPrice ?? 0),
     0,
   );
-  const expectedOutcomeNet = outcomes.reduce(
-    (sum, outcome) => sum + outcome.probability * (outcome.expectedNet ?? 0),
+  const totalOutcomeNet = outcomes.reduce(
+    (sum, outcome) => sum + outcome.probability * (outcome.netPrice ?? 0),
     0,
   );
-  const worstOutcomeNet = outcomes.reduce(
-    (sum, outcome) => sum + outcome.probability * (outcome.worstNet ?? 0),
-    0,
-  );
-  const expectedValue = expectedOutcomeNet - totalInputNet;
-  const worstValue = worstOutcomeNet - totalInputNet;
-  const maxBudgetPerSlotExpected = totalInputs ? expectedOutcomeNet / totalInputs : 0;
-  const maxBudgetPerSlotWorst = totalInputs ? worstOutcomeNet / totalInputs : 0;
+  const expectedValue = totalOutcomeNet - totalInputNet;
+  const maxBudgetPerSlot = totalInputs ? totalOutcomeNet / totalInputs : 0;
 
-  const positiveOutcomeProbabilityExpected = outcomes.reduce((sum, outcome) => {
-    const positiveShare = outcome.wears.reduce((shareSum, wear) => {
-      if (wear.netPrice != null && wear.netPrice > totalInputNet) {
-        return shareSum + wear.share;
-      }
-      return shareSum;
-    }, 0);
-    return sum + outcome.probability * positiveShare;
-  }, 0);
-
-  const positiveOutcomeProbabilityWorst = outcomes.reduce((sum, outcome) => {
-    if (outcome.worstNet != null && outcome.worstNet > totalInputNet) {
+  const positiveOutcomeProbability = outcomes.reduce((sum, outcome) => {
+    if (outcome.netPrice != null && outcome.netPrice > totalInputNet) {
       return sum + outcome.probability;
     }
     return sum;
@@ -621,35 +504,22 @@ export const calculateTradeup = async (
 
   const warnings: string[] = [];
   for (const outcome of outcomes) {
-    if (!outcome.wears.length) {
-      warnings.push(`${outcome.baseName} has no reachable wear buckets for provided inputs`);
-    }
-    for (const wear of outcome.wears) {
-      if (wear.priceError) {
-        warnings.push(
-          `${wear.marketHashName}: ${
-            wear.priceError instanceof Error
-              ? wear.priceError.message
-              : String(wear.priceError)
-          }`,
-        );
-      }
+    if (!outcome.withinRange) {
+      warnings.push(
+        `${outcome.baseName} roll float ${outcome.rollFloat.toFixed(4)} is outside declared range`,
+      );
     }
   }
 
   return {
-    averageRange,
+    averageFloat,
     inputs: inputSummaries,
     outcomes,
     totalInputNet,
-    expectedOutcomeNet,
-    worstOutcomeNet,
+    totalOutcomeNet,
     expectedValue,
-    worstValue,
-    maxBudgetPerSlotExpected,
-    maxBudgetPerSlotWorst,
-    positiveOutcomeProbabilityExpected,
-    positiveOutcomeProbabilityWorst,
+    maxBudgetPerSlot,
+    positiveOutcomeProbability,
     warnings,
   };
 };

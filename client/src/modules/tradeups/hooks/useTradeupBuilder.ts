@@ -8,7 +8,9 @@ import {
   fetchTradeupCollections,
   requestTradeupCalculation,
   type CollectionInputSummary,
+  type CollectionInputsResponse,
   type CollectionTargetExterior,
+  type CollectionTargetSummary,
   type CollectionTargetsResponse,
   type SteamCollectionSummary,
   type TradeupCalculationResponse,
@@ -27,20 +29,21 @@ export interface TradeupInputFormRow {
    * так и fallback на steam-tag (если float-справочник пока не знает эту коллекцию).
    */
   collectionId: string;
-  exterior: Exterior | "";
+  float: string;
   buyerPrice: string;
 }
 
-const INPUT_SLOT_COUNT = 10;
+const TRADEUP_SLOT_COUNT = 10;
+const BUDGET_RESERVE_FRACTION = 0.1;
 
 const makeEmptyRow = (): TradeupInputFormRow => ({
   marketHashName: "",
   collectionId: "",
-  exterior: "",
+  float: "",
   buyerPrice: "",
 });
 
-const createInitialRows = () => Array.from({ length: INPUT_SLOT_COUNT }, makeEmptyRow);
+const createInitialRows = () => Array.from({ length: TRADEUP_SLOT_COUNT }, makeEmptyRow);
 
 const EXTERIOR_FLOAT_RANGES: Record<Exterior, { min: number; max: number }> = {
   "Factory New": { min: 0, max: 0.07 },
@@ -57,67 +60,116 @@ interface FloatRange {
   max: number;
 }
 
-const intersectRanges = (a: FloatRange, b: FloatRange): FloatRange | null => {
-  const min = Math.max(a.min, b.min);
-  const max = Math.min(a.max, b.max);
-  return min <= max ? { min, max } : null;
+interface AverageFloatFeasibility {
+  feasible: boolean;
+  range: FloatRange | null;
+}
+
+interface SlotBudgetCap {
+  totalNet: number;
+  perSlotNet: number;
+  perSlotBuyer: number;
+}
+
+const computeAverageFloatFeasibility = (options: {
+  targets: CollectionTargetSummary[];
+  exterior: Exterior;
+  fallbackCollection?: TradeupCollection | null;
+}): AverageFloatFeasibility => {
+  const wearBucket = EXTERIOR_FLOAT_RANGES[options.exterior];
+  if (!wearBucket) {
+    return { feasible: false, range: null };
+  }
+
+  let intersection: FloatRange = { min: 0, max: 1 };
+  let hasValidRange = false;
+
+  for (const target of options.targets) {
+    const exteriorEntry = target.exteriors.find(
+      (entry: CollectionTargetExterior) => entry.exterior === options.exterior,
+    );
+    if (!exteriorEntry) {
+      return { feasible: false, range: null };
+    }
+
+    const fallback = options.fallbackCollection?.covert.find(
+      (entry) => entry.baseName === target.baseName,
+    );
+    const minFloat = exteriorEntry.minFloat ?? fallback?.minFloat;
+    const maxFloat = exteriorEntry.maxFloat ?? fallback?.maxFloat;
+
+    if (minFloat == null || maxFloat == null || maxFloat <= minFloat) {
+      continue;
+    }
+
+    const span = maxFloat - minFloat;
+    const normalizedMin = clampFloat((wearBucket.min - minFloat) / span);
+    const normalizedMax = clampFloat((wearBucket.max - minFloat) / span);
+
+    const range: FloatRange = {
+      min: Math.min(normalizedMin, normalizedMax),
+      max: Math.max(normalizedMin, normalizedMax),
+    };
+
+    const nextMin = Math.max(intersection.min, range.min);
+    const nextMax = Math.min(intersection.max, range.max);
+    if (nextMin > nextMax) {
+      return { feasible: false, range: null };
+    }
+
+    intersection = { min: nextMin, max: nextMax };
+    hasValidRange = true;
+  }
+
+  if (!hasValidRange) {
+    return { feasible: true, range: null };
+  }
+
+  return { feasible: true, range: intersection };
 };
 
-const normalizeSkinFloatRange = (
-  minFloat?: number | null,
-  maxFloat?: number | null,
-): FloatRange | null => {
-  const resolvedMin = clampFloat(minFloat ?? 0);
-  const resolvedMax = clampFloat(maxFloat ?? 1);
-  const min = Math.min(resolvedMin, resolvedMax);
-  const max = Math.max(resolvedMin, resolvedMax);
-  if (max - min <= Number.EPSILON) {
-    return null;
-  }
-  return { min, max };
-};
+const computeSlotBudgetCap = (options: {
+  targets: CollectionTargetSummary[];
+  exterior: Exterior;
+  buyerToNetRate: number;
+  reserveFraction?: number;
+}): SlotBudgetCap | null => {
+  const reserveFraction = options.reserveFraction ?? BUDGET_RESERVE_FRACTION;
+  const relevantPrices = options.targets
+    .map((target) =>
+      target.exteriors.find(
+        (entry: CollectionTargetExterior) => entry.exterior === options.exterior,
+      ),
+    )
+    .filter(
+      (entry): entry is CollectionTargetExterior & { price: number } =>
+        Boolean(entry && typeof entry.price === "number"),
+    )
+    .map((entry) => entry.price);
 
-const computeAverageFloatRange = (
-  skinRange: FloatRange | null,
-  wearRange: FloatRange,
-): FloatRange | null => {
-  if (!skinRange) return null;
-  const effectiveWear: FloatRange = {
-    min: Math.max(wearRange.min, skinRange.min),
-    max: Math.min(wearRange.max, skinRange.max),
-  };
-  if (effectiveWear.min > effectiveWear.max) {
+  if (!relevantPrices.length) {
     return null;
   }
-  const span = skinRange.max - skinRange.min;
-  if (span <= 0) {
-    return null;
-  }
-  const lower = (effectiveWear.min - skinRange.min) / span;
-  const upper = (effectiveWear.max - skinRange.min) / span;
-  const min = clampFloat(Math.min(lower, upper));
-  const max = clampFloat(Math.max(lower, upper));
-  if (min > max) {
-    return null;
-  }
-  return { min, max };
-};
 
-const intersectAverageRanges = (ranges: FloatRange[]): FloatRange | null => {
-  if (!ranges.length) return null;
-  return ranges.reduce<FloatRange | null>((acc, range) => {
-    if (!acc) return range;
-    return intersectRanges(acc, range);
-  }, null);
-};
+  const averageBuyer =
+    relevantPrices.reduce((sum, price) => sum + price, 0) / relevantPrices.length;
+  const averageNet = averageBuyer / options.buyerToNetRate;
+  const reserveMultiplier = reserveFraction >= 1 ? 0 : Math.max(0, 1 - reserveFraction);
+  const totalNet = averageNet * reserveMultiplier;
+  const perSlotNet = totalNet / TRADEUP_SLOT_COUNT;
+  const perSlotBuyer = perSlotNet * options.buyerToNetRate;
 
-const BUDGET_SAFETY_MARGIN = 0.9; // 10% запас на комиссию/спрэд/неликвид
+  return { totalNet, perSlotNet, perSlotBuyer };
+};
 
 const exteriorMidpoint = (exterior: Exterior) => {
   const range = EXTERIOR_FLOAT_RANGES[exterior];
   if (!range) return null;
   return (range.min + range.max) / 2;
 };
+
+const formatFloatValue = (value: number | null | undefined) =>
+  value == null ? "" : clampFloat(value).toFixed(5);
 
 const STEAM_TAG_VALUE_PREFIX = "steam-tag:";
 
@@ -152,6 +204,7 @@ interface SelectedTarget {
   baseName: string;
   exterior: Exterior;
   marketHashName: string;
+  collectionId?: string | null;
   minFloat?: number;
   maxFloat?: number;
   price?: number | null;
@@ -171,10 +224,7 @@ export default function useTradeupBuilder() {
   const [targetsError, setTargetsError] = React.useState<string | null>(null);
 
   const [inputsByCollection, setInputsByCollection] = React.useState<
-    Record<
-      string,
-      { collectionId: string | null; collectionTag: string; inputs: CollectionInputSummary[] }
-    >
+    Record<string, CollectionInputsResponse>
   >({});
   const [inputsLoading, setInputsLoading] = React.useState(false);
   const [inputsError, setInputsError] = React.useState<string | null>(null);
@@ -369,6 +419,37 @@ export default function useTradeupBuilder() {
     activeCollectionTag,
   ]);
 
+  const resolveTargetPlanning = React.useCallback(
+    (collectionTag: string, desiredExterior: Exterior, resolvedCollectionId: string | null) => {
+      const targetsEntry = targetsByCollection[collectionTag];
+      if (!targetsEntry) return null;
+
+      const effectiveCollectionId = resolvedCollectionId ?? targetsEntry.collectionId ?? null;
+      const fallbackCollection =
+        effectiveCollectionId != null ? catalogMap.get(effectiveCollectionId) ?? null : null;
+
+      const feasibility = computeAverageFloatFeasibility({
+        targets: targetsEntry.targets,
+        exterior: desiredExterior,
+        fallbackCollection,
+      });
+
+      const budget = computeSlotBudgetCap({
+        targets: targetsEntry.targets,
+        exterior: desiredExterior,
+        buyerToNetRate,
+        reserveFraction: BUDGET_RESERVE_FRACTION,
+      });
+
+      return {
+        feasibility,
+        budget,
+        collectionId: effectiveCollectionId,
+      };
+    },
+    [targetsByCollection, catalogMap, buyerToNetRate],
+  );
+
   /** Подтягивает живой список коллекций из Steam Community Market. */
   const loadSteamCollections = React.useCallback(async () => {
     try {
@@ -522,19 +603,11 @@ export default function useTradeupBuilder() {
       inputs: CollectionInputSummary[],
       options?: {
         target?: {
-          baseName: string;
           exterior: Exterior;
           minFloat?: number | null;
           maxFloat?: number | null;
-          price?: number | null;
         };
-        outcomes?: Array<{
-          baseName: string;
-          exterior: Exterior;
-          minFloat?: number | null;
-          maxFloat?: number | null;
-          price?: number | null;
-        }>;
+        slotBuyerCap?: number | null;
       },
     ) => {
       const effectiveCollectionValue = buildCollectionSelectValue(
@@ -542,122 +615,115 @@ export default function useTradeupBuilder() {
         collectionTag,
       );
 
-      const target = options?.target;
-      const wearRange = target ? EXTERIOR_FLOAT_RANGES[target.exterior] ?? null : null;
-      const relevantOutcomes = target
-        ? (() => {
-            const provided = options?.outcomes ?? [];
-            const matching = provided.filter((entry) => entry.exterior === target.exterior);
-            if (matching.length) return matching;
-            return [
-              {
-                baseName: target.baseName,
-                exterior: target.exterior,
-                minFloat: target.minFloat ?? null,
-                maxFloat: target.maxFloat ?? null,
-                price: target.price ?? null,
-              },
-            ];
-          })()
-        : [];
+      const targetRange = (() => {
+        const target = options?.target;
+        if (!target) return null;
 
-      let desiredAverageRange: FloatRange | null = null;
-      if (target && wearRange) {
-        const perOutcomeRanges: FloatRange[] = [];
-        const unreachable: string[] = [];
-        for (const outcome of relevantOutcomes) {
-          const range = computeAverageFloatRange(
-            normalizeSkinFloatRange(outcome.minFloat, outcome.maxFloat),
-            wearRange,
-          );
-          if (!range) {
-            const label = outcome.baseName ? `${outcome.baseName} (${outcome.exterior})` : outcome.exterior;
-            unreachable.push(label);
-          } else {
-            perOutcomeRanges.push(range);
+        const bucket = EXTERIOR_FLOAT_RANGES[target.exterior];
+        const clampToBounds = (value: number) => clampFloat(value);
+
+        const resolveCatalogRange = () => {
+          if (target.minFloat == null && target.maxFloat == null) return null;
+          const min =
+            target.minFloat != null ? clampToBounds(target.minFloat) : 0;
+          const max =
+            target.maxFloat != null ? clampToBounds(target.maxFloat) : 1;
+          const normalizedMin = Math.min(min, max);
+          const normalizedMax = Math.max(min, max);
+          return { min: normalizedMin, max: normalizedMax };
+        };
+
+        if (bucket) {
+          const bucketMin = clampToBounds(bucket.min);
+          const bucketMax = clampToBounds(bucket.max);
+          const catalogRange = resolveCatalogRange();
+          const min = Math.max(bucketMin, catalogRange?.min ?? bucketMin);
+          const max = Math.min(bucketMax, catalogRange?.max ?? bucketMax);
+          if (min <= max) {
+            return { min, max };
           }
+          return { min: bucketMin, max: bucketMax };
         }
 
-        if (unreachable.length) {
-          setInputsError(
-            `Выбранный wear недостижим для: ${unreachable
-              .map((name) => `"${name}"`)
-              .join(", ")}.`,
-          );
-          setRows(createInitialRows());
-          return;
-        }
-
-        const intersection = intersectAverageRanges(perOutcomeRanges);
-        if (!intersection) {
-          setInputsError("Выбранный wear нельзя получить одновременно для всех результатов коллекции.");
-          setRows(createInitialRows());
-          return;
-        }
-        desiredAverageRange = intersection;
-      }
-
-      let slotBudgetBuyer: number | null = null;
-      if (target && relevantOutcomes.length) {
-        const priced = relevantOutcomes.filter((outcome) => typeof outcome.price === "number");
-        if (priced.length === relevantOutcomes.length) {
-          const expectedNet =
-            priced.reduce((sum, outcome) => sum + (outcome.price! / buyerToNetRate), 0) /
-            priced.length;
-          if (expectedNet > 0) {
-            const maxBudgetNet = expectedNet * BUDGET_SAFETY_MARGIN;
-            const perSlotNet = maxBudgetNet / INPUT_SLOT_COUNT;
-            slotBudgetBuyer = perSlotNet * buyerToNetRate;
-          }
-        }
-      }
-
-      let candidateInputs = inputs;
-      if (slotBudgetBuyer != null) {
-        candidateInputs = inputs.filter((input) => input.price != null && input.price <= slotBudgetBuyer!);
-        if (!candidateInputs.length) {
-          setInputsError(
-            `Нет входов дешевле $${slotBudgetBuyer.toFixed(2)} для выбранной цели.`,
-          );
-          setRows(createInitialRows());
-          return;
-        }
-      }
+        return resolveCatalogRange();
+      })();
 
       const desiredFloat = (() => {
-        if (desiredAverageRange) {
-          return clampFloat((desiredAverageRange.min + desiredAverageRange.max) / 2);
+        if (targetRange) {
+          return clampFloat((targetRange.min + targetRange.max) / 2);
         }
-        if (target && target.minFloat != null && target.maxFloat != null && target.maxFloat > target.minFloat) {
+        const target = options?.target;
+        if (!target) return null;
+        if (target.minFloat != null && target.maxFloat != null && target.maxFloat > target.minFloat) {
           return clampFloat((target.minFloat + target.maxFloat) / 2);
         }
-        if (target) {
-          const midpoint = exteriorMidpoint(target.exterior);
-          return midpoint != null ? clampFloat(midpoint) : null;
-        }
-        return null;
+        const midpoint = exteriorMidpoint(target.exterior);
+        return midpoint != null ? clampFloat(midpoint) : null;
       })();
 
       const sortedInputs = desiredFloat != null
-        ? [...candidateInputs].sort((a, b) => {
+        ? [...inputs].sort((a, b) => {
             const aMid = exteriorMidpoint(a.exterior) ?? desiredFloat;
             const bMid = exteriorMidpoint(b.exterior) ?? desiredFloat;
             const diff = Math.abs(aMid - desiredFloat) - Math.abs(bMid - desiredFloat);
             if (diff !== 0) return diff;
             return a.marketHashName.localeCompare(b.marketHashName, "ru");
           })
-        : candidateInputs;
+        : inputs;
 
-      const trimmed = sortedInputs.slice(0, INPUT_SLOT_COUNT);
+      const slotBuyerCap = options?.slotBuyerCap ?? null;
+      const filteredInputs =
+        slotBuyerCap != null
+          ? sortedInputs.filter((entry) => entry.price == null || entry.price <= slotBuyerCap)
+          : sortedInputs;
 
-      const filled: TradeupInputFormRow[] = trimmed.map((input) => ({
-        marketHashName: input.marketHashName,
-        collectionId: effectiveCollectionValue,
-        exterior: input.exterior,
-        buyerPrice: input.price != null ? input.price.toFixed(2) : "",
-      }));
-      while (filled.length < INPUT_SLOT_COUNT) filled.push(makeEmptyRow());
-      setInputsError(null);
+      if (slotBuyerCap != null && filteredInputs.length === 0) {
+        setInputsError(
+          `В коллекции нет входов дешевле $${slotBuyerCap.toFixed(2)}. Попробуйте снизить требования или увеличить бюджет.`,
+        );
+        setRows(createInitialRows());
+        return;
+      }
+
+      const trimmed = filteredInputs.slice(0, TRADEUP_SLOT_COUNT);
+      const offsetStep = desiredFloat != null && trimmed.length > 1 ? 0.00005 : 0;
+      const centerIndex = (trimmed.length - 1) / 2;
+      const clampWithinTargetRange = (value: number) => {
+        if (!targetRange) return clampFloat(value);
+        if (value < targetRange.min) return clampFloat(targetRange.min);
+        if (value > targetRange.max) return clampFloat(targetRange.max);
+        return clampFloat(value);
+      };
+
+      if (slotBuyerCap != null) {
+        if (trimmed.length < TRADEUP_SLOT_COUNT) {
+          setInputsError(
+            `Найдено только ${trimmed.length} входов дешевле $${slotBuyerCap.toFixed(
+              2,
+            )}. Остальные слоты заполните вручную.`,
+          );
+        } else {
+          setInputsError(null);
+        }
+      } else {
+        setInputsError(null);
+      }
+
+      const filled: TradeupInputFormRow[] = trimmed.map((input, index) => {
+        const baselineRaw = desiredFloat ?? exteriorMidpoint(input.exterior) ?? null;
+        const baseline = baselineRaw == null ? null : clampWithinTargetRange(baselineRaw);
+        const adjusted =
+          baseline == null
+            ? null
+            : clampWithinTargetRange(baseline + offsetStep * (index - centerIndex));
+        return {
+          marketHashName: input.marketHashName,
+          collectionId: effectiveCollectionValue,
+          float: formatFloatValue(adjusted),
+          buyerPrice: input.price != null ? input.price.toFixed(2) : "",
+        };
+      });
+      while (filled.length < TRADEUP_SLOT_COUNT) filled.push(makeEmptyRow());
       setRows(filled);
 
       const missingNames = trimmed
@@ -667,7 +733,7 @@ export default function useTradeupBuilder() {
         await autofillPrices(missingNames);
       }
     },
-    [autofillPrices, buyerToNetRate, selectedCollectionId],
+    [autofillPrices, selectedCollectionId],
   );
 
   /**
@@ -684,10 +750,12 @@ export default function useTradeupBuilder() {
         baseName,
         exterior: exterior.exterior,
         marketHashName: exterior.marketHashName,
+        collectionId: null,
         minFloat: exterior.minFloat,
         maxFloat: exterior.maxFloat,
         price: exterior.price ?? null,
       });
+      setInputsError(null);
       setCalculation(null);
       setCalculationError(null);
       try {
@@ -702,55 +770,44 @@ export default function useTradeupBuilder() {
           selectedCollectionId ??
           null;
 
-        if (resolvedCollectionId) {
-          setSelectedCollectionId(resolvedCollectionId);
-          rememberSteamCollectionId(collectionTag, resolvedCollectionId);
+        const planning = resolveTargetPlanning(collectionTag, exterior.exterior, resolvedCollectionId);
+        const targetCollectionId = resolvedCollectionId ?? planning?.collectionId ?? null;
+
+        setSelectedTarget((prev) => {
+          if (!prev || prev.marketHashName !== exterior.marketHashName) return prev;
+          return { ...prev, collectionId: targetCollectionId };
+        });
+
+        if (targetCollectionId) {
+          setSelectedCollectionId(targetCollectionId);
+          rememberSteamCollectionId(collectionTag, targetCollectionId);
           setTargetsByCollection((prev) => {
             const current = prev[collectionTag];
-            if (!current || current.collectionId === resolvedCollectionId) return prev;
-            return { ...prev, [collectionTag]: { ...current, collectionId: resolvedCollectionId } };
+            if (!current || current.collectionId === targetCollectionId) return prev;
+            return { ...prev, [collectionTag]: { ...current, collectionId: targetCollectionId } };
           });
           setInputsByCollection((prev) => {
             const current = prev[collectionTag];
-            if (!current || current.collectionId === resolvedCollectionId) return prev;
-            return { ...prev, [collectionTag]: { ...current, collectionId: resolvedCollectionId } };
+            if (!current || current.collectionId === targetCollectionId) return prev;
+            return { ...prev, [collectionTag]: { ...current, collectionId: targetCollectionId } };
           });
         }
 
-        const collectionTargetEntries = targetsByCollection[collectionTag]?.targets ?? [];
-        const outcomesForWear = collectionTargetEntries.flatMap((targetEntry) =>
-          targetEntry.exteriors
-            .filter((option) => option.exterior === exterior.exterior)
-            .map((option) => ({
-              baseName: targetEntry.baseName,
-              exterior: option.exterior,
-              minFloat: option.minFloat ?? null,
-              maxFloat: option.maxFloat ?? null,
-              price: option.price ?? null,
-            })),
-        );
-        const hasSelectedInOutcomes = outcomesForWear.some(
-          (entry) => entry.baseName === baseName,
-        );
-        if (!hasSelectedInOutcomes) {
-          outcomesForWear.push({
-            baseName,
-            exterior: exterior.exterior,
-            minFloat: exterior.minFloat ?? null,
-            maxFloat: exterior.maxFloat ?? null,
-            price: exterior.price ?? null,
-          });
+        if (planning && !planning.feasibility.feasible) {
+          setInputsError(
+            "Выбранный экстерьер недостижим для всех Covert-исходов. Измените цель или состав входов.",
+          );
+          setRows(createInitialRows());
+          return;
         }
 
-        await applyInputsToRows(collectionTag, resolvedCollectionId, response.inputs, {
+        await applyInputsToRows(collectionTag, targetCollectionId, response.inputs, {
           target: {
-            baseName,
             exterior: exterior.exterior,
             minFloat: exterior.minFloat ?? null,
             maxFloat: exterior.maxFloat ?? null,
-            price: exterior.price ?? null,
           },
-          outcomes: outcomesForWear,
+          slotBuyerCap: planning?.budget?.perSlotBuyer ?? null,
         });
       } catch (error) {
         // handled in loadInputsForCollection
@@ -759,6 +816,7 @@ export default function useTradeupBuilder() {
     [
       applyInputsToRows,
       catalogCollections,
+      resolveTargetPlanning,
       loadInputsForCollection,
       rememberSteamCollectionId,
       selectedCollectionId,
@@ -766,6 +824,16 @@ export default function useTradeupBuilder() {
       targetsByCollection,
     ],
   );
+
+  const selectedTargetPlanning = React.useMemo(() => {
+    if (!selectedTarget) return null;
+    const fallbackCollectionId = selectedTarget.collectionId ?? selectedCollectionId ?? null;
+    return resolveTargetPlanning(selectedTarget.collectionTag, selectedTarget.exterior, fallbackCollectionId);
+  }, [
+    resolveTargetPlanning,
+    selectedCollectionId,
+    selectedTarget,
+  ]);
 
   /** Позволяет редактировать одну строку таблицы вручную. */
   const updateRow = React.useCallback(
@@ -784,29 +852,17 @@ export default function useTradeupBuilder() {
       .map((row) => ({
         marketHashName: row.marketHashName.trim(),
         collectionId: row.collectionId.trim(),
-        exterior: row.exterior as Exterior,
+        float: Number.parseFloat(row.float),
         buyerPrice: Number.parseFloat(row.buyerPrice),
       }))
-      .filter((row): row is typeof row & { exterior: Exterior } => {
-        if (!row.marketHashName || !row.exterior) return false;
-        return Boolean(EXTERIOR_FLOAT_RANGES[row.exterior]);
-      });
+      .filter((row) => row.marketHashName && Number.isFinite(row.float));
   }, [rows]);
 
-  /** Диапазон среднего float по заполненным слотам. */
-  const averageRange = React.useMemo(() => {
-    if (!parsedRows.length) return null;
-    let minSum = 0;
-    let maxSum = 0;
-    for (const row of parsedRows) {
-      const bucket = EXTERIOR_FLOAT_RANGES[row.exterior];
-      minSum += bucket.min;
-      maxSum += bucket.max;
-    }
-    return {
-      min: clampFloat(minSum / parsedRows.length),
-      max: clampFloat(maxSum / parsedRows.length),
-    };
+  /** Средний float по заполненным слотам. */
+  const averageFloat = React.useMemo(() => {
+    if (!parsedRows.length) return 0;
+    const sum = parsedRows.reduce((acc, row) => acc + row.float, 0);
+    return sum / parsedRows.length;
   }, [parsedRows]);
 
   /** Суммарная стоимость в buyer-ценах. */
@@ -827,8 +883,8 @@ export default function useTradeupBuilder() {
       setCalculationError("Нужно добавить хотя бы один вход");
       return;
     }
-    if (parsedRows.length !== INPUT_SLOT_COUNT) {
-      setCalculationError(`Trade-up требует ровно ${INPUT_SLOT_COUNT} входов`);
+    if (parsedRows.length !== 10) {
+      setCalculationError("Trade-up требует ровно 10 входов");
       return;
     }
 
@@ -941,7 +997,7 @@ export default function useTradeupBuilder() {
       const payload = {
         inputs: rowsWithResolved.map((row) => ({
           marketHashName: row.marketHashName,
-          exterior: row.exterior,
+          float: row.float,
           collectionId: row.resolvedCollectionId ?? resolvedCollectionId,
           priceOverrideNet: Number.isFinite(row.buyerPrice)
             ? row.buyerPrice / buyerToNetRate
@@ -985,6 +1041,7 @@ export default function useTradeupBuilder() {
     loadingTargets,
     targetsError,
     selectedTarget,
+    selectedTargetPlanning,
     selectTarget,
     inputsLoading,
     inputsError,
@@ -993,7 +1050,7 @@ export default function useTradeupBuilder() {
     buyerFeePercent,
     setBuyerFeePercent,
     buyerToNetRate,
-    averageRange,
+    averageFloat,
     totalBuyerCost,
     totalNetCost,
     selectedCollectionDetails,
