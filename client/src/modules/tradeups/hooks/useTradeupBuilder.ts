@@ -535,31 +535,36 @@ export default function useTradeupBuilder() {
 
       const filled: TradeupInputFormRow[] = trimmed.map((input, index) => {
         const bucketRange = EXTERIOR_FLOAT_RANGES[input.exterior] ?? null;
-        const rowRange = (() => {
-          if (bucketRange && targetRange) {
-            const min = Math.max(bucketRange.min, targetRange.min);
-            const max = Math.min(bucketRange.max, targetRange.max);
-            if (min <= max) {
-              return { min, max };
-            }
-            return bucketRange;
-          }
+        const rowFloatRange = (() => {
           if (!targetRange) {
             return bucketRange;
           }
-          return bucketRange ?? targetRange ?? null;
+          if (!bucketRange) {
+            return targetRange;
+          }
+          const min = Math.max(bucketRange.min, targetRange.min);
+          const max = Math.min(bucketRange.max, targetRange.max);
+          if (min <= max) {
+            return { min, max };
+          }
+          return bucketRange;
         })();
 
         const clampWithinRowRange = (value: number) => {
-          if (rowRange) {
-            if (value < rowRange.min) return clampFloat(rowRange.min);
-            if (value > rowRange.max) return clampFloat(rowRange.max);
+          const range = rowFloatRange ?? bucketRange ?? targetRange;
+          if (range) {
+            if (value < range.min) return clampFloat(range.min);
+            if (value > range.max) return clampFloat(range.max);
             return clampFloat(value);
           }
           return clampFloat(value);
         };
 
-        const rowMidpoint = rowRange ? (rowRange.min + rowRange.max) / 2 : null;
+        const rowMidpoint = rowFloatRange
+          ? (rowFloatRange.min + rowFloatRange.max) / 2
+          : bucketRange
+          ? (bucketRange.min + bucketRange.max) / 2
+          : null;
         const baselineSource =
           desiredFloat ?? rowMidpoint ?? exteriorMidpoint(input.exterior) ?? null;
         const baseline =
