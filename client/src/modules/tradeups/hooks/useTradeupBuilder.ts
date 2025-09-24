@@ -32,6 +32,10 @@ export interface TradeupInputFormRow {
   buyerPrice: string;
 }
 
+/**
+ * Создаёт пустую строку формы ввода trade-up'а.
+ * Используется для инициализации и очистки таблицы.
+ */
 const makeEmptyRow = (): TradeupInputFormRow => ({
   marketHashName: "",
   collectionId: "",
@@ -39,6 +43,7 @@ const makeEmptyRow = (): TradeupInputFormRow => ({
   buyerPrice: "",
 });
 
+/** Возвращает массив из десяти пустых строк формы. */
 const createInitialRows = () => Array.from({ length: 10 }, makeEmptyRow);
 
 const EXTERIOR_FLOAT_RANGES: Record<Exterior, { min: number; max: number }> = {
@@ -57,14 +62,17 @@ const WEAR_BUCKET_SEQUENCE: Array<{ exterior: Exterior; min: number; max: number
   { exterior: "Battle-Scarred", min: 0.45, max: 1 },
 ];
 
+/** Ограничивает float-значение диапазоном [0, 1]. */
 const clampFloat = (value: number) => Math.min(1, Math.max(0, value));
 
+/** Возвращает середину стандартного диапазона для заданного экстерьера. */
 const exteriorMidpoint = (exterior: Exterior) => {
   const range = EXTERIOR_FLOAT_RANGES[exterior];
   if (!range) return null;
   return (range.min + range.max) / 2;
 };
 
+/** Форматирует float для отображения в input (пустая строка для null/undefined). */
 const formatFloatValue = (value: number | null | undefined) =>
   value == null ? "" : clampFloat(value).toFixed(5);
 
@@ -76,6 +84,10 @@ interface CollectionSelectOption {
   supported: boolean;
 }
 
+/**
+ * Строит значение для select'а коллекций. Предпочитает внутренний id,
+ * но при его отсутствии использует steam-tag с префиксом.
+ */
 const buildCollectionSelectValue = (
   collectionId?: string | null,
   collectionTag?: string | null,
@@ -85,6 +97,7 @@ const buildCollectionSelectValue = (
   return "";
 };
 
+/** Возвращает steam-tag из значения селекта, если он закодирован префиксом. */
 const readTagFromCollectionValue = (value: string) =>
   value.startsWith(STEAM_TAG_VALUE_PREFIX)
     ? value.slice(STEAM_TAG_VALUE_PREFIX.length)
@@ -204,22 +217,28 @@ export default function useTradeupBuilder() {
     void loadCatalog();
   }, []);
 
+  /** Быстрый индекс каталога коллекций по внутреннему идентификатору. */
   const catalogMap = React.useMemo(() => {
     return new Map(catalogCollections.map((collection) => [collection.id, collection] as const));
   }, [catalogCollections]);
 
+  /** Отдельная карта steam-tag → информация о коллекции для быстрых lookup'ов. */
   const steamCollectionsByTag = React.useMemo(
     () => new Map(steamCollections.map((entry) => [entry.tag, entry] as const)),
     [steamCollections],
   );
 
+  /**
+   * Сводная информация о значениях селекта коллекций.
+   * Нужна для корректного отображения названия даже когда данные приходят из разных источников.
+   */
   const collectionValueMeta = React.useMemo(() => {
-    const meta = new Map<string, CollectionValueMeta>();
+    const valueMetaMap = new Map<string, CollectionValueMeta>();
 
     const register = (value: string, details: { collectionId: string | null; tag: string | null; name?: string | null }) => {
       if (!value) return;
 
-      const existing = meta.get(value);
+      const existing = valueMetaMap.get(value);
       const fallbackName =
         (details.collectionId ? catalogMap.get(details.collectionId)?.name : undefined) ??
         (details.tag ? steamCollectionsByTag.get(details.tag)?.name : undefined) ??
@@ -231,14 +250,14 @@ export default function useTradeupBuilder() {
       };
 
       if (!existing) {
-        meta.set(value, next);
+        valueMetaMap.set(value, next);
         return;
       }
 
       const hasBetterId = !existing.collectionId && next.collectionId;
       const hasBetterName = !existing.name && next.name;
       if (hasBetterId || hasBetterName) {
-        meta.set(value, {
+        valueMetaMap.set(value, {
           collectionId: hasBetterId ? next.collectionId : existing.collectionId,
           tag: next.tag ?? existing.tag,
           name: hasBetterName ? next.name : existing.name,
@@ -287,12 +306,12 @@ export default function useTradeupBuilder() {
     }
 
     for (const entry of catalogCollections) {
-      if (!meta.has(entry.id)) {
+      if (!valueMetaMap.has(entry.id)) {
         register(entry.id, { collectionId: entry.id, tag: null, name: entry.name });
       }
     }
 
-    return meta;
+    return valueMetaMap;
   }, [
     steamCollections,
     steamCollectionsByTag,
@@ -302,6 +321,7 @@ export default function useTradeupBuilder() {
     catalogMap,
   ]);
 
+  /** Опции для выпадающего списка выбора коллекций в таблице входов. */
   const collectionOptions: CollectionSelectOption[] = React.useMemo(() => {
     const map = new Map<string, CollectionSelectOption>();
     const addOption = (value: string, label: string, supported: boolean) => {
@@ -328,12 +348,14 @@ export default function useTradeupBuilder() {
     return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label, "ru"));
   }, [steamCollections, catalogCollections, catalogMap]);
 
+  /** Подробности по выбранной коллекции из локального каталога (для подсказок по float). */
   const selectedCollectionDetails = React.useMemo(() => {
     if (!selectedCollectionId) return [];
     const entry = catalogMap.get(selectedCollectionId);
     return entry ? [entry] : [];
   }, [catalogMap, selectedCollectionId]);
 
+  /** Быстрая таблица соответствий steam-tag → collectionId. */
   const collectionIdByTag = React.useMemo(() => {
     const map = new Map<string, string>();
 
@@ -373,11 +395,11 @@ export default function useTradeupBuilder() {
     try {
       setSteamCollectionError(null);
       setLoadingSteamCollections(true);
-      const list = await fetchSteamCollections();
+      const steamCollectionList = await fetchSteamCollections();
       setSteamCollections((prev) => {
-        if (!prev.length) return list;
+        if (!prev.length) return steamCollectionList;
         const previousByTag = new Map(prev.map((entry) => [entry.tag, entry] as const));
-        return list.map((entry) => {
+        return steamCollectionList.map((entry) => {
           const existing = previousByTag.get(entry.tag);
           if (existing?.collectionId && !entry.collectionId) {
             return { ...entry, collectionId: existing.collectionId };
@@ -392,6 +414,10 @@ export default function useTradeupBuilder() {
     }
   }, []);
 
+  /**
+   * Если для steam-tag выяснился конкретный collectionId — сохраняем его,
+   * чтобы переиспользовать в дальнейшем и показывать поддержку float.
+   */
   const rememberSteamCollectionId = React.useCallback((collectionTag: string, collectionId: string | null) => {
     if (!collectionTag || !collectionId) return;
     setSteamCollections((prev) => {
@@ -630,15 +656,15 @@ export default function useTradeupBuilder() {
           return a.marketHashName.localeCompare(b.marketHashName, "ru");
         };
 
-        const copy = [...inputs];
-        copy.sort((a, b) => {
+        const sortableInputs = [...inputs];
+        sortableInputs.sort((a, b) => {
           const priceDiff = priceOf(a) - priceOf(b);
           if (priceDiff !== 0) {
             return priceDiff;
           }
           return fallbackCompare(a, b);
         });
-        return copy;
+        return sortableInputs;
       })();
 
       const inputsByExterior = sortedInputs.reduce((map, input) => {
@@ -648,7 +674,8 @@ export default function useTradeupBuilder() {
         return map;
       }, new Map<Exterior, CollectionInputSummary[]>());
 
-      const planned: CollectionInputSummary[] = [];
+      // Сюда будем складывать 10 предполагаемых входов для таблицы.
+      const plannedInputs: CollectionInputSummary[] = [];
 
       if (targetRange) {
         const projectedBuckets = WEAR_BUCKET_SEQUENCE.map((bucket) => {
@@ -708,24 +735,26 @@ export default function useTradeupBuilder() {
             const pool = inputsByExterior.get(entry.exterior);
             if (!pool || pool.length === 0) continue;
             for (let i = 0; i < entry.count; i += 1) {
-              planned.push(pool[i % pool.length]);
+              plannedInputs.push(pool[i % pool.length]);
             }
           }
         }
       }
 
-      if (planned.length < 10) {
-        for (let i = 0; planned.length < 10 && sortedInputs.length > 0; i += 1) {
-          planned.push(sortedInputs[i % sortedInputs.length]);
+      if (plannedInputs.length < 10) {
+        for (let i = 0; plannedInputs.length < 10 && sortedInputs.length > 0; i += 1) {
+          plannedInputs.push(sortedInputs[i % sortedInputs.length]);
         }
       }
 
-      const trimmed = planned.slice(0, 10);
-      const offsetStep = desiredFloat != null && trimmed.length > 1 ? 0.00005 : 0;
-      const centerIndex = (trimmed.length - 1) / 2;
+      const trimmedPlan = plannedInputs.slice(0, 10);
+      // Лёгкий offset помогает распределить float вокруг целевого значения.
+      const offsetStep = desiredFloat != null && trimmedPlan.length > 1 ? 0.00005 : 0;
+      const centerIndex = (trimmedPlan.length - 1) / 2;
 
-      const filled: TradeupInputFormRow[] = trimmed.map((input, index) => {
+      const filledRows: TradeupInputFormRow[] = trimmedPlan.map((input, index) => {
         const bucketRange = EXTERIOR_FLOAT_RANGES[input.exterior] ?? null;
+        // Итоговый диапазон для строки — пересечение выбранного таргета и бакета предмета.
         const rowFloatRange = (() => {
           if (!targetRange) {
             return bucketRange;
@@ -771,10 +800,10 @@ export default function useTradeupBuilder() {
           buyerPrice: input.price != null ? input.price.toFixed(2) : "",
         };
       });
-      while (filled.length < 10) filled.push(makeEmptyRow());
-      setRows(filled);
+      while (filledRows.length < 10) filledRows.push(makeEmptyRow());
+      setRows(filledRows);
 
-      const missingNames = trimmed
+      const missingNames = trimmedPlan
         .filter((input) => input.price == null)
         .map((input) => input.marketHashName);
       if (missingNames.length) {
@@ -991,6 +1020,10 @@ export default function useTradeupBuilder() {
 
   const totalNetCost = totalBuyerCost / buyerToNetRate;
 
+  /**
+   * Проводит расчёт «без float»: оценивает диапазон входов и возможные исходы по wear.
+   * Возвращает как консервативные, так и ожидаемые метрики доходности.
+   */
   const floatlessAnalysis = React.useMemo<FloatlessAnalysisResult>(() => {
     const issues: string[] = [];
     const wearCounts: Partial<Record<Exterior, number>> = {};

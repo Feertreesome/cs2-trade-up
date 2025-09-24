@@ -7,9 +7,16 @@ import "./TradeupBuilder.css";
  * загрузку коллекций из Steam, выбор целевого скина, заполнение входов и показ результатов.
  */
 
+/**
+ * Приводит число к строке с фиксированным количеством знаков после запятой.
+ * Используется для аккуратного отображения денежных значений и float-значений.
+ */
 const formatNumber = (value: number, digits = 2) =>
   Number.isFinite(value) ? value.toFixed(digits) : "—";
 
+/**
+ * Преобразует вероятность в строку процента с двумя знаками после запятой.
+ */
 const formatPercent = (value: number) =>
   Number.isFinite(value) ? `${(value * 100).toFixed(2)}%` : "—";
 
@@ -21,8 +28,10 @@ const EXTERIOR_SHORT: Record<string, string> = {
   "Battle-Scarred": "BS",
 };
 
+/** Сокращает название экстерьера до двухбуквенного обозначения. */
 const shortExterior = (exterior: string) => EXTERIOR_SHORT[exterior] ?? exterior;
 
+/** Порядок отображения экстерьеров от лучших к худшим. */
 const WEAR_ORDER = [
   "Factory New",
   "Minimal Wear",
@@ -222,7 +231,7 @@ export default function TradeupBuilder() {
                 <th>Коллекция</th>
                 <th>Float</th>
                 <th>Buyer $</th>
-                <th>Net $</th>
+                <th>Net $ (после комиссии)</th>
               </tr>
             </thead>
             <tbody>
@@ -300,7 +309,7 @@ export default function TradeupBuilder() {
             onClick={() => calculate()}
             disabled={calculating}
           >
-            {calculating ? "Расчёт…" : "Рассчитать EV"}
+            {calculating ? "Расчёт…" : "Рассчитать ожидаемое значение (EV)"}
           </button>
         </div>
         {calculationError && <div className="text-danger mt-2">{calculationError}</div>}
@@ -334,7 +343,7 @@ export default function TradeupBuilder() {
                   .join(", ") || "—"}
               </div>
               <div>
-                Robust net:{" "}
+                Робастная чистая прибыль (минимум):{" "}
                 <strong>
                   {floatlessAnalysis.robustOutcomeNet != null
                     ? `$${formatNumber(floatlessAnalysis.robustOutcomeNet)}`
@@ -342,7 +351,7 @@ export default function TradeupBuilder() {
                 </strong>
                 {floatlessAnalysis.robustEV != null && (
                   <span className="ms-2">
-                    EV:{" "}
+                    Ожидаемое значение (EV):{" "}
                     <strong
                       className={floatlessAnalysis.robustEV >= 0 ? "text-success" : "text-danger"}
                     >
@@ -352,7 +361,7 @@ export default function TradeupBuilder() {
                 )}
               </div>
               <div>
-                Expected net:{" "}
+                Ожидаемая чистая прибыль:{" "}
                 <strong>
                   {floatlessAnalysis.expectedOutcomeNet != null
                     ? `$${formatNumber(floatlessAnalysis.expectedOutcomeNet)}`
@@ -360,7 +369,7 @@ export default function TradeupBuilder() {
                 </strong>
                 {floatlessAnalysis.expectedEV != null && (
                   <span className="ms-2">
-                    EV:{" "}
+                    Ожидаемое значение (EV):{" "}
                     <strong
                       className={floatlessAnalysis.expectedEV >= 0 ? "text-success" : "text-danger"}
                     >
@@ -382,8 +391,8 @@ export default function TradeupBuilder() {
                     <th>Вероятность</th>
                     <th>Проекция float</th>
                     <th>Возможные wear</th>
-                    <th>Robust net</th>
-                    <th>Expected net</th>
+                    <th>Робастная чистая прибыль</th>
+                    <th>Ожидаемая чистая прибыль</th>
                     <th>Покрытие</th>
                   </tr>
                 </thead>
@@ -438,9 +447,11 @@ export default function TradeupBuilder() {
         <section className="mt-4">
           <h3 className="h5">4. Результаты</h3>
           <div className="tradeup-results card bg-secondary-subtle text-dark p-3">
-            <div>Ожидаемый возврат (net): <strong>${formatNumber(calculation.totalOutcomeNet)}</strong></div>
             <div>
-              EV:{" "}
+              Ожидаемый возврат после комиссии (net): <strong>${formatNumber(calculation.totalOutcomeNet)}</strong>
+            </div>
+            <div>
+              Ожидаемое значение (EV):{" "}
               <strong className={calculation.expectedValue >= 0 ? "text-success" : "text-danger"}>
                 ${formatNumber(calculation.expectedValue)}
               </strong>
@@ -469,7 +480,7 @@ export default function TradeupBuilder() {
                   <th>Float</th>
                   <th>Wear</th>
                   <th>Buyer $</th>
-                  <th>Net $</th>
+                  <th>Net $ (после комиссии)</th>
                   <th>Вероятность</th>
                 </tr>
               </thead>
