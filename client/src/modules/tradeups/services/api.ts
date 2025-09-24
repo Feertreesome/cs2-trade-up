@@ -61,6 +61,8 @@ export interface TradeupInputPayload {
   marketHashName: string;
   float: number;
   collectionId: string;
+  minFloat?: number | null;
+  maxFloat?: number | null;
   priceOverrideNet?: number | null;
 }
 
@@ -111,6 +113,8 @@ export interface TradeupInputSummaryResponse extends TradeupInputPayload {
 
 export interface TradeupCalculationResponse {
   averageFloat: number;
+  normalizedAverageFloat: number;
+  normalizationMode: "normalized" | "simple";
   inputs: TradeupInputSummaryResponse[];
   outcomes: TradeupOutcomeResponse[];
   totalInputNet: number;

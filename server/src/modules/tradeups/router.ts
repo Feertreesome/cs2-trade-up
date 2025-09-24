@@ -33,6 +33,8 @@ const parseBody = (body: any): TradeupRequestPayload => {
         marketHashName: String(slot?.marketHashName || ""),
         float: Number(slot?.float ?? 0),
         collectionId: String(slot?.collectionId || ""),
+        minFloat: parseNumber(slot?.minFloat),
+        maxFloat: parseNumber(slot?.maxFloat),
         priceOverrideNet:
           slot?.priceOverrideNet == null ? undefined : Number(slot.priceOverrideNet),
       }))
