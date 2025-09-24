@@ -616,15 +616,30 @@ export default function useTradeupBuilder() {
         return midpoint != null ? clampFloat(midpoint) : null;
       })();
 
-      const sortedInputs = desiredFloat != null
-        ? [...inputs].sort((a, b) => {
+      const sortedInputs = (() => {
+        const priceOf = (entry: CollectionInputSummary) =>
+          typeof entry.price === "number" ? entry.price : Number.POSITIVE_INFINITY;
+
+        const fallbackCompare = (a: CollectionInputSummary, b: CollectionInputSummary) => {
+          if (desiredFloat != null) {
             const aMid = exteriorMidpoint(a.exterior) ?? desiredFloat;
             const bMid = exteriorMidpoint(b.exterior) ?? desiredFloat;
             const diff = Math.abs(aMid - desiredFloat) - Math.abs(bMid - desiredFloat);
             if (diff !== 0) return diff;
-            return a.marketHashName.localeCompare(b.marketHashName, "ru");
-          })
-        : inputs;
+          }
+          return a.marketHashName.localeCompare(b.marketHashName, "ru");
+        };
+
+        const copy = [...inputs];
+        copy.sort((a, b) => {
+          const priceDiff = priceOf(a) - priceOf(b);
+          if (priceDiff !== 0) {
+            return priceDiff;
+          }
+          return fallbackCompare(a, b);
+        });
+        return copy;
+      })();
 
       const inputsByExterior = sortedInputs.reduce((map, input) => {
         const current = map.get(input.exterior) ?? [];
