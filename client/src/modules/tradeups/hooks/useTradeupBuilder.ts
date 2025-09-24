@@ -1,5 +1,6 @@
 import React from "react";
 import type { Exterior } from "../../skins/services/types";
+import { parseExterior } from "../../skins/services/utils";
 import {
   batchPriceOverview,
   fetchCollectionInputs,
@@ -47,6 +48,14 @@ const EXTERIOR_FLOAT_RANGES: Record<Exterior, { min: number; max: number }> = {
   "Well-Worn": { min: 0.38, max: 0.45 },
   "Battle-Scarred": { min: 0.45, max: 1 },
 };
+
+const WEAR_BUCKET_SEQUENCE: Array<{ exterior: Exterior; min: number; max: number }> = [
+  { exterior: "Factory New", min: 0, max: 0.07 },
+  { exterior: "Minimal Wear", min: 0.07, max: 0.15 },
+  { exterior: "Field-Tested", min: 0.15, max: 0.38 },
+  { exterior: "Well-Worn", min: 0.38, max: 0.45 },
+  { exterior: "Battle-Scarred", min: 0.45, max: 1 },
+];
 
 const clampFloat = (value: number) => Math.min(1, Math.max(0, value));
 
@@ -97,6 +106,55 @@ interface SelectedTarget {
   price?: number | null;
 }
 
+interface ResolvedTradeupRow {
+  marketHashName: string;
+  collectionId: string;
+  float: number;
+  buyerPrice: number;
+  resolvedCollectionId: string | null;
+  resolvedCollectionName: string | null;
+  resolvedTag: string | null;
+}
+
+interface FloatlessOutcomeExterior {
+  exterior: Exterior;
+  probability: number | null;
+  buyerPrice: number | null;
+  netPrice: number | null;
+  marketHashName: string;
+}
+
+interface FloatlessOutcomeSummary {
+  baseName: string;
+  probability: number;
+  projectedRange: { min: number; max: number };
+  exteriors: FloatlessOutcomeExterior[];
+  robustNet: number | null;
+  expectedNetContribution: number | null;
+  expectedProbabilityCovered: number;
+}
+
+interface FloatlessAnalysisResult {
+  ready: boolean;
+  issues: string[];
+  inputRange: { min: number; max: number } | null;
+  wearCounts: Partial<Record<Exterior, number>>;
+  outcomes: FloatlessOutcomeSummary[];
+  robustOutcomeNet: number | null;
+  expectedOutcomeNet: number | null;
+  robustEV: number | null;
+  expectedEV: number | null;
+  expectedCoverage: number;
+}
+
+interface RowResolution {
+  rows: ResolvedTradeupRow[];
+  unresolvedNames: string[];
+  hasMultipleCollections: boolean;
+  resolvedCollectionId: string | null;
+  collectionCounts: Map<string, number>;
+}
+
 export default function useTradeupBuilder() {
   const [catalogCollections, setCatalogCollections] = React.useState<TradeupCollection[]>([]);
   const [steamCollections, setSteamCollections] = React.useState<SteamCollectionSummary[]>([]);
@@ -129,6 +187,7 @@ export default function useTradeupBuilder() {
   const [calculating, setCalculating] = React.useState(false);
   const [calculationError, setCalculationError] = React.useState<string | null>(null);
   const [priceLoading, setPriceLoading] = React.useState(false);
+  const [targetPriceOverrides, setTargetPriceOverrides] = React.useState<Record<string, number>>({});
 
   const buyerToNetRate = 1 + Math.max(0, buyerFeePercent) / 100;
 
@@ -354,6 +413,44 @@ export default function useTradeupBuilder() {
     if (!activeCollectionTag) return [];
     return targetsByCollection[activeCollectionTag]?.targets ?? [];
   }, [activeCollectionTag, targetsByCollection]);
+
+  React.useEffect(() => {
+    if (!activeTargets.length) return;
+    const missing = new Set<string>();
+    for (const target of activeTargets) {
+      for (const exterior of target.exteriors) {
+        if (exterior.price == null && !targetPriceOverrides[exterior.marketHashName]) {
+          missing.add(exterior.marketHashName);
+        }
+      }
+    }
+    if (!missing.size) return;
+
+    let cancelled = false;
+    async function loadPrices() {
+      try {
+        const result = await batchPriceOverview(Array.from(missing));
+        if (cancelled) return;
+        setTargetPriceOverrides((prev) => {
+          const next = { ...prev };
+          for (const name of Object.keys(result)) {
+            const price = result[name];
+            if (typeof price === "number") {
+              next[name] = price;
+            }
+          }
+          return next;
+        });
+      } catch (error) {
+        console.warn("Failed to fetch target prices", error);
+      }
+    }
+
+    void loadPrices();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTargets, targetPriceOverrides]);
 
   /**
    * Выбор коллекции: сбрасывает форму, подгружает цели и при наличии — collectionId из справочника.
@@ -685,37 +782,18 @@ export default function useTradeupBuilder() {
       .filter((row) => row.marketHashName && Number.isFinite(row.float));
   }, [rows]);
 
-  /** Средний float по заполненным слотам. */
-  const averageFloat = React.useMemo(() => {
-    if (!parsedRows.length) return 0;
-    const sum = parsedRows.reduce((acc, row) => acc + row.float, 0);
-    return sum / parsedRows.length;
-  }, [parsedRows]);
-
-  /** Суммарная стоимость в buyer-ценах. */
-  const totalBuyerCost = React.useMemo(() => {
-    return parsedRows.reduce(
-      (sum, row) => sum + (Number.isFinite(row.buyerPrice) ? row.buyerPrice : 0),
-      0,
-    );
-  }, [parsedRows]);
-
-  const totalNetCost = totalBuyerCost / buyerToNetRate;
-
-  /**
-   * Отправляет форму на сервер. Перед вызовом проверяем, что заполнено 10 корректных входов.
-   */
-  const calculate = React.useCallback(async () => {
-    if (parsedRows.length === 0) {
-      setCalculationError("Нужно добавить хотя бы один вход");
-      return;
-    }
-    if (parsedRows.length !== 10) {
-      setCalculationError("Trade-up требует ровно 10 входов");
-      return;
+  const rowResolution = React.useMemo<RowResolution>(() => {
+    if (!parsedRows.length) {
+      return {
+        rows: [],
+        unresolvedNames: [],
+        hasMultipleCollections: false,
+        resolvedCollectionId: selectedCollectionId ?? null,
+        collectionCounts: new Map(),
+      };
     }
 
-    const rowsWithResolved = parsedRows.map((row) => {
+    const rowsWithResolved: ResolvedTradeupRow[] = parsedRows.map((row) => {
       const meta = collectionValueMeta.get(row.collectionId);
       const fallbackTag = meta?.tag ?? readTagFromCollectionValue(row.collectionId);
       const steamEntry = fallbackTag ? steamCollectionsByTag.get(fallbackTag) : undefined;
@@ -763,35 +841,342 @@ export default function useTradeupBuilder() {
     });
 
     const unresolvedRows = rowsWithResolved.filter((row) => !row.resolvedCollectionId);
-    if (unresolvedRows.length) {
-      const uniqueNames = Array.from(
-        new Set(
-          unresolvedRows.map(
-            (row) => row.resolvedCollectionName ?? row.collectionId ?? "неизвестно",
-          ),
-        ),
+    const unresolvedNames = Array.from(
+      new Set(
+        unresolvedRows.map((row) => row.resolvedCollectionName ?? row.collectionId ?? "неизвестно"),
+      ),
+    );
+
+    const collectionCounts = new Map<string, number>();
+    for (const row of rowsWithResolved) {
+      if (!row.resolvedCollectionId) continue;
+      collectionCounts.set(
+        row.resolvedCollectionId,
+        (collectionCounts.get(row.resolvedCollectionId) ?? 0) + 1,
       );
+    }
+
+    const resolvedIds = Array.from(collectionCounts.keys());
+    const hasMultipleCollections = resolvedIds.length > 1;
+
+    let resolvedCollectionId = selectedCollectionId ?? null;
+    if (!resolvedCollectionId && resolvedIds.length === 1) {
+      [resolvedCollectionId] = resolvedIds;
+    }
+
+    return {
+      rows: rowsWithResolved,
+      unresolvedNames,
+      hasMultipleCollections,
+      resolvedCollectionId,
+      collectionCounts,
+    };
+  }, [
+    parsedRows,
+    catalogMap,
+    collectionIdByTag,
+    collectionValueMeta,
+    selectedCollectionId,
+    steamCollectionsByTag,
+  ]);
+
+  /** Средний float по заполненным слотам. */
+  const averageFloat = React.useMemo(() => {
+    if (!parsedRows.length) return 0;
+    const sum = parsedRows.reduce((acc, row) => acc + row.float, 0);
+    return sum / parsedRows.length;
+  }, [parsedRows]);
+
+  /** Суммарная стоимость в buyer-ценах. */
+  const totalBuyerCost = React.useMemo(() => {
+    return parsedRows.reduce(
+      (sum, row) => sum + (Number.isFinite(row.buyerPrice) ? row.buyerPrice : 0),
+      0,
+    );
+  }, [parsedRows]);
+
+  const totalNetCost = totalBuyerCost / buyerToNetRate;
+
+  const floatlessAnalysis = React.useMemo<FloatlessAnalysisResult>(() => {
+    const issues: string[] = [];
+    const wearCounts: Partial<Record<Exterior, number>> = {};
+
+    if (!rowResolution.rows.length) {
+      issues.push("Нужно добавить входы для оценки");
+      return {
+        ready: false,
+        issues,
+        inputRange: null,
+        wearCounts,
+        outcomes: [],
+        robustOutcomeNet: null,
+        expectedOutcomeNet: null,
+        robustEV: null,
+        expectedEV: null,
+        expectedCoverage: 0,
+      };
+    }
+
+    if (rowResolution.rows.length !== 10) {
+      issues.push("Нужно ровно 10 входов для trade-up");
+    }
+
+    if (rowResolution.unresolvedNames.length) {
+      issues.push(
+        `Не удалось определить коллекцию для: ${rowResolution.unresolvedNames
+          .map((name) => `"${name}"`)
+          .join(", ")}`,
+      );
+    }
+
+    if (rowResolution.hasMultipleCollections) {
+      issues.push("Нужно использовать предметы из одной коллекции");
+    }
+
+    const resolvedCollectionId = rowResolution.resolvedCollectionId;
+    if (!resolvedCollectionId) {
+      issues.push("Не выбрана целевая коллекция для расчёта");
+    }
+
+    if (!activeTargets.length) {
+      issues.push("Нет данных о выходах для выбранной коллекции");
+    }
+
+    const wearSlots = rowResolution.rows.map((row) => {
+      const exterior = parseExterior(row.marketHashName);
+      const bucket = EXTERIOR_FLOAT_RANGES[exterior];
+      if (!bucket) return null;
+      wearCounts[exterior] = (wearCounts[exterior] ?? 0) + 1;
+      return { exterior, bucket };
+    });
+
+    if (wearSlots.some((slot) => slot == null)) {
+      issues.push("Не удалось распознать wear некоторых входов по market_hash_name");
+    }
+
+    if (issues.length > 0 || !resolvedCollectionId) {
+      return {
+        ready: false,
+        issues,
+        inputRange: null,
+        wearCounts,
+        outcomes: [],
+        robustOutcomeNet: null,
+        expectedOutcomeNet: null,
+        robustEV: null,
+        expectedEV: null,
+        expectedCoverage: 0,
+      };
+    }
+
+    const validSlots = wearSlots.filter((slot): slot is { exterior: Exterior; bucket: { min: number; max: number } } =>
+      Boolean(slot),
+    );
+    const totalSlots = validSlots.length;
+    const minSum = validSlots.reduce((sum, slot) => sum + slot.bucket.min, 0);
+    const maxSum = validSlots.reduce((sum, slot) => sum + slot.bucket.max, 0);
+    const inputRange = {
+      min: clampFloat(minSum / Math.max(totalSlots, 1)),
+      max: clampFloat(maxSum / Math.max(totalSlots, 1)),
+    };
+
+    const collectionProbability = rowResolution.rows.length
+      ? (rowResolution.collectionCounts.get(resolvedCollectionId) ?? 0) /
+        rowResolution.rows.length
+      : 0;
+
+    const baseCount = activeTargets.length;
+    const baseProbability = baseCount > 0 ? collectionProbability / baseCount : 0;
+
+    const catalogEntry = catalogMap.get(resolvedCollectionId) ?? null;
+
+    const outcomes: FloatlessOutcomeSummary[] = [];
+    let robustOutcomeNet: number | null = 0;
+    let expectedOutcomeNet: number | null = 0;
+    let expectedCoverage = 0;
+    let hasRobustGap = false;
+    let hasExpectedData = false;
+
+    for (const target of activeTargets) {
+      const exteriorEntries = target.exteriors;
+      let minFloat: number | null = null;
+      let maxFloat: number | null = null;
+      for (const exterior of exteriorEntries) {
+        if (exterior.minFloat != null) {
+          minFloat = minFloat == null ? exterior.minFloat : Math.min(minFloat, exterior.minFloat);
+        }
+        if (exterior.maxFloat != null) {
+          maxFloat = maxFloat == null ? exterior.maxFloat : Math.max(maxFloat, exterior.maxFloat);
+        }
+      }
+
+      if (minFloat == null || maxFloat == null) {
+        const fallback = catalogEntry?.covert.find((entry) => entry.baseName === target.baseName);
+        if (fallback) {
+          minFloat = fallback.minFloat;
+          maxFloat = fallback.maxFloat;
+        }
+      }
+
+      if (minFloat == null || maxFloat == null) {
+        minFloat = 0;
+        maxFloat = 1;
+      }
+
+      if (minFloat > maxFloat) {
+        [minFloat, maxFloat] = [maxFloat, minFloat];
+      }
+
+      const projectedMin = clampFloat(minFloat + (maxFloat - minFloat) * inputRange.min);
+      const projectedMax = clampFloat(minFloat + (maxFloat - minFloat) * inputRange.max);
+      const normalizedMin = Math.min(projectedMin, projectedMax);
+      const normalizedMax = Math.max(projectedMin, projectedMax);
+      const rangeWidth = Math.max(0, normalizedMax - normalizedMin);
+
+      const potential = WEAR_BUCKET_SEQUENCE.map((bucket) => {
+        const targetExterior = exteriorEntries.find((entry) => entry.exterior === bucket.exterior);
+        if (!targetExterior) return null;
+        const min = Math.max(bucket.min, normalizedMin);
+        const max = Math.min(bucket.max, normalizedMax);
+        const width = Math.max(0, max - min);
+        const containsPoint =
+          rangeWidth === 0 && normalizedMin >= bucket.min && normalizedMin <= bucket.max;
+        if (width <= 0 && !containsPoint) return null;
+        const buyerPrice =
+          targetExterior.price ?? targetPriceOverrides[targetExterior.marketHashName] ?? null;
+        const netPrice = buyerPrice == null ? null : buyerPrice / buyerToNetRate;
+        return {
+          exterior: bucket.exterior,
+          width,
+          containsPoint,
+          buyerPrice,
+          netPrice,
+          marketHashName: targetExterior.marketHashName,
+        };
+      }).filter((entry): entry is NonNullable<typeof entry> => entry != null);
+
+      let widthSum = 0;
+      for (const entry of potential) {
+        widthSum += entry.width;
+      }
+
+      const denominator = rangeWidth > 0 ? widthSum || rangeWidth : 1;
+      const exteriors: FloatlessOutcomeExterior[] = [];
+      let robustNet: number | null = null;
+      let expectedContribution: number | null = null;
+      let expectedProbabilityCovered = 0;
+
+      for (const entry of potential) {
+        let probability: number | null = null;
+        if (rangeWidth === 0) {
+          probability = entry.containsPoint ? 1 : 0;
+        } else if (denominator > 0) {
+          probability = entry.width / denominator;
+        }
+
+        exteriors.push({
+          exterior: entry.exterior,
+          probability,
+          buyerPrice: entry.buyerPrice,
+          netPrice: entry.netPrice,
+          marketHashName: entry.marketHashName,
+        });
+
+        if (probability != null && entry.netPrice != null) {
+          if (robustNet == null || entry.netPrice < robustNet) {
+            robustNet = entry.netPrice;
+          }
+          expectedContribution = (expectedContribution ?? 0) + entry.netPrice * probability;
+          expectedProbabilityCovered += probability;
+        }
+      }
+
+      if (robustNet == null) {
+        hasRobustGap = true;
+      }
+
+      if (expectedContribution != null && expectedProbabilityCovered > 0) {
+        hasExpectedData = true;
+        expectedOutcomeNet = (expectedOutcomeNet ?? 0) + expectedContribution * baseProbability;
+        expectedCoverage += expectedProbabilityCovered * baseProbability;
+      }
+
+      if (robustNet != null) {
+        robustOutcomeNet = (robustOutcomeNet ?? 0) + robustNet * baseProbability;
+      }
+
+      outcomes.push({
+        baseName: target.baseName,
+        probability: baseProbability,
+        projectedRange: { min: normalizedMin, max: normalizedMax },
+        exteriors,
+        robustNet,
+        expectedNetContribution: expectedContribution,
+        expectedProbabilityCovered,
+      });
+    }
+
+    if (hasRobustGap) {
+      robustOutcomeNet = null;
+    }
+
+    if (!hasExpectedData) {
+      expectedOutcomeNet = null;
+      expectedCoverage = 0;
+    }
+
+    const robustEV = robustOutcomeNet == null ? null : robustOutcomeNet - totalNetCost;
+    const expectedEV = expectedOutcomeNet == null ? null : expectedOutcomeNet - totalNetCost;
+
+    return {
+      ready: issues.length === 0,
+      issues,
+      inputRange,
+      wearCounts,
+      outcomes,
+      robustOutcomeNet,
+      expectedOutcomeNet,
+      robustEV,
+      expectedEV,
+      expectedCoverage,
+    };
+  }, [
+    activeTargets,
+    buyerToNetRate,
+    catalogMap,
+    rowResolution,
+    targetPriceOverrides,
+    totalNetCost,
+  ]);
+
+  /**
+   * Отправляет форму на сервер. Перед вызовом проверяем, что заполнено 10 корректных входов.
+   */
+  const calculate = React.useCallback(async () => {
+    if (parsedRows.length === 0) {
+      setCalculationError("Нужно добавить хотя бы один вход");
+      return;
+    }
+    if (parsedRows.length !== 10) {
+      setCalculationError("Trade-up требует ровно 10 входов");
+      return;
+    }
+
+    if (rowResolution.unresolvedNames.length) {
       setCalculationError(
-        `Не удалось определить коллекцию для: ${uniqueNames
+        `Не удалось определить коллекцию для: ${rowResolution.unresolvedNames
           .map((name) => `"${name}"`)
           .join(", ")}`,
       );
       return;
     }
 
-    const rowCollectionIds = new Set(
-      rowsWithResolved
-        .map((row) => row.resolvedCollectionId)
-        .filter((value): value is string => Boolean(value)),
-    );
-
-    if (rowCollectionIds.size > 1) {
+    if (rowResolution.hasMultipleCollections) {
       setCalculationError("Trade-up должен использовать предметы из одной коллекции");
       return;
     }
 
-    const [singleCollectionId] = rowCollectionIds.size === 1 ? Array.from(rowCollectionIds) : [];
-    const resolvedCollectionId = selectedCollectionId ?? singleCollectionId ?? null;
+    const resolvedCollectionId = rowResolution.resolvedCollectionId;
 
     if (!resolvedCollectionId) {
       setCalculationError("Не удалось определить коллекцию для trade-up");
@@ -822,7 +1207,7 @@ export default function useTradeupBuilder() {
             ]
           : undefined;
       const payload = {
-        inputs: rowsWithResolved.map((row) => ({
+        inputs: rowResolution.rows.map((row) => ({
           marketHashName: row.marketHashName,
           float: row.float,
           collectionId: row.resolvedCollectionId ?? resolvedCollectionId,
@@ -845,14 +1230,9 @@ export default function useTradeupBuilder() {
   }, [
     activeCollectionTag,
     buyerToNetRate,
-    catalogMap,
-    collectionValueMeta,
-    collectionIdByTag,
-    parsedRows,
     rememberSteamCollectionId,
-    selectedCollectionId,
+    rowResolution,
     selectedTarget,
-    steamCollectionsByTag,
   ]);
 
   return {
@@ -886,5 +1266,6 @@ export default function useTradeupBuilder() {
     calculation,
     calculating,
     calculationError,
+    floatlessAnalysis,
   };
 }
