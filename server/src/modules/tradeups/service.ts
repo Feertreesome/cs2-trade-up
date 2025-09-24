@@ -27,6 +27,7 @@ import {
   parseMarketHashExterior,
   type Exterior,
 } from "../skins/service";
+import { getSkinFloatRange } from "./floatRanges";
 
 const DEFAULT_BUYER_TO_NET = 1.15;
 
@@ -57,6 +58,10 @@ export interface TradeupInputSlot {
   float: number;
   /** Идентификатор коллекции, к которой относится входной предмет. */
   collectionId: string;
+  /** Минимальный float входного предмета (если известен). */
+  minFloat?: number | null;
+  /** Максимальный float входного предмета (если известен). */
+  maxFloat?: number | null;
   /**
    * Нетто-стоимость предмета (после вычета комиссий).
    * Если не передана, сервер попытается получить цену самостоятельно.
@@ -112,6 +117,8 @@ export interface TradeupOutcome {
 
 export interface TradeupCalculationResult {
   averageFloat: number;
+  normalizedAverageFloat: number;
+  normalizationMode: "normalized" | "simple";
   inputs: TradeupInputSummary[];
   outcomes: TradeupOutcome[];
   totalInputNet: number;
@@ -131,7 +138,7 @@ const toMarketHashName = (baseName: string, exterior: Exterior) =>
  */
 const buildOutcome = async (
   options: {
-    averageFloat: number;
+    normalizedAverageFloat: number;
     collection: CollectionFloatCatalogEntry;
     entry: CovertFloatRange;
     collectionProbability: number;
@@ -139,12 +146,12 @@ const buildOutcome = async (
     override?: TargetOverrideRequest;
   },
 ): Promise<TradeupOutcome> => {
-  const { averageFloat, collection, entry, collectionProbability, buyerToNetRate, override } =
+  const { normalizedAverageFloat, collection, entry, collectionProbability, buyerToNetRate, override } =
     options;
 
   const minFloat = override?.minFloat ?? entry.minFloat;
   const maxFloat = override?.maxFloat ?? entry.maxFloat;
-  const raw = averageFloat * (maxFloat - minFloat) + minFloat;
+  const raw = normalizedAverageFloat * (maxFloat - minFloat) + minFloat;
   const rollFloat = clamp(raw, minFloat, maxFloat);
   const exterior = override?.exterior ?? getExteriorByFloat(rollFloat);
   const wearRange = getWearRange(exterior);
@@ -437,6 +444,32 @@ export const calculateTradeup = async (
   const totalInputs = inputs.length;
   const averageFloat = inputs.reduce((sum, slot) => sum + slot.float, 0) / totalInputs;
 
+  const normalizedValues = await Promise.all(
+    inputs.map(async (slot) => {
+      const min = typeof slot.minFloat === "number" ? slot.minFloat : null;
+      const max = typeof slot.maxFloat === "number" ? slot.maxFloat : null;
+      let rangeMin = min;
+      let rangeMax = max;
+      if (rangeMin == null || rangeMax == null || rangeMax <= rangeMin) {
+        const range = await getSkinFloatRange(slot.marketHashName);
+        if (range) {
+          rangeMin = range.minFloat;
+          rangeMax = range.maxFloat;
+        }
+      }
+      if (rangeMin == null || rangeMax == null || rangeMax <= rangeMin) {
+        return null;
+      }
+      const normalized = (slot.float - rangeMin) / (rangeMax - rangeMin);
+      return clamp(normalized, 0, 1);
+    }),
+  );
+
+  const canUseNormalized = normalizedValues.every((value) => value != null);
+  const normalizedAverageFloat = canUseNormalized
+    ? normalizedValues.reduce((sum, value) => sum + (value ?? 0), 0) / Math.max(totalInputs, 1)
+    : averageFloat;
+
   const collectionCounts = new Map<string, number>();
   for (const slot of inputs) {
     collectionCounts.set(slot.collectionId, (collectionCounts.get(slot.collectionId) ?? 0) + 1);
@@ -469,7 +502,7 @@ export const calculateTradeup = async (
       const collectionProbability = (collectionCounts.get(collection.id) ?? 0) / totalInputs;
       return collection.covert.map((entry) =>
         buildOutcome({
-          averageFloat,
+          normalizedAverageFloat,
           collection,
           entry,
           collectionProbability,
@@ -503,6 +536,9 @@ export const calculateTradeup = async (
   }, 0);
 
   const warnings: string[] = [];
+  if (!canUseNormalized) {
+    warnings.push("Не удалось получить точные диапазоны float для всех входов — используется упрощённое среднее.");
+  }
   for (const outcome of outcomes) {
     if (!outcome.withinRange) {
       warnings.push(
@@ -513,6 +549,8 @@ export const calculateTradeup = async (
 
   return {
     averageFloat,
+    normalizedAverageFloat,
+    normalizationMode: canUseNormalized ? "normalized" : "simple",
     inputs: inputSummaries,
     outcomes,
     totalInputNet,
