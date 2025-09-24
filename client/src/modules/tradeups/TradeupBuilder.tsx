@@ -7,11 +7,23 @@ import "./TradeupBuilder.css";
  * загрузку коллекций из Steam, выбор целевого скина, заполнение входов и показ результатов.
  */
 
-const formatNumber = (value: number, digits = 2) =>
-  Number.isFinite(value) ? value.toFixed(digits) : "—";
+const formatNumber = (value: number | null | undefined, digits = 2) => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return "—";
+  }
+  return value.toFixed(digits);
+};
 
 const formatPercent = (value: number) =>
   Number.isFinite(value) ? `${(value * 100).toFixed(2)}%` : "—";
+
+const formatRange = (range: { min: number; max: number } | null | undefined, digits = 3) =>
+  range ? `${range.min.toFixed(digits)} – ${range.max.toFixed(digits)}` : "—";
+
+const formatCurrency = (value: number | null | undefined, digits = 2) => {
+  const formatted = formatNumber(value, digits);
+  return formatted === "—" ? formatted : `$${formatted}`;
+};
 
 const EXTERIOR_SHORT: Record<string, string> = {
   "Factory New": "FN",
@@ -22,6 +34,14 @@ const EXTERIOR_SHORT: Record<string, string> = {
 };
 
 const shortExterior = (exterior: string) => EXTERIOR_SHORT[exterior] ?? exterior;
+
+const EXTERIOR_ORDER = [
+  "Factory New",
+  "Minimal Wear",
+  "Field-Tested",
+  "Well-Worn",
+  "Battle-Scarred",
+];
 
 export default function TradeupBuilder() {
   const {
@@ -44,7 +64,7 @@ export default function TradeupBuilder() {
     buyerFeePercent,
     setBuyerFeePercent,
     buyerToNetRate,
-    averageFloat,
+    averageRange,
     totalBuyerCost,
     totalNetCost,
     selectedCollectionDetails,
@@ -67,7 +87,9 @@ export default function TradeupBuilder() {
         </div>
         <div className="tradeup-summary card bg-secondary-subtle text-dark p-3">
           <div className="fw-semibold">Текущий ввод</div>
-          <div>Средний float: <strong>{formatNumber(averageFloat, 5)}</strong></div>
+          <div>
+            Средний float (диапазон): <strong>{formatRange(averageRange)}</strong>
+          </div>
           <div>Суммарно (buyer): <strong>${formatNumber(totalBuyerCost)}</strong></div>
           <div>Суммарно (net): <strong>${formatNumber(totalNetCost)}</strong></div>
           <div>
@@ -211,7 +233,7 @@ export default function TradeupBuilder() {
                 <th>#</th>
                 <th>market_hash_name</th>
                 <th>Коллекция</th>
-                <th>Float</th>
+                <th>Wear</th>
                 <th>Buyer $</th>
                 <th>Net $</th>
               </tr>
@@ -249,15 +271,22 @@ export default function TradeupBuilder() {
                       </select>
                     </td>
                     <td>
-                      <input
-                        type="number"
-                        step="0.0001"
-                        min="0"
-                        max="1"
-                        className="form-control form-control-sm"
-                        value={row.float}
-                        onChange={(event) => updateRow(index, { float: event.target.value })}
-                      />
+                      <select
+                        className="form-select form-select-sm"
+                        value={row.exterior}
+                        onChange={(event) =>
+                          updateRow(index, {
+                            exterior: event.target.value as typeof row.exterior,
+                          })
+                        }
+                      >
+                        <option value="">—</option>
+                        {EXTERIOR_ORDER.map((option) => (
+                          <option key={option} value={option}>
+                            {option}
+                          </option>
+                        ))}
+                      </select>
                     </td>
                     <td>
                       <input
@@ -302,15 +331,38 @@ export default function TradeupBuilder() {
         <section className="mt-4">
           <h3 className="h5">4. Результаты</h3>
           <div className="tradeup-results card bg-secondary-subtle text-dark p-3">
-            <div>Ожидаемый возврат (net): <strong>${formatNumber(calculation.totalOutcomeNet)}</strong></div>
             <div>
-              EV:{" "}
+              Ожидаемый возврат (net):
+              <strong className="ms-1">{formatCurrency(calculation.expectedOutcomeNet)}</strong>
+            </div>
+            <div>
+              Робастный возврат (net):
+              <strong className="ms-1">{formatCurrency(calculation.worstOutcomeNet)}</strong>
+            </div>
+            <div>
+              EV (ожид.):{" "}
               <strong className={calculation.expectedValue >= 0 ? "text-success" : "text-danger"}>
-                ${formatNumber(calculation.expectedValue)}
+                {formatCurrency(calculation.expectedValue)}
               </strong>
             </div>
-            <div>Допустимый бюджет на слот: <strong>${formatNumber(calculation.maxBudgetPerSlot)}</strong></div>
-            <div>Шанс плюса: <strong>{formatPercent(calculation.positiveOutcomeProbability)}</strong></div>
+            <div>
+              EV (робаст.):{" "}
+              <strong className={calculation.worstValue >= 0 ? "text-success" : "text-danger"}>
+                {formatCurrency(calculation.worstValue)}
+              </strong>
+            </div>
+            <div>
+              Допустимый бюджет на слот (ожид./робаст.):{" "}
+              <strong>{formatCurrency(calculation.maxBudgetPerSlotExpected)}</strong>
+              <span className="mx-1">/</span>
+              <strong>{formatCurrency(calculation.maxBudgetPerSlotWorst)}</strong>
+            </div>
+            <div>
+              Шанс плюса (ожид./робаст.):{" "}
+              <strong>{formatPercent(calculation.positiveOutcomeProbabilityExpected)}</strong>
+              <span className="mx-1">/</span>
+              <strong>{formatPercent(calculation.positiveOutcomeProbabilityWorst)}</strong>
+            </div>
           </div>
 
           {calculation.warnings.length > 0 && (
@@ -330,22 +382,42 @@ export default function TradeupBuilder() {
                 <tr>
                   <th>Результат</th>
                   <th>Коллекция</th>
-                  <th>Float</th>
-                  <th>Wear</th>
-                  <th>Buyer $</th>
-                  <th>Net $</th>
+                  <th>Диапазон float</th>
+                  <th>Возможные wear</th>
+                  <th>Buyer $ (ожид./мин)</th>
+                  <th>Net $ (ожид./мин)</th>
                   <th>Вероятность</th>
                 </tr>
               </thead>
               <tbody>
                 {calculation.outcomes.map((outcome) => (
                   <tr key={`${outcome.collectionId}-${outcome.baseName}`}>
-                    <td>{`${outcome.baseName} (${outcome.exterior})`}</td>
+                    <td>{outcome.baseName}</td>
                     <td>{outcome.collectionName}</td>
-                    <td>{outcome.rollFloat.toFixed(5)}</td>
-                    <td>{outcome.exterior}</td>
-                    <td>{outcome.buyerPrice != null ? `$${formatNumber(outcome.buyerPrice)}` : "—"}</td>
-                    <td>{outcome.netPrice != null ? `$${formatNumber(outcome.netPrice)}` : "—"}</td>
+                    <td>{formatRange(outcome.floatRange)}</td>
+                    <td>
+                      {outcome.wears.map((wear) => (
+                        <div key={`${outcome.baseName}-${wear.exterior}`} className="small">
+                          <strong>{shortExterior(wear.exterior)}</strong>{" "}
+                          {formatRange(wear.range)} {`(${formatPercent(wear.share)})`}
+                          {wear.buyerPrice != null && (
+                            <span className="ms-1 text-muted">
+                              {formatCurrency(wear.buyerPrice)}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </td>
+                    <td>
+                      <span>{formatCurrency(outcome.expectedBuyer)}</span>
+                      <span className="mx-1">/</span>
+                      <span>{formatCurrency(outcome.worstBuyer)}</span>
+                    </td>
+                    <td>
+                      <span>{formatCurrency(outcome.expectedNet)}</span>
+                      <span className="mx-1">/</span>
+                      <span>{formatCurrency(outcome.worstNet)}</span>
+                    </td>
                     <td>{formatPercent(outcome.probability)}</td>
                   </tr>
                 ))}

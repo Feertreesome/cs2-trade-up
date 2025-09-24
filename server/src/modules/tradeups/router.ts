@@ -29,14 +29,24 @@ const parseBody = (body: any): TradeupRequestPayload => {
   return {
     inputs: inputs
       .slice(0, 10)
-      .map((slot: any) => ({
-        marketHashName: String(slot?.marketHashName || ""),
-        float: Number(slot?.float ?? 0),
-        collectionId: String(slot?.collectionId || ""),
-        priceOverrideNet:
-          slot?.priceOverrideNet == null ? undefined : Number(slot.priceOverrideNet),
-      }))
-      .filter((slot: any) => slot.marketHashName && slot.collectionId),
+      .map((slot: any) => {
+        const exterior =
+          typeof slot?.exterior === "string" && slot.exterior
+            ? (slot.exterior as Exterior)
+            : null;
+        if (!exterior) return null;
+        const priceOverrideNet =
+          slot?.priceOverrideNet == null ? undefined : Number(slot.priceOverrideNet);
+        return {
+          marketHashName: String(slot?.marketHashName || ""),
+          exterior,
+          collectionId: String(slot?.collectionId || ""),
+          priceOverrideNet: Number.isFinite(priceOverrideNet) ? priceOverrideNet : undefined,
+        };
+      })
+      .filter((slot): slot is TradeupRequestPayload["inputs"][number] =>
+        Boolean(slot && slot.marketHashName && slot.collectionId && slot.exterior),
+      ),
     targetCollectionIds: targetCollectionIds.map((id: any) => String(id)).slice(0, 20),
     options: options,
     targetOverrides: targetOverridesRaw

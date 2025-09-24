@@ -27,7 +27,7 @@ export interface TradeupInputFormRow {
    * так и fallback на steam-tag (если float-справочник пока не знает эту коллекцию).
    */
   collectionId: string;
-  float: string;
+  exterior: Exterior | "";
   buyerPrice: string;
 }
 
@@ -36,7 +36,7 @@ const INPUT_SLOT_COUNT = 10;
 const makeEmptyRow = (): TradeupInputFormRow => ({
   marketHashName: "",
   collectionId: "",
-  float: "",
+  exterior: "",
   buyerPrice: "",
 });
 
@@ -118,9 +118,6 @@ const exteriorMidpoint = (exterior: Exterior) => {
   if (!range) return null;
   return (range.min + range.max) / 2;
 };
-
-const formatFloatValue = (value: number | null | undefined) =>
-  value == null ? "" : clampFloat(value).toFixed(5);
 
 const STEAM_TAG_VALUE_PREFIX = "steam-tag:";
 
@@ -652,47 +649,13 @@ export default function useTradeupBuilder() {
         : candidateInputs;
 
       const trimmed = sortedInputs.slice(0, INPUT_SLOT_COUNT);
-      const offsetStep = desiredFloat != null && trimmed.length > 1 ? 0.00005 : 0;
-      const centerIndex = (trimmed.length - 1) / 2;
 
-      const filled: TradeupInputFormRow[] = trimmed.map((input, index) => {
-        const bucketRange = EXTERIOR_FLOAT_RANGES[input.exterior] ?? null;
-        const rowRange = (() => {
-          if (bucketRange && desiredAverageRange) {
-            const intersection = intersectRanges(bucketRange, desiredAverageRange);
-            if (intersection) {
-              return intersection;
-            }
-            return bucketRange;
-          }
-          return bucketRange ?? desiredAverageRange ?? null;
-        })();
-
-        const clampWithinRowRange = (value: number) => {
-          if (rowRange) {
-            if (value < rowRange.min) return clampFloat(rowRange.min);
-            if (value > rowRange.max) return clampFloat(rowRange.max);
-            return clampFloat(value);
-          }
-          return clampFloat(value);
-        };
-
-        const rowMidpoint = rowRange ? (rowRange.min + rowRange.max) / 2 : null;
-        const baselineSource =
-          desiredFloat ?? rowMidpoint ?? exteriorMidpoint(input.exterior) ?? null;
-        const baseline =
-          baselineSource == null ? null : clampWithinRowRange(baselineSource);
-        const adjusted =
-          baseline == null
-            ? null
-            : clampWithinRowRange(baseline + offsetStep * (index - centerIndex));
-        return {
-          marketHashName: input.marketHashName,
-          collectionId: effectiveCollectionValue,
-          float: formatFloatValue(adjusted),
-          buyerPrice: input.price != null ? input.price.toFixed(2) : "",
-        };
-      });
+      const filled: TradeupInputFormRow[] = trimmed.map((input) => ({
+        marketHashName: input.marketHashName,
+        collectionId: effectiveCollectionValue,
+        exterior: input.exterior,
+        buyerPrice: input.price != null ? input.price.toFixed(2) : "",
+      }));
       while (filled.length < INPUT_SLOT_COUNT) filled.push(makeEmptyRow());
       setInputsError(null);
       setRows(filled);
@@ -821,17 +784,29 @@ export default function useTradeupBuilder() {
       .map((row) => ({
         marketHashName: row.marketHashName.trim(),
         collectionId: row.collectionId.trim(),
-        float: Number.parseFloat(row.float),
+        exterior: row.exterior as Exterior,
         buyerPrice: Number.parseFloat(row.buyerPrice),
       }))
-      .filter((row) => row.marketHashName && Number.isFinite(row.float));
+      .filter((row): row is typeof row & { exterior: Exterior } => {
+        if (!row.marketHashName || !row.exterior) return false;
+        return Boolean(EXTERIOR_FLOAT_RANGES[row.exterior]);
+      });
   }, [rows]);
 
-  /** Средний float по заполненным слотам. */
-  const averageFloat = React.useMemo(() => {
-    if (!parsedRows.length) return 0;
-    const sum = parsedRows.reduce((acc, row) => acc + row.float, 0);
-    return sum / parsedRows.length;
+  /** Диапазон среднего float по заполненным слотам. */
+  const averageRange = React.useMemo(() => {
+    if (!parsedRows.length) return null;
+    let minSum = 0;
+    let maxSum = 0;
+    for (const row of parsedRows) {
+      const bucket = EXTERIOR_FLOAT_RANGES[row.exterior];
+      minSum += bucket.min;
+      maxSum += bucket.max;
+    }
+    return {
+      min: clampFloat(minSum / parsedRows.length),
+      max: clampFloat(maxSum / parsedRows.length),
+    };
   }, [parsedRows]);
 
   /** Суммарная стоимость в buyer-ценах. */
@@ -966,7 +941,7 @@ export default function useTradeupBuilder() {
       const payload = {
         inputs: rowsWithResolved.map((row) => ({
           marketHashName: row.marketHashName,
-          float: row.float,
+          exterior: row.exterior,
           collectionId: row.resolvedCollectionId ?? resolvedCollectionId,
           priceOverrideNet: Number.isFinite(row.buyerPrice)
             ? row.buyerPrice / buyerToNetRate
@@ -1018,7 +993,7 @@ export default function useTradeupBuilder() {
     buyerFeePercent,
     setBuyerFeePercent,
     buyerToNetRate,
-    averageFloat,
+    averageRange,
     totalBuyerCost,
     totalNetCost,
     selectedCollectionDetails,

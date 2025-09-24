@@ -59,7 +59,7 @@ export interface CollectionInputsResponse {
 
 export interface TradeupInputPayload {
   marketHashName: string;
-  float: number;
+  exterior: Exterior;
   collectionId: string;
   priceOverrideNet?: number | null;
 }
@@ -86,21 +86,27 @@ export interface TradeupCalculationPayload {
   targetOverrides?: TradeupTargetOverridePayload[];
 }
 
+export interface TradeupOutcomeWearResponse {
+  exterior: Exterior;
+  range: { min: number; max: number };
+  share: number;
+  marketHashName: string;
+  buyerPrice?: number | null;
+  netPrice?: number | null;
+  priceError?: unknown;
+}
+
 export interface TradeupOutcomeResponse {
   collectionId: string;
   collectionName: string;
   baseName: string;
-  minFloat: number;
-  maxFloat: number;
-  rollFloat: number;
-  exterior: Exterior;
-  wearRange: { min: number; max: number };
+  floatRange: { min: number; max: number };
   probability: number;
-  buyerPrice?: number | null;
-  netPrice?: number | null;
-  priceError?: unknown;
-  marketHashName: string;
-  withinRange: boolean;
+  wears: TradeupOutcomeWearResponse[];
+  worstBuyer?: number | null;
+  expectedBuyer?: number | null;
+  worstNet?: number | null;
+  expectedNet?: number | null;
 }
 
 export interface TradeupInputSummaryResponse extends TradeupInputPayload {
@@ -110,14 +116,18 @@ export interface TradeupInputSummaryResponse extends TradeupInputPayload {
 }
 
 export interface TradeupCalculationResponse {
-  averageFloat: number;
+  averageRange: { min: number; max: number };
   inputs: TradeupInputSummaryResponse[];
   outcomes: TradeupOutcomeResponse[];
   totalInputNet: number;
-  totalOutcomeNet: number;
+  expectedOutcomeNet: number;
+  worstOutcomeNet: number;
   expectedValue: number;
-  maxBudgetPerSlot: number;
-  positiveOutcomeProbability: number;
+  worstValue: number;
+  maxBudgetPerSlotExpected: number;
+  maxBudgetPerSlotWorst: number;
+  positiveOutcomeProbabilityExpected: number;
+  positiveOutcomeProbabilityWorst: number;
   warnings: string[];
 }
 
