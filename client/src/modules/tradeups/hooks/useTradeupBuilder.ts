@@ -997,6 +997,12 @@ export default function useTradeupBuilder() {
     let hasRobustGap = false;
     let hasExpectedData = false;
 
+    let selectedTargetCoverage: {
+      probability: number | null;
+      projectedRange: { min: number; max: number };
+      dominantExterior: Exterior | null;
+    } | null = null;
+
     for (const target of activeTargets) {
       const exteriorEntries = target.exteriors;
       let minFloat: number | null = null;
@@ -1036,12 +1042,17 @@ export default function useTradeupBuilder() {
       const potential = WEAR_BUCKET_SEQUENCE.map((bucket) => {
         const targetExterior = exteriorEntries.find((entry) => entry.exterior === bucket.exterior);
         if (!targetExterior) return null;
+        const matchesSelected =
+          !!selectedTarget &&
+          target.baseName === selectedTarget.baseName &&
+          (targetExterior.marketHashName === selectedTarget.marketHashName ||
+            targetExterior.exterior === selectedTarget.exterior);
         const min = Math.max(bucket.min, normalizedMin);
         const max = Math.min(bucket.max, normalizedMax);
         const width = Math.max(0, max - min);
         const containsPoint =
           rangeWidth === 0 && normalizedMin >= bucket.min && normalizedMin <= bucket.max;
-        if (width <= 0 && !containsPoint) return null;
+        if (width <= 0 && !containsPoint && !matchesSelected) return null;
         const buyerPrice =
           targetExterior.price ?? targetPriceOverrides[targetExterior.marketHashName] ?? null;
         const netPrice = buyerPrice == null ? null : buyerPrice / buyerToNetRate;
@@ -1049,6 +1060,7 @@ export default function useTradeupBuilder() {
           exterior: bucket.exterior,
           width,
           containsPoint,
+          matchesSelected,
           buyerPrice,
           netPrice,
           marketHashName: targetExterior.marketHashName,
@@ -1065,6 +1077,8 @@ export default function useTradeupBuilder() {
       let robustNet: number | null = null;
       let expectedContribution: number | null = null;
       let expectedProbabilityCovered = 0;
+      let selectedProbability: number | null = null;
+      let dominantExterior: { exterior: Exterior; probability: number } | null = null;
 
       for (const entry of potential) {
         let probability: number | null = null;
@@ -1088,6 +1102,24 @@ export default function useTradeupBuilder() {
           }
           expectedContribution = (expectedContribution ?? 0) + entry.netPrice * probability;
           expectedProbabilityCovered += probability;
+        }
+
+        if (probability != null) {
+          if (
+            dominantExterior == null ||
+            probability > dominantExterior.probability ||
+            (probability === dominantExterior.probability && entry.exterior === selectedTarget?.exterior)
+          ) {
+            dominantExterior = { exterior: entry.exterior, probability };
+          }
+
+          if (
+            entry.matchesSelected &&
+            target.baseName === selectedTarget?.baseName &&
+            (selectedProbability == null || probability > selectedProbability)
+          ) {
+            selectedProbability = probability;
+          }
         }
       }
 
@@ -1114,6 +1146,14 @@ export default function useTradeupBuilder() {
         expectedNetContribution: expectedContribution,
         expectedProbabilityCovered,
       });
+
+      if (selectedTarget && target.baseName === selectedTarget.baseName) {
+        selectedTargetCoverage = {
+          probability: selectedProbability,
+          projectedRange: { min: normalizedMin, max: normalizedMax },
+          dominantExterior: dominantExterior?.exterior ?? null,
+        };
+      }
     }
 
     if (hasRobustGap) {
@@ -1127,6 +1167,21 @@ export default function useTradeupBuilder() {
 
     const robustEV = robustOutcomeNet == null ? null : robustOutcomeNet - totalNetCost;
     const expectedEV = expectedOutcomeNet == null ? null : expectedOutcomeNet - totalNetCost;
+
+    if (
+      selectedTarget &&
+      selectedTargetCoverage &&
+      (selectedTargetCoverage.probability == null || selectedTargetCoverage.probability <= 0)
+    ) {
+      const fallbackExteriorLabel = selectedTargetCoverage.dominantExterior
+        ? `${selectedTargetCoverage.dominantExterior}`
+        : "другой экстерьер";
+      issues.push(
+        `Выбранный экстерьер ${selectedTarget.exterior} (${selectedTarget.baseName}) ` +
+          `не попадает в прогнозируемый диапазон (${selectedTargetCoverage.projectedRange.min.toFixed(5)}–${selectedTargetCoverage.projectedRange.max.toFixed(5)}). ` +
+          `Ожидаемый результат: ${fallbackExteriorLabel}.`,
+      );
+    }
 
     return {
       ready: issues.length === 0,
@@ -1147,6 +1202,7 @@ export default function useTradeupBuilder() {
     rowResolution,
     targetPriceOverrides,
     totalNetCost,
+    selectedTarget,
   ]);
 
   /**
