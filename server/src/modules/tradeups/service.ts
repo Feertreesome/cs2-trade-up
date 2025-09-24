@@ -142,15 +142,23 @@ const buildOutcome = async (
   const { averageFloat, collection, entry, collectionProbability, buyerToNetRate, override } =
     options;
 
-  const minFloat = override?.minFloat ?? entry.minFloat;
-  const maxFloat = override?.maxFloat ?? entry.maxFloat;
+  const resolvedMin = clamp(override?.minFloat ?? entry.minFloat, 0, 1);
+  const resolvedMax = clamp(override?.maxFloat ?? entry.maxFloat, 0, 1);
+  const minFloat = Math.min(resolvedMin, resolvedMax);
+  const maxFloat = Math.max(resolvedMin, resolvedMax);
   const raw = averageFloat * (maxFloat - minFloat) + minFloat;
   const rollFloat = clamp(raw, minFloat, maxFloat);
-  const exterior = override?.exterior ?? getExteriorByFloat(rollFloat);
+  const exterior = getExteriorByFloat(rollFloat);
   const wearRange = getWearRange(exterior);
-  const marketHashName = override?.marketHashName ?? toMarketHashName(entry.baseName, exterior);
 
-  let buyerPrice = override?.price ?? null;
+  const fallbackMarketHashName = toMarketHashName(entry.baseName, exterior);
+  const overrideMatchesBase =
+    override?.marketHashName &&
+    baseFromMarketHash(override.marketHashName) === entry.baseName &&
+    parseMarketHashExterior(override.marketHashName) === exterior;
+  const marketHashName = overrideMatchesBase ? override.marketHashName : fallbackMarketHashName;
+
+  let buyerPrice = overrideMatchesBase && override?.price != null ? override.price : null;
   let priceError: unknown = undefined;
   if (buyerPrice == null) {
     const { price, error } = await getPriceUSD(marketHashName);
