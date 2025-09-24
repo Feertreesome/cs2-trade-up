@@ -31,6 +31,8 @@ export interface TradeupInputFormRow {
   buyerPrice: string;
 }
 
+const INPUT_SLOT_COUNT = 10;
+
 const makeEmptyRow = (): TradeupInputFormRow => ({
   marketHashName: "",
   collectionId: "",
@@ -38,7 +40,7 @@ const makeEmptyRow = (): TradeupInputFormRow => ({
   buyerPrice: "",
 });
 
-const createInitialRows = () => Array.from({ length: 10 }, makeEmptyRow);
+const createInitialRows = () => Array.from({ length: INPUT_SLOT_COUNT }, makeEmptyRow);
 
 const EXTERIOR_FLOAT_RANGES: Record<Exterior, { min: number; max: number }> = {
   "Factory New": { min: 0, max: 0.07 },
@@ -49,6 +51,67 @@ const EXTERIOR_FLOAT_RANGES: Record<Exterior, { min: number; max: number }> = {
 };
 
 const clampFloat = (value: number) => Math.min(1, Math.max(0, value));
+
+interface FloatRange {
+  min: number;
+  max: number;
+}
+
+const intersectRanges = (a: FloatRange, b: FloatRange): FloatRange | null => {
+  const min = Math.max(a.min, b.min);
+  const max = Math.min(a.max, b.max);
+  return min <= max ? { min, max } : null;
+};
+
+const normalizeSkinFloatRange = (
+  minFloat?: number | null,
+  maxFloat?: number | null,
+): FloatRange | null => {
+  const resolvedMin = clampFloat(minFloat ?? 0);
+  const resolvedMax = clampFloat(maxFloat ?? 1);
+  const min = Math.min(resolvedMin, resolvedMax);
+  const max = Math.max(resolvedMin, resolvedMax);
+  if (max - min <= Number.EPSILON) {
+    return null;
+  }
+  return { min, max };
+};
+
+const computeAverageFloatRange = (
+  skinRange: FloatRange | null,
+  wearRange: FloatRange,
+): FloatRange | null => {
+  if (!skinRange) return null;
+  const effectiveWear: FloatRange = {
+    min: Math.max(wearRange.min, skinRange.min),
+    max: Math.min(wearRange.max, skinRange.max),
+  };
+  if (effectiveWear.min > effectiveWear.max) {
+    return null;
+  }
+  const span = skinRange.max - skinRange.min;
+  if (span <= 0) {
+    return null;
+  }
+  const lower = (effectiveWear.min - skinRange.min) / span;
+  const upper = (effectiveWear.max - skinRange.min) / span;
+  const min = clampFloat(Math.min(lower, upper));
+  const max = clampFloat(Math.max(lower, upper));
+  if (min > max) {
+    return null;
+  }
+  return { min, max };
+};
+
+const intersectAverageRanges = (ranges: FloatRange[]): FloatRange | null => {
+  if (!ranges.length) return null;
+  return ranges.reduce<FloatRange | null>((acc, range) => {
+    if (!acc) return range;
+    return intersectRanges(acc, range);
+  }, null);
+};
+
+const BUDGET_SAFETY_MARGIN = 0.9; // 10% запас на комиссию/спрэд/неликвид
 
 const exteriorMidpoint = (exterior: Exterior) => {
   const range = EXTERIOR_FLOAT_RANGES[exterior];
@@ -462,10 +525,19 @@ export default function useTradeupBuilder() {
       inputs: CollectionInputSummary[],
       options?: {
         target?: {
+          baseName: string;
           exterior: Exterior;
           minFloat?: number | null;
           maxFloat?: number | null;
+          price?: number | null;
         };
+        outcomes?: Array<{
+          baseName: string;
+          exterior: Exterior;
+          minFloat?: number | null;
+          maxFloat?: number | null;
+          price?: number | null;
+        }>;
       },
     ) => {
       const effectiveCollectionValue = buildCollectionSelectValue(
@@ -473,81 +545,127 @@ export default function useTradeupBuilder() {
         collectionTag,
       );
 
-      const targetRange = (() => {
-        const target = options?.target;
-        if (!target) return null;
+      const target = options?.target;
+      const wearRange = target ? EXTERIOR_FLOAT_RANGES[target.exterior] ?? null : null;
+      const relevantOutcomes = target
+        ? (() => {
+            const provided = options?.outcomes ?? [];
+            const matching = provided.filter((entry) => entry.exterior === target.exterior);
+            if (matching.length) return matching;
+            return [
+              {
+                baseName: target.baseName,
+                exterior: target.exterior,
+                minFloat: target.minFloat ?? null,
+                maxFloat: target.maxFloat ?? null,
+                price: target.price ?? null,
+              },
+            ];
+          })()
+        : [];
 
-        const bucket = EXTERIOR_FLOAT_RANGES[target.exterior];
-        const clampToBounds = (value: number) => clampFloat(value);
-
-        const resolveCatalogRange = () => {
-          if (target.minFloat == null && target.maxFloat == null) return null;
-          const min =
-            target.minFloat != null ? clampToBounds(target.minFloat) : 0;
-          const max =
-            target.maxFloat != null ? clampToBounds(target.maxFloat) : 1;
-          const normalizedMin = Math.min(min, max);
-          const normalizedMax = Math.max(min, max);
-          return { min: normalizedMin, max: normalizedMax };
-        };
-
-        if (bucket) {
-          const bucketMin = clampToBounds(bucket.min);
-          const bucketMax = clampToBounds(bucket.max);
-          const catalogRange = resolveCatalogRange();
-          const min = Math.max(bucketMin, catalogRange?.min ?? bucketMin);
-          const max = Math.min(bucketMax, catalogRange?.max ?? bucketMax);
-          if (min <= max) {
-            return { min, max };
+      let desiredAverageRange: FloatRange | null = null;
+      if (target && wearRange) {
+        const perOutcomeRanges: FloatRange[] = [];
+        const unreachable: string[] = [];
+        for (const outcome of relevantOutcomes) {
+          const range = computeAverageFloatRange(
+            normalizeSkinFloatRange(outcome.minFloat, outcome.maxFloat),
+            wearRange,
+          );
+          if (!range) {
+            const label = outcome.baseName ? `${outcome.baseName} (${outcome.exterior})` : outcome.exterior;
+            unreachable.push(label);
+          } else {
+            perOutcomeRanges.push(range);
           }
-          return { min: bucketMin, max: bucketMax };
         }
 
-        return resolveCatalogRange();
-      })();
+        if (unreachable.length) {
+          setInputsError(
+            `Выбранный wear недостижим для: ${unreachable
+              .map((name) => `"${name}"`)
+              .join(", ")}.`,
+          );
+          setRows(createInitialRows());
+          return;
+        }
+
+        const intersection = intersectAverageRanges(perOutcomeRanges);
+        if (!intersection) {
+          setInputsError("Выбранный wear нельзя получить одновременно для всех результатов коллекции.");
+          setRows(createInitialRows());
+          return;
+        }
+        desiredAverageRange = intersection;
+      }
+
+      let slotBudgetBuyer: number | null = null;
+      if (target && relevantOutcomes.length) {
+        const priced = relevantOutcomes.filter((outcome) => typeof outcome.price === "number");
+        if (priced.length === relevantOutcomes.length) {
+          const expectedNet =
+            priced.reduce((sum, outcome) => sum + (outcome.price! / buyerToNetRate), 0) /
+            priced.length;
+          if (expectedNet > 0) {
+            const maxBudgetNet = expectedNet * BUDGET_SAFETY_MARGIN;
+            const perSlotNet = maxBudgetNet / INPUT_SLOT_COUNT;
+            slotBudgetBuyer = perSlotNet * buyerToNetRate;
+          }
+        }
+      }
+
+      let candidateInputs = inputs;
+      if (slotBudgetBuyer != null) {
+        candidateInputs = inputs.filter((input) => input.price != null && input.price <= slotBudgetBuyer!);
+        if (!candidateInputs.length) {
+          setInputsError(
+            `Нет входов дешевле $${slotBudgetBuyer.toFixed(2)} для выбранной цели.`,
+          );
+          setRows(createInitialRows());
+          return;
+        }
+      }
 
       const desiredFloat = (() => {
-        if (targetRange) {
-          return clampFloat((targetRange.min + targetRange.max) / 2);
+        if (desiredAverageRange) {
+          return clampFloat((desiredAverageRange.min + desiredAverageRange.max) / 2);
         }
-        const target = options?.target;
-        if (!target) return null;
-        if (target.minFloat != null && target.maxFloat != null && target.maxFloat > target.minFloat) {
+        if (target && target.minFloat != null && target.maxFloat != null && target.maxFloat > target.minFloat) {
           return clampFloat((target.minFloat + target.maxFloat) / 2);
         }
-        const midpoint = exteriorMidpoint(target.exterior);
-        return midpoint != null ? clampFloat(midpoint) : null;
+        if (target) {
+          const midpoint = exteriorMidpoint(target.exterior);
+          return midpoint != null ? clampFloat(midpoint) : null;
+        }
+        return null;
       })();
 
       const sortedInputs = desiredFloat != null
-        ? [...inputs].sort((a, b) => {
+        ? [...candidateInputs].sort((a, b) => {
             const aMid = exteriorMidpoint(a.exterior) ?? desiredFloat;
             const bMid = exteriorMidpoint(b.exterior) ?? desiredFloat;
             const diff = Math.abs(aMid - desiredFloat) - Math.abs(bMid - desiredFloat);
             if (diff !== 0) return diff;
             return a.marketHashName.localeCompare(b.marketHashName, "ru");
           })
-        : inputs;
+        : candidateInputs;
 
-      const trimmed = sortedInputs.slice(0, 10);
+      const trimmed = sortedInputs.slice(0, INPUT_SLOT_COUNT);
       const offsetStep = desiredFloat != null && trimmed.length > 1 ? 0.00005 : 0;
       const centerIndex = (trimmed.length - 1) / 2;
 
       const filled: TradeupInputFormRow[] = trimmed.map((input, index) => {
         const bucketRange = EXTERIOR_FLOAT_RANGES[input.exterior] ?? null;
         const rowRange = (() => {
-          if (bucketRange && targetRange) {
-            const min = Math.max(bucketRange.min, targetRange.min);
-            const max = Math.min(bucketRange.max, targetRange.max);
-            if (min <= max) {
-              return { min, max };
+          if (bucketRange && desiredAverageRange) {
+            const intersection = intersectRanges(bucketRange, desiredAverageRange);
+            if (intersection) {
+              return intersection;
             }
             return bucketRange;
           }
-          if (!targetRange) {
-            return bucketRange;
-          }
-          return bucketRange ?? targetRange ?? null;
+          return bucketRange ?? desiredAverageRange ?? null;
         })();
 
         const clampWithinRowRange = (value: number) => {
@@ -575,7 +693,8 @@ export default function useTradeupBuilder() {
           buyerPrice: input.price != null ? input.price.toFixed(2) : "",
         };
       });
-      while (filled.length < 10) filled.push(makeEmptyRow());
+      while (filled.length < INPUT_SLOT_COUNT) filled.push(makeEmptyRow());
+      setInputsError(null);
       setRows(filled);
 
       const missingNames = trimmed
@@ -585,7 +704,7 @@ export default function useTradeupBuilder() {
         await autofillPrices(missingNames);
       }
     },
-    [autofillPrices, selectedCollectionId],
+    [autofillPrices, buyerToNetRate, selectedCollectionId],
   );
 
   /**
@@ -635,12 +754,40 @@ export default function useTradeupBuilder() {
           });
         }
 
-        await applyInputsToRows(collectionTag, resolvedCollectionId, response.inputs, {
-          target: {
+        const collectionTargetEntries = targetsByCollection[collectionTag]?.targets ?? [];
+        const outcomesForWear = collectionTargetEntries.flatMap((targetEntry) =>
+          targetEntry.exteriors
+            .filter((option) => option.exterior === exterior.exterior)
+            .map((option) => ({
+              baseName: targetEntry.baseName,
+              exterior: option.exterior,
+              minFloat: option.minFloat ?? null,
+              maxFloat: option.maxFloat ?? null,
+              price: option.price ?? null,
+            })),
+        );
+        const hasSelectedInOutcomes = outcomesForWear.some(
+          (entry) => entry.baseName === baseName,
+        );
+        if (!hasSelectedInOutcomes) {
+          outcomesForWear.push({
+            baseName,
             exterior: exterior.exterior,
             minFloat: exterior.minFloat ?? null,
             maxFloat: exterior.maxFloat ?? null,
+            price: exterior.price ?? null,
+          });
+        }
+
+        await applyInputsToRows(collectionTag, resolvedCollectionId, response.inputs, {
+          target: {
+            baseName,
+            exterior: exterior.exterior,
+            minFloat: exterior.minFloat ?? null,
+            maxFloat: exterior.maxFloat ?? null,
+            price: exterior.price ?? null,
           },
+          outcomes: outcomesForWear,
         });
       } catch (error) {
         // handled in loadInputsForCollection
@@ -705,8 +852,8 @@ export default function useTradeupBuilder() {
       setCalculationError("Нужно добавить хотя бы один вход");
       return;
     }
-    if (parsedRows.length !== 10) {
-      setCalculationError("Trade-up требует ровно 10 входов");
+    if (parsedRows.length !== INPUT_SLOT_COUNT) {
+      setCalculationError(`Trade-up требует ровно ${INPUT_SLOT_COUNT} входов`);
       return;
     }
 
