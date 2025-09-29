@@ -107,6 +107,56 @@ const normalizeRange = (range: { min: number; max: number }) => {
   return { min, max };
 };
 
+const resolveRowRangesForExterior = (
+  exterior: Exterior,
+  targetRange: { min: number; max: number } | null,
+) => {
+  const bucketRange = EXTERIOR_FLOAT_RANGES[exterior] ?? null;
+
+  const rowFloatRange = (() => {
+    if (!targetRange) {
+      return bucketRange;
+    }
+    if (!bucketRange) {
+      return targetRange;
+    }
+    const min = Math.max(bucketRange.min, targetRange.min);
+    const max = Math.min(bucketRange.max, targetRange.max);
+    if (min <= max) {
+      return { min, max };
+    }
+    const targetIsPoint = targetRange.min === targetRange.max;
+    const pointWithinBucket =
+      targetIsPoint &&
+      targetRange.min >= bucketRange.min &&
+      targetRange.min <= bucketRange.max;
+    if (pointWithinBucket) {
+      return { min: targetRange.min, max: targetRange.max };
+    }
+    return null;
+  })();
+
+  const normalizedRange = (() => {
+    if (!bucketRange) {
+      return rowFloatRange ? normalizeRange(rowFloatRange) : null;
+    }
+    const span = bucketRange.max - bucketRange.min;
+    if (span <= 0) {
+      return null;
+    }
+    const effectiveMin = rowFloatRange ? rowFloatRange.min : bucketRange.min;
+    const effectiveMax = rowFloatRange ? rowFloatRange.max : bucketRange.max;
+    if (effectiveMin > effectiveMax) {
+      return null;
+    }
+    const normalizedMin = clampFloat((effectiveMin - bucketRange.min) / span);
+    const normalizedMax = clampFloat((effectiveMax - bucketRange.min) / span);
+    return normalizeRange({ min: normalizedMin, max: normalizedMax });
+  })();
+
+  return { bucketRange, rowFloatRange, normalizedRange };
+};
+
 const buildPrefixSums = (entries: CollectionInputSummary[]) => {
   const sums: number[] = [];
   let running = 0;
@@ -121,6 +171,7 @@ const findCheapestInputsForAverage = (
   inputsByExterior: Map<Exterior, CollectionInputSummary[]>,
   slots: number,
   requiredAverage: number | null,
+  targetRange: { min: number; max: number } | null,
 ) => {
   if (requiredAverage == null || slots <= 0) return null;
 
@@ -138,10 +189,16 @@ const findCheapestInputsForAverage = (
   const epsilon = 1e-6;
 
   const prefixSums = new Map<Exterior, number[]>();
+  const normalizedRanges = new Map<Exterior, { min: number; max: number }>();
+
   exteriors.forEach((exterior) => {
     const entries = inputsByExterior.get(exterior);
-    if (entries && entries.length > 0) {
-      prefixSums.set(exterior, buildPrefixSums(entries));
+    if (!entries || entries.length === 0) return;
+    prefixSums.set(exterior, buildPrefixSums(entries));
+
+    const { normalizedRange } = resolveRowRangesForExterior(exterior, targetRange);
+    if (normalizedRange) {
+      normalizedRanges.set(exterior, normalizedRange);
     }
   });
 
@@ -158,7 +215,7 @@ const findCheapestInputsForAverage = (
       if (count === 0) continue;
 
       const exterior = exteriors[index];
-      const range = EXTERIOR_FLOAT_RANGES[exterior];
+      const range = normalizedRanges.get(exterior);
       const available = inputsByExterior.get(exterior)?.length ?? 0;
       if (!range || available < count) {
         return;
@@ -365,13 +422,18 @@ export const planRowsForCollection = ({
     new Map<Exterior, CollectionInputSummary[]>(),
   );
 
-  const requiredAverageFloat = computeRequiredAverageFloat(targetRange, desiredFloat);
+  const requiredNormalizedAverage = computeRequiredAverageFloat(targetRange, desiredFloat);
 
   const slots = 10;
   let plannedInputs: CollectionInputSummary[] = [];
 
-  if (targetRange && requiredAverageFloat != null) {
-    const combination = findCheapestInputsForAverage(inputsByExterior, slots, requiredAverageFloat);
+  if (targetRange && requiredNormalizedAverage != null) {
+    const combination = findCheapestInputsForAverage(
+      inputsByExterior,
+      slots,
+      requiredNormalizedAverage,
+      targetRange,
+    );
     if (combination) {
       const exteriors = WEAR_BUCKET_SEQUENCE.map((bucket) => bucket.exterior);
       const selected: CollectionInputSummary[] = [];
@@ -398,45 +460,41 @@ export const planRowsForCollection = ({
   }
 
   if (plannedInputs.length === 0) {
-    for (let i = 0; plannedInputs.length < slots && sortedInputs.length > 0; i += 1) {
-      plannedInputs.push(sortedInputs[i % sortedInputs.length]);
+    const feasibleInputs = targetRange
+      ? sortedInputs.filter((input) =>
+          resolveRowRangesForExterior(input.exterior, targetRange).rowFloatRange != null,
+        )
+      : sortedInputs;
+    const source = feasibleInputs.length > 0 ? feasibleInputs : sortedInputs;
+    for (let i = 0; plannedInputs.length < slots && source.length > 0; i += 1) {
+      plannedInputs.push(source[i % source.length]);
     }
   }
 
   const trimmedPlan = plannedInputs.slice(0, slots);
 
   const resolvedRanges = trimmedPlan.map((input) => {
-    const bucketRange = EXTERIOR_FLOAT_RANGES[input.exterior] ?? null;
-    const rowFloatRange = (() => {
-      if (!targetRange) {
-        return bucketRange;
-      }
-      if (!bucketRange) {
-        return targetRange;
-      }
-      const min = Math.max(bucketRange.min, targetRange.min);
-      const max = Math.min(bucketRange.max, targetRange.max);
-      if (min <= max) {
-        return { min, max };
-      }
-      return bucketRange;
-    })();
+    const { bucketRange, rowFloatRange, normalizedRange } = resolveRowRangesForExterior(
+      input.exterior,
+      targetRange,
+    );
 
-    const effectiveRange = rowFloatRange ?? bucketRange ?? targetRange ?? { min: 0, max: 1 };
+    const effectiveNormalized = normalizedRange ?? { min: 0, max: 1 };
+
     return {
       bucketRange,
       rowFloatRange,
-      effectiveRange: normalizeRange(effectiveRange),
+      normalizedRange: effectiveNormalized,
     };
   });
 
-  const assignedFloats = projectAverageOntoRanges(
-    resolvedRanges.map((entry) => entry.effectiveRange),
-    requiredAverageFloat,
+  const assignedNormalized = projectAverageOntoRanges(
+    resolvedRanges.map((entry) => entry.normalizedRange),
+    requiredNormalizedAverage,
   );
 
   const rows: TradeupInputFormRow[] = trimmedPlan.map((input, index) => {
-    const { bucketRange, rowFloatRange } = resolvedRanges[index];
+    const { bucketRange, rowFloatRange, normalizedRange } = resolvedRanges[index];
 
     const clampWithinRowRange = (value: number) => {
       const range = rowFloatRange ?? bucketRange ?? targetRange;
@@ -448,18 +506,29 @@ export const planRowsForCollection = ({
       return clampFloat(value);
     };
 
-    const assigned = assignedFloats[index] ?? null;
-    const fallbackMidpoint = rowFloatRange
-      ? (rowFloatRange.min + rowFloatRange.max) / 2
-      : bucketRange
-      ? (bucketRange.min + bucketRange.max) / 2
-      : exteriorMidpoint(input.exterior) ?? null;
-    const resolvedFloat = assigned ?? fallbackMidpoint;
+    const assigned = assignedNormalized[index] ?? null;
+    const bucketSpan = bucketRange ? bucketRange.max - bucketRange.min : null;
+
+    const normalizedMidpoint =
+      normalizedRange.min + (normalizedRange.max - normalizedRange.min) / 2;
+
+    const resolvedNormalized = assigned ?? normalizedMidpoint;
+
+    const resolvedFloat = (() => {
+      if (bucketRange && bucketSpan && bucketSpan > 0) {
+        return bucketRange.min + resolvedNormalized * bucketSpan;
+      }
+      const fallbackRange = rowFloatRange ?? targetRange;
+      if (fallbackRange) {
+        return fallbackRange.min + (fallbackRange.max - fallbackRange.min) * resolvedNormalized;
+      }
+      return resolvedNormalized;
+    })();
 
     return {
       marketHashName: input.marketHashName,
       collectionId: effectiveCollectionValue,
-      float: formatFloatValue(resolvedFloat == null ? null : clampWithinRowRange(resolvedFloat)),
+      float: formatFloatValue(clampWithinRowRange(resolvedFloat)),
       buyerPrice: input.price != null ? input.price.toFixed(2) : "",
     };
   });
