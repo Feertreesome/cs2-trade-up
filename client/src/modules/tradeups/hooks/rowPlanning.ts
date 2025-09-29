@@ -148,6 +148,7 @@ export const planRowsForCollection = ({
   }, new Map<Exterior, CollectionInputSummary[]>());
 
   const plannedInputs: CollectionInputSummary[] = [];
+  let usedExactMatch = false;
 
   if (desiredFloat != null) {
     const matchingCandidates: CollectionInputSummary[] = [];
@@ -163,6 +164,7 @@ export const planRowsForCollection = ({
         for (let i = 0; i < 10; i += 1) {
           plannedInputs.push(cheapestMatch);
         }
+        usedExactMatch = true;
       }
     }
   }
@@ -237,7 +239,8 @@ export const planRowsForCollection = ({
   }
 
   const trimmedPlan = plannedInputs.slice(0, 10);
-  const offsetStep = desiredFloat != null && trimmedPlan.length > 1 ? 0.00005 : 0;
+  const offsetStep =
+    desiredFloat != null && trimmedPlan.length > 1 && !usedExactMatch ? 0.00005 : 0;
   const centerIndex = (trimmedPlan.length - 1) / 2;
 
   const rows: TradeupInputFormRow[] = trimmedPlan.map((input, index) => {
@@ -258,6 +261,14 @@ export const planRowsForCollection = ({
     })();
 
     const clampWithinRowRange = (value: number) => {
+      if (desiredFloat != null) {
+        if (bucketRange) {
+          if (value < bucketRange.min) return clampFloat(bucketRange.min);
+          if (value > bucketRange.max) return clampFloat(bucketRange.max);
+        }
+        return clampFloat(value);
+      }
+
       const range = rowFloatRange ?? bucketRange ?? targetRange;
       if (range) {
         if (value < range.min) return clampFloat(range.min);
