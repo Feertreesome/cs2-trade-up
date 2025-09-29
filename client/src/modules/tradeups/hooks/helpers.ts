@@ -19,6 +19,35 @@ export const exteriorMidpoint = (exterior: Exterior) => {
   return (range.min + range.max) / 2;
 };
 
+export const isFloatWithinExteriorRange = (
+  exterior: Exterior,
+  value: number,
+  tolerance = Number.EPSILON,
+) => {
+  const range = EXTERIOR_FLOAT_RANGES[exterior];
+  if (!range) return false;
+
+  const aboveMin = value >= range.min || Math.abs(value - range.min) <= tolerance;
+  if (!aboveMin) {
+    return false;
+  }
+
+  const isLastBucket = exterior === "Battle-Scarred";
+  if (isLastBucket) {
+    return value <= range.max || Math.abs(value - range.max) <= tolerance;
+  }
+
+  if (value < range.max) {
+    return true;
+  }
+
+  if (Math.abs(value - range.max) <= tolerance) {
+    return false;
+  }
+
+  return value < range.max;
+};
+
 export const formatFloatValue = (value: number | null | undefined) =>
   value == null ? "" : clampFloat(value).toFixed(5);
 

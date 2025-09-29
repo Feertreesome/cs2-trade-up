@@ -43,10 +43,38 @@ const WEAR_BUCKETS: Array<{ exterior: Exterior; min: number; max: number }> = [
 const clamp = (value: number, min: number, max: number) =>
   Math.max(min, Math.min(max, value));
 
+const isWithinBucket = (
+  value: number,
+  bucket: { min: number; max: number },
+  inclusiveMax: boolean,
+  tolerance = Number.EPSILON,
+) => {
+  const aboveMin = value >= bucket.min || Math.abs(value - bucket.min) <= tolerance;
+  if (!aboveMin) {
+    return false;
+  }
+
+  if (inclusiveMax) {
+    return value <= bucket.max || Math.abs(value - bucket.max) <= tolerance;
+  }
+
+  if (value < bucket.max) {
+    return true;
+  }
+
+  if (Math.abs(value - bucket.max) <= tolerance) {
+    return false;
+  }
+
+  return value < bucket.max;
+};
+
 /** Возвращает наименование степени износа, соответствующее float-значению. */
 const getExteriorByFloat = (float: number): Exterior => {
-  const bucket = WEAR_BUCKETS.find((entry) => float >= entry.min && float <= entry.max);
-  return bucket?.exterior ?? "Battle-Scarred";
+  const bucket = WEAR_BUCKETS.find((entry, index) =>
+    isWithinBucket(float, entry, index === WEAR_BUCKETS.length - 1),
+  );
+  return bucket?.exterior ?? WEAR_BUCKETS[WEAR_BUCKETS.length - 1].exterior;
 };
 
 /** Находит числовой диапазон wear-ступени. */

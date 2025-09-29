@@ -6,6 +6,7 @@ import {
   clampFloat,
   exteriorMidpoint,
   formatFloatValue,
+  isFloatWithinExteriorRange,
   makeEmptyRow,
 } from "./helpers";
 import type { TradeupInputFormRow } from "./types";
@@ -149,13 +150,10 @@ export const planRowsForCollection = ({
   const plannedInputs: CollectionInputSummary[] = [];
 
   if (desiredFloat != null) {
-    const epsilon = 1e-6;
     const matchingCandidates: CollectionInputSummary[] = [];
 
     inputsByExterior.forEach((pool, exterior) => {
-      const range = EXTERIOR_FLOAT_RANGES[exterior];
-      if (!range) return;
-      if (desiredFloat + epsilon < range.min || desiredFloat - epsilon > range.max) return;
+      if (!isFloatWithinExteriorRange(exterior, desiredFloat)) return;
       matchingCandidates.push(...pool);
     });
 
@@ -178,8 +176,7 @@ export const planRowsForCollection = ({
       const width = Math.max(0, max - min);
       const containsPoint =
         targetRange.min === targetRange.max &&
-        targetRange.min >= bucketRange.min &&
-        targetRange.min <= bucketRange.max;
+        isFloatWithinExteriorRange(bucket.exterior, targetRange.min);
       const weight = width > 0 ? width : containsPoint ? 1e-6 : 0;
       if (weight <= 0) return null;
       return {

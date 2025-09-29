@@ -2,7 +2,7 @@ import type { Exterior } from "../../skins/services/types";
 import { parseExterior } from "../../skins/services/utils";
 import type { CollectionTargetSummary, TradeupCollection } from "../services/api";
 import { EXTERIOR_FLOAT_RANGES, WEAR_BUCKET_SEQUENCE } from "./constants";
-import { clampFloat } from "./helpers";
+import { clampFloat, isFloatWithinExteriorRange } from "./helpers";
 import type {
   FloatlessAnalysisResult,
   FloatlessOutcomeExterior,
@@ -181,7 +181,8 @@ export const evaluateFloatlessTradeup = ({
       const min = Math.max(bucket.min, normalizedMin);
       const max = Math.min(bucket.max, normalizedMax);
       const width = Math.max(0, max - min);
-      const containsPoint = rangeWidth === 0 && normalizedMin >= bucket.min && normalizedMin <= bucket.max;
+      const containsPoint =
+        rangeWidth === 0 && isFloatWithinExteriorRange(bucket.exterior, normalizedMin);
       if (width <= 0 && !containsPoint && !matchesSelected) return null;
       const buyerPrice =
         targetExterior.price ?? targetPriceOverrides[targetExterior.marketHashName] ?? null;
