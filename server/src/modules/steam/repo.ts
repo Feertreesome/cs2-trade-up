@@ -394,19 +394,21 @@ export const fetchCollectionTags = async (): Promise<SteamCollectionTag[]> => {
   });
 };
 
-export const searchByCollection = async ({
+const STEAM_SEARCH_SINGLE_REQUEST_LIMIT = 10;
+
+const buildCollectionSearchParams = ({
   collectionTag,
   rarity,
-  start = 0,
-  count = 30,
-  normalOnly = true,
+  start,
+  count,
+  normalOnly,
 }: {
   collectionTag: string;
   rarity?: keyof typeof RARITY_TO_TAG;
-  start?: number;
-  count?: number;
-  normalOnly?: boolean;
-}): Promise<{ total: number; items: SearchItem[] }> => {
+  start: number;
+  count: number;
+  normalOnly: boolean;
+}): URLSearchParams => {
   const params = new URLSearchParams({
     appid: String(APP_ID),
     norender: "1",
@@ -424,6 +426,30 @@ export const searchByCollection = async ({
     params.append("category_730_Rarity[]", RARITY_TO_TAG[rarity]);
   }
 
+  return params;
+};
+
+const fetchCollectionPage = async ({
+  collectionTag,
+  rarity,
+  start,
+  count,
+  normalOnly,
+}: {
+  collectionTag: string;
+  rarity?: keyof typeof RARITY_TO_TAG;
+  start: number;
+  count: number;
+  normalOnly: boolean;
+}): Promise<{ total: number; items: SearchItem[] }> => {
+  const params = buildCollectionSearchParams({
+    collectionTag,
+    rarity,
+    start,
+    count: Math.min(count, STEAM_SEARCH_SINGLE_REQUEST_LIMIT),
+    normalOnly,
+  });
+
   const url = `${SEARCH_URL}?${params.toString()}`;
   const cacheKey = `collection:${url}`;
   const cached = memoryCache.get(cacheKey);
@@ -440,6 +466,91 @@ export const searchByCollection = async ({
   const typed = { total, items };
   memoryCache.set(cacheKey, typed);
   return typed;
+};
+
+export const searchByCollection = async ({
+  collectionTag,
+  rarity,
+  start = 0,
+  count = 30,
+  normalOnly = true,
+}: {
+  collectionTag: string;
+  rarity?: keyof typeof RARITY_TO_TAG;
+  start?: number;
+  count?: number;
+  normalOnly?: boolean;
+}): Promise<{ total: number; items: SearchItem[] }> => {
+  const desiredCount = Math.max(0, count);
+  const baseParams = buildCollectionSearchParams({
+    collectionTag,
+    rarity,
+    start,
+    count: desiredCount,
+    normalOnly,
+  });
+  const aggregateUrl = `${SEARCH_URL}?${baseParams.toString()}`;
+  const aggregateCacheKey = `collection:${aggregateUrl}`;
+  const aggregateCached = memoryCache.get(aggregateCacheKey);
+  if (aggregateCached) return aggregateCached;
+
+  if (desiredCount === 0) {
+    const emptyResult: { total: number; items: SearchItem[] } = { total: 0, items: [] };
+    memoryCache.set(aggregateCacheKey, emptyResult);
+    return emptyResult;
+  }
+
+  if (desiredCount <= STEAM_SEARCH_SINGLE_REQUEST_LIMIT) {
+    const singlePage = await fetchCollectionPage({
+      collectionTag,
+      rarity,
+      start,
+      count: desiredCount,
+      normalOnly,
+    });
+    memoryCache.set(aggregateCacheKey, singlePage);
+    return singlePage;
+  }
+
+  const items: SearchItem[] = [];
+  let total = 0;
+  let currentStart = start;
+
+  while (items.length < desiredCount) {
+    const remaining = desiredCount - items.length;
+    const requestCount = Math.min(remaining, STEAM_SEARCH_SINGLE_REQUEST_LIMIT);
+
+    const { total: pageTotal, items: pageItems } = await fetchCollectionPage({
+      collectionTag,
+      rarity,
+      start: currentStart,
+      count: requestCount,
+      normalOnly,
+    });
+
+    if (!items.length) {
+      total = pageTotal;
+    }
+
+    if (!pageItems.length) {
+      break;
+    }
+
+    items.push(...pageItems);
+    currentStart += pageItems.length;
+
+    if (currentStart >= pageTotal) {
+      break;
+    }
+
+    if (pageItems.length < requestCount) {
+      break;
+    }
+  }
+
+  const result = { total, items };
+  memoryCache.set(aggregateCacheKey, result);
+  return result;
 };
 
 /**
