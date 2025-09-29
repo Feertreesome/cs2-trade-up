@@ -6,6 +6,7 @@ import {
   clampFloat,
   exteriorMidpoint,
   formatFloatValue,
+  isFloatWithinExteriorRange,
   makeEmptyRow,
 } from "./helpers";
 import type { TradeupInputFormRow } from "./types";
@@ -113,9 +114,29 @@ export const planRowsForCollection = ({
   );
 
   const targetRange = resolveTargetRange(options);
-  const desiredFloat = targetRange
-    ? clampFloat((targetRange.min + targetRange.max) / 2)
-    : desiredFloatFromTarget(options);
+  const target = options?.target;
+  const targetBucketRange = target ? EXTERIOR_FLOAT_RANGES[target.exterior] : null;
+  const rawMinOut = target?.minFloat != null ? clampFloat(target.minFloat) : null;
+  const rawMaxOut = target?.maxFloat != null ? clampFloat(target.maxFloat) : null;
+  const effectiveMinOut =
+    rawMinOut ?? targetBucketRange?.min ?? targetRange?.min ?? null;
+  const effectiveMaxOut =
+    rawMaxOut ?? targetBucketRange?.max ?? targetRange?.max ?? null;
+  const outputTarget =
+    targetBucketRange?.max ?? rawMaxOut ?? effectiveMaxOut ?? null;
+
+  let desiredFloat =
+    outputTarget != null && effectiveMinOut != null && effectiveMaxOut != null
+      ? effectiveMaxOut > effectiveMinOut
+        ? clampFloat((outputTarget - effectiveMinOut) / (effectiveMaxOut - effectiveMinOut))
+        : clampFloat(outputTarget)
+      : null;
+
+  if (desiredFloat == null) {
+    desiredFloat = targetRange
+      ? clampFloat((targetRange.min + targetRange.max) / 2)
+      : desiredFloatFromTarget(options);
+  }
 
   const sortedInputs = sortInputsForPlanning(inputs, desiredFloat);
 
@@ -127,8 +148,28 @@ export const planRowsForCollection = ({
   }, new Map<Exterior, CollectionInputSummary[]>());
 
   const plannedInputs: CollectionInputSummary[] = [];
+  let usedExactMatch = false;
 
-  if (targetRange) {
+  if (desiredFloat != null) {
+    const matchingCandidates: CollectionInputSummary[] = [];
+
+    inputsByExterior.forEach((pool, exterior) => {
+      if (!isFloatWithinExteriorRange(exterior, desiredFloat)) return;
+      matchingCandidates.push(...pool);
+    });
+
+    if (matchingCandidates.length) {
+      const [cheapestMatch] = sortInputsForPlanning(matchingCandidates, desiredFloat);
+      if (cheapestMatch) {
+        for (let i = 0; i < 10; i += 1) {
+          plannedInputs.push(cheapestMatch);
+        }
+        usedExactMatch = true;
+      }
+    }
+  }
+
+  if (!plannedInputs.length && targetRange) {
     const projectedBuckets = WEAR_BUCKET_SEQUENCE.map((bucket) => {
       const bucketRange = EXTERIOR_FLOAT_RANGES[bucket.exterior];
       if (!bucketRange) return null;
@@ -137,8 +178,7 @@ export const planRowsForCollection = ({
       const width = Math.max(0, max - min);
       const containsPoint =
         targetRange.min === targetRange.max &&
-        targetRange.min >= bucketRange.min &&
-        targetRange.min <= bucketRange.max;
+        isFloatWithinExteriorRange(bucket.exterior, targetRange.min);
       const weight = width > 0 ? width : containsPoint ? 1e-6 : 0;
       if (weight <= 0) return null;
       return {
@@ -199,7 +239,8 @@ export const planRowsForCollection = ({
   }
 
   const trimmedPlan = plannedInputs.slice(0, 10);
-  const offsetStep = desiredFloat != null && trimmedPlan.length > 1 ? 0.00005 : 0;
+  const offsetStep =
+    desiredFloat != null && trimmedPlan.length > 1 && !usedExactMatch ? 0.00005 : 0;
   const centerIndex = (trimmedPlan.length - 1) / 2;
 
   const rows: TradeupInputFormRow[] = trimmedPlan.map((input, index) => {
@@ -220,6 +261,14 @@ export const planRowsForCollection = ({
     })();
 
     const clampWithinRowRange = (value: number) => {
+      if (desiredFloat != null) {
+        if (bucketRange) {
+          if (value < bucketRange.min) return clampFloat(bucketRange.min);
+          if (value > bucketRange.max) return clampFloat(bucketRange.max);
+        }
+        return clampFloat(value);
+      }
+
       const range = rowFloatRange ?? bucketRange ?? targetRange;
       if (range) {
         if (value < range.min) return clampFloat(range.min);
