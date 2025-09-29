@@ -1,6 +1,6 @@
 import type { Exterior } from "../../skins/services/types";
 import type { CollectionInputSummary } from "../services/api";
-import { EXTERIOR_FLOAT_RANGES, WEAR_BUCKET_SEQUENCE } from "./constants";
+import { EXTERIOR_FLOAT_RANGES } from "./constants";
 import {
   buildCollectionSelectValue,
   clampFloat,
@@ -119,84 +119,8 @@ export const planRowsForCollection = ({
 
   const sortedInputs = sortInputsForPlanning(inputs, desiredFloat);
 
-  const inputsByExterior = sortedInputs.reduce((map, input) => {
-    const current = map.get(input.exterior) ?? [];
-    current.push(input);
-    map.set(input.exterior, current);
-    return map;
-  }, new Map<Exterior, CollectionInputSummary[]>());
-
-  const plannedInputs: CollectionInputSummary[] = [];
-
-  if (targetRange) {
-    const projectedBuckets = WEAR_BUCKET_SEQUENCE.map((bucket) => {
-      const bucketRange = EXTERIOR_FLOAT_RANGES[bucket.exterior];
-      if (!bucketRange) return null;
-      const min = Math.max(bucketRange.min, targetRange.min);
-      const max = Math.min(bucketRange.max, targetRange.max);
-      const width = Math.max(0, max - min);
-      const containsPoint =
-        targetRange.min === targetRange.max &&
-        targetRange.min >= bucketRange.min &&
-        targetRange.min <= bucketRange.max;
-      const weight = width > 0 ? width : containsPoint ? 1e-6 : 0;
-      if (weight <= 0) return null;
-      return {
-        exterior: bucket.exterior,
-        weight,
-      };
-    }).filter((entry): entry is { exterior: Exterior; weight: number } => entry != null);
-
-    if (projectedBuckets.length > 0) {
-      const totalWeight = projectedBuckets.reduce((sum, entry) => sum + entry.weight, 0);
-      const normalized = projectedBuckets.map((entry) => {
-        const exact = (entry.weight / totalWeight) * 10;
-        const count = Math.floor(exact);
-        const remainder = exact - count;
-        return { ...entry, count, remainder };
-      });
-
-      let assigned = normalized.reduce((sum, entry) => sum + entry.count, 0);
-      const deficit = 10 - assigned;
-      if (deficit > 0) {
-        normalized
-          .slice()
-          .sort((a, b) => b.remainder - a.remainder)
-          .slice(0, deficit)
-          .forEach((entry) => {
-            entry.count += 1;
-          });
-        assigned = normalized.reduce((sum, entry) => sum + entry.count, 0);
-      }
-
-      if (assigned > 10) {
-        normalized
-          .slice()
-          .sort((a, b) => a.remainder - b.remainder)
-          .slice(0, assigned - 10)
-          .forEach((entry) => {
-            if (entry.count > 0) {
-              entry.count -= 1;
-            }
-          });
-      }
-
-      for (const entry of normalized) {
-        if (entry.count <= 0) continue;
-        const pool = inputsByExterior.get(entry.exterior);
-        if (!pool || pool.length === 0) continue;
-        for (let i = 0; i < entry.count; i += 1) {
-          plannedInputs.push(pool[i % pool.length]);
-        }
-      }
-    }
-  }
-
-  if (plannedInputs.length < 10) {
-    for (let i = 0; plannedInputs.length < 10 && sortedInputs.length > 0; i += 1) {
-      plannedInputs.push(sortedInputs[i % sortedInputs.length]);
-    }
-  }
+  const cheapestInput = sortedInputs[0] ?? null;
+  const plannedInputs = cheapestInput ? Array.from({ length: 10 }, () => cheapestInput) : [];
 
   const trimmedPlan = plannedInputs.slice(0, 10);
   const offsetStep = desiredFloat != null && trimmedPlan.length > 1 ? 0.00005 : 0;
