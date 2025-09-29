@@ -72,12 +72,13 @@ const resolveTargetRange = (options?: PlanRowsOptions) => {
   return resolveCatalogRange();
 };
 
+const priceOf = (entry: CollectionInputSummary) =>
+  typeof entry.price === "number" ? entry.price : Number.POSITIVE_INFINITY;
+
 const sortInputsForPlanning = (
   inputs: CollectionInputSummary[],
   desiredFloat: number | null,
 ): CollectionInputSummary[] => {
-  const priceOf = (entry: CollectionInputSummary) =>
-    typeof entry.price === "number" ? entry.price : Number.POSITIVE_INFINITY;
 
   const fallbackCompare = (a: CollectionInputSummary, b: CollectionInputSummary) => {
     if (desiredFloat != null) {
@@ -117,6 +118,18 @@ export const planRowsForCollection = ({
     ? clampFloat((targetRange.min + targetRange.max) / 2)
     : desiredFloatFromTarget(options);
 
+  const targetExterior = options?.target?.exterior;
+  const outputBucketRange = targetExterior ? EXTERIOR_FLOAT_RANGES[targetExterior] ?? null : null;
+  const requiredAverageInputFloat =
+    desiredFloat != null &&
+    outputBucketRange &&
+    outputBucketRange.max > outputBucketRange.min
+      ? clampFloat(
+          (desiredFloat - outputBucketRange.min) /
+            (outputBucketRange.max - outputBucketRange.min),
+        )
+      : null;
+
   const sortedInputs = sortInputsForPlanning(inputs, desiredFloat);
 
   const inputsByExterior = sortedInputs.reduce((map, input) => {
@@ -128,7 +141,32 @@ export const planRowsForCollection = ({
 
   const plannedInputs: CollectionInputSummary[] = [];
 
-  if (targetRange) {
+  if (requiredAverageInputFloat != null) {
+    let cheapestMatch: CollectionInputSummary | null = null;
+
+    for (const [exterior, pool] of inputsByExterior) {
+      if (pool.length === 0) continue;
+      const range = EXTERIOR_FLOAT_RANGES[exterior];
+      if (!range) continue;
+      if (
+        requiredAverageInputFloat >= range.min &&
+        requiredAverageInputFloat <= range.max
+      ) {
+        const candidate = pool[0];
+        if (!cheapestMatch || priceOf(candidate) < priceOf(cheapestMatch)) {
+          cheapestMatch = candidate;
+        }
+      }
+    }
+
+    if (cheapestMatch) {
+      for (let i = 0; i < 10; i += 1) {
+        plannedInputs.push(cheapestMatch);
+      }
+    }
+  }
+
+  if (plannedInputs.length === 0 && targetRange) {
     const projectedBuckets = WEAR_BUCKET_SEQUENCE.map((bucket) => {
       const bucketRange = EXTERIOR_FLOAT_RANGES[bucket.exterior];
       if (!bucketRange) return null;
