@@ -1,6 +1,6 @@
 import type { Exterior } from "../../skins/services/types";
 import type { CollectionInputSummary } from "../services/api";
-import { EXTERIOR_FLOAT_RANGES } from "./constants";
+import { EXTERIOR_FLOAT_RANGES, WEAR_BUCKET_SEQUENCE } from "./constants";
 import {
   buildCollectionSelectValue,
   clampFloat,
@@ -72,12 +72,13 @@ const resolveTargetRange = (options?: PlanRowsOptions) => {
   return resolveCatalogRange();
 };
 
+const priceOf = (entry: CollectionInputSummary) =>
+  typeof entry.price === "number" ? entry.price : Number.POSITIVE_INFINITY;
+
 const sortInputsForPlanning = (
   inputs: CollectionInputSummary[],
   desiredFloat: number | null,
 ): CollectionInputSummary[] => {
-  const priceOf = (entry: CollectionInputSummary) =>
-    typeof entry.price === "number" ? entry.price : Number.POSITIVE_INFINITY;
 
   const fallbackCompare = (a: CollectionInputSummary, b: CollectionInputSummary) => {
     if (desiredFloat != null) {
@@ -104,6 +105,119 @@ const normalizeRange = (range: { min: number; max: number }) => {
   const min = clampFloat(Math.min(range.min, range.max));
   const max = clampFloat(Math.max(range.min, range.max));
   return { min, max };
+};
+
+const buildPrefixSums = (entries: CollectionInputSummary[]) => {
+  const sums: number[] = [];
+  let running = 0;
+  entries.forEach((entry, index) => {
+    running += priceOf(entry);
+    sums[index] = running;
+  });
+  return sums;
+};
+
+const findCheapestInputsForAverage = (
+  inputsByExterior: Map<Exterior, CollectionInputSummary[]>,
+  slots: number,
+  requiredAverage: number | null,
+) => {
+  if (requiredAverage == null || slots <= 0) return null;
+
+  const exteriors = WEAR_BUCKET_SEQUENCE.map((bucket) => bucket.exterior);
+  const totalAvailable = exteriors.reduce(
+    (sum, exterior) => sum + (inputsByExterior.get(exterior)?.length ?? 0),
+    0,
+  );
+
+  if (totalAvailable < slots) {
+    return null;
+  }
+
+  const desiredSum = requiredAverage * slots;
+  const epsilon = 1e-6;
+
+  const prefixSums = new Map<Exterior, number[]>();
+  exteriors.forEach((exterior) => {
+    const entries = inputsByExterior.get(exterior);
+    if (entries && entries.length > 0) {
+      prefixSums.set(exterior, buildPrefixSums(entries));
+    }
+  });
+
+  const counts = new Array(exteriors.length).fill(0);
+  let best: { counts: number[]; cost: number } | null = null;
+
+  const evaluate = () => {
+    let minSum = 0;
+    let maxSum = 0;
+    let cost = 0;
+
+    for (let index = 0; index < exteriors.length; index += 1) {
+      const count = counts[index];
+      if (count === 0) continue;
+
+      const exterior = exteriors[index];
+      const range = EXTERIOR_FLOAT_RANGES[exterior];
+      const available = inputsByExterior.get(exterior)?.length ?? 0;
+      if (!range || available < count) {
+        return;
+      }
+
+      minSum += range.min * count;
+      maxSum += range.max * count;
+
+      const sums = prefixSums.get(exterior);
+      if (!sums || sums.length < count) {
+        return;
+      }
+      cost += sums[count - 1];
+    }
+
+    if (desiredSum < minSum - epsilon || desiredSum > maxSum + epsilon) {
+      return;
+    }
+
+    if (!best) {
+      best = { counts: counts.slice(), cost };
+      return;
+    }
+
+    const bestCost = best.cost;
+
+    if (Number.isFinite(cost) && !Number.isFinite(bestCost)) {
+      best = { counts: counts.slice(), cost };
+      return;
+    }
+
+    if (cost < bestCost - epsilon) {
+      best = { counts: counts.slice(), cost };
+    }
+  };
+
+  const search = (index: number, remaining: number) => {
+    const exterior = exteriors[index];
+    const available = inputsByExterior.get(exterior)?.length ?? 0;
+    const maxCount = Math.min(remaining, available);
+
+    if (index === exteriors.length - 1) {
+      if (available < remaining) return;
+      counts[index] = remaining;
+      evaluate();
+      counts[index] = 0;
+      return;
+    }
+
+    for (let count = 0; count <= maxCount; count += 1) {
+      counts[index] = count;
+      search(index + 1, remaining - count);
+    }
+    counts[index] = 0;
+  };
+
+  search(0, slots);
+
+  return best;
 };
 
 const computeRequiredAverageFloat = (
@@ -238,14 +352,59 @@ export const planRowsForCollection = ({
 
   const sortedInputs = sortInputsForPlanning(inputs, desiredFloat);
 
-  const plannedInputs: CollectionInputSummary[] = [];
-  for (let i = 0; plannedInputs.length < 10 && sortedInputs.length > 0; i += 1) {
-    plannedInputs.push(sortedInputs[i % sortedInputs.length]);
-  }
-
-  const trimmedPlan = plannedInputs.slice(0, 10);
+  const inputsByExterior = sortedInputs.reduce(
+    (map, input) => {
+      const collection = map.get(input.exterior);
+      if (collection) {
+        collection.push(input);
+      } else {
+        map.set(input.exterior, [input]);
+      }
+      return map;
+    },
+    new Map<Exterior, CollectionInputSummary[]>(),
+  );
 
   const requiredAverageFloat = computeRequiredAverageFloat(targetRange, desiredFloat);
+
+  const slots = 10;
+  let plannedInputs: CollectionInputSummary[] = [];
+
+  if (targetRange && requiredAverageFloat != null) {
+    const combination = findCheapestInputsForAverage(inputsByExterior, slots, requiredAverageFloat);
+    if (combination) {
+      const exteriors = WEAR_BUCKET_SEQUENCE.map((bucket) => bucket.exterior);
+      const selected: CollectionInputSummary[] = [];
+      let valid = true;
+
+      for (let index = 0; index < exteriors.length; index += 1) {
+        const count = combination.counts[index] ?? 0;
+        if (count === 0) continue;
+        const exterior = exteriors[index];
+        const entries = inputsByExterior.get(exterior);
+        if (!entries || entries.length < count) {
+          valid = false;
+          break;
+        }
+        for (let i = 0; i < count; i += 1) {
+          selected.push(entries[i]);
+        }
+      }
+
+      if (valid && selected.length === slots) {
+        plannedInputs = sortInputsForPlanning(selected, desiredFloat);
+      }
+    }
+  }
+
+  if (plannedInputs.length === 0) {
+    for (let i = 0; plannedInputs.length < slots && sortedInputs.length > 0; i += 1) {
+      plannedInputs.push(sortedInputs[i % sortedInputs.length]);
+    }
+  }
+
+  const trimmedPlan = plannedInputs.slice(0, slots);
+
   const resolvedRanges = trimmedPlan.map((input) => {
     const bucketRange = EXTERIOR_FLOAT_RANGES[input.exterior] ?? null;
     const rowFloatRange = (() => {
