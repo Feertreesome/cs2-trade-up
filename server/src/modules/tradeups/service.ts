@@ -32,10 +32,10 @@ import { getSkinFloatRange } from "./floatRanges";
 const DEFAULT_BUYER_TO_NET = 1.15;
 
 const WEAR_BUCKETS: Array<{ exterior: Exterior; min: number; max: number }> = [
-  { exterior: "Factory New", min: 0, max: 0.07 },
-  { exterior: "Minimal Wear", min: 0.07, max: 0.15 },
-  { exterior: "Field-Tested", min: 0.15, max: 0.38 },
-  { exterior: "Well-Worn", min: 0.38, max: 0.45 },
+  { exterior: "Factory New", min: 0, max: 0.06999999999999999 },
+  { exterior: "Minimal Wear", min: 0.07, max: 0.14999999999999999 },
+  { exterior: "Field-Tested", min: 0.15, max: 0.37999999999999999 },
+  { exterior: "Well-Worn", min: 0.38, max: 0.44999999999999999 },
   { exterior: "Battle-Scarred", min: 0.45, max: 1 },
 ];
 

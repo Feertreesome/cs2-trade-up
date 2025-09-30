@@ -106,7 +106,7 @@ export default function TradeupBuilder() {
 
       <FloatlessAnalysisSection floatlessAnalysis={floatlessAnalysis} />
 
-      {calculation && <ResultsSection calculation={calculation} />}
+      {calculation && <ResultsSection calculation={calculation} totalBuyerCost={totalBuyerCost} />}
     </div>
   );
 }

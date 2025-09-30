@@ -35,7 +35,11 @@ interface PlannedRowsResult {
 const desiredFloatFromTarget = (options?: PlanRowsOptions) => {
   const target = options?.target;
   if (!target) return null;
-  if (target.minFloat != null && target.maxFloat != null && target.maxFloat > target.minFloat) {
+  if (
+    target.minFloat != null &&
+    target.maxFloat != null &&
+    target.maxFloat > target.minFloat
+  ) {
     return clampFloat((target.minFloat + target.maxFloat) / 2);
   }
   const midpoint = exteriorMidpoint(target.exterior);
@@ -80,11 +84,15 @@ const sortInputsForPlanning = (
   const priceOf = (entry: CollectionInputSummary) =>
     typeof entry.price === "number" ? entry.price : Number.POSITIVE_INFINITY;
 
-  const fallbackCompare = (a: CollectionInputSummary, b: CollectionInputSummary) => {
+  const fallbackCompare = (
+    a: CollectionInputSummary,
+    b: CollectionInputSummary,
+  ) => {
     if (desiredFloat != null) {
       const aMid = exteriorMidpoint(a.exterior) ?? desiredFloat;
       const bMid = exteriorMidpoint(b.exterior) ?? desiredFloat;
-      const diff = Math.abs(aMid - desiredFloat) - Math.abs(bMid - desiredFloat);
+      const diff =
+        Math.abs(aMid - desiredFloat) - Math.abs(bMid - desiredFloat);
       if (diff !== 0) return diff;
     }
     return a.marketHashName.localeCompare(b.marketHashName, "ru");
@@ -115,20 +123,27 @@ export const planRowsForCollection = ({
 
   const targetRange = resolveTargetRange(options);
   const target = options?.target;
-  const targetBucketRange = target ? EXTERIOR_FLOAT_RANGES[target.exterior] : null;
-  const rawMinOut = target?.minFloat != null ? clampFloat(target.minFloat) : null;
-  const rawMaxOut = target?.maxFloat != null ? clampFloat(target.maxFloat) : null;
+  const targetBucketRange = target
+    ? EXTERIOR_FLOAT_RANGES[target.exterior]
+    : null;
+  const rawMinOut =
+    target?.minFloat != null ? clampFloat(target.minFloat) : null;
+  const rawMaxOut =
+    target?.maxFloat != null ? clampFloat(target.maxFloat) : null;
   const effectiveMinOut =
     rawMinOut ?? targetBucketRange?.min ?? targetRange?.min ?? null;
   const effectiveMaxOut =
     rawMaxOut ?? targetBucketRange?.max ?? targetRange?.max ?? null;
   const outputTarget =
-    targetBucketRange?.max ?? rawMaxOut ?? effectiveMaxOut ?? null;
+    targetBucketRange?.max - 0.00001 ?? rawMaxOut - 0.00001 ?? effectiveMaxOut - 0.00001 ?? null;
 
   let desiredFloat =
     outputTarget != null && effectiveMinOut != null && effectiveMaxOut != null
       ? effectiveMaxOut > effectiveMinOut
-        ? clampFloat((outputTarget - effectiveMinOut) / (effectiveMaxOut - effectiveMinOut))
+        ? clampFloat(
+            (outputTarget - effectiveMinOut) /
+              (effectiveMaxOut - effectiveMinOut),
+          )
         : clampFloat(outputTarget)
       : null;
 
@@ -159,7 +174,10 @@ export const planRowsForCollection = ({
     });
 
     if (matchingCandidates.length) {
-      const [cheapestMatch] = sortInputsForPlanning(matchingCandidates, desiredFloat);
+      const [cheapestMatch] = sortInputsForPlanning(
+        matchingCandidates,
+        desiredFloat,
+      );
       if (cheapestMatch) {
         for (let i = 0; i < 10; i += 1) {
           plannedInputs.push(cheapestMatch);
@@ -185,10 +203,15 @@ export const planRowsForCollection = ({
         exterior: bucket.exterior,
         weight,
       };
-    }).filter((entry): entry is { exterior: Exterior; weight: number } => entry != null);
+    }).filter(
+      (entry): entry is { exterior: Exterior; weight: number } => entry != null,
+    );
 
     if (projectedBuckets.length > 0) {
-      const totalWeight = projectedBuckets.reduce((sum, entry) => sum + entry.weight, 0);
+      const totalWeight = projectedBuckets.reduce(
+        (sum, entry) => sum + entry.weight,
+        0,
+      );
       const normalized = projectedBuckets.map((entry) => {
         const exact = (entry.weight / totalWeight) * 10;
         const count = Math.floor(exact);
@@ -233,14 +256,20 @@ export const planRowsForCollection = ({
   }
 
   if (plannedInputs.length < 10) {
-    for (let i = 0; plannedInputs.length < 10 && sortedInputs.length > 0; i += 1) {
+    for (
+      let i = 0;
+      plannedInputs.length < 10 && sortedInputs.length > 0;
+      i += 1
+    ) {
       plannedInputs.push(sortedInputs[i % sortedInputs.length]);
     }
   }
 
   const trimmedPlan = plannedInputs.slice(0, 10);
   const offsetStep =
-    desiredFloat != null && trimmedPlan.length > 1 && !usedExactMatch ? 0.00005 : 0;
+    desiredFloat != null && trimmedPlan.length > 1 && !usedExactMatch
+      ? 0.00005
+      : 0;
   const centerIndex = (trimmedPlan.length - 1) / 2;
 
   const rows: TradeupInputFormRow[] = trimmedPlan.map((input, index) => {
@@ -281,10 +310,12 @@ export const planRowsForCollection = ({
     const rowMidpoint = rowFloatRange
       ? (rowFloatRange.min + rowFloatRange.max) / 2
       : bucketRange
-      ? (bucketRange.min + bucketRange.max) / 2
-      : null;
-    const baselineSource = desiredFloat ?? rowMidpoint ?? exteriorMidpoint(input.exterior) ?? null;
-    const baseline = baselineSource == null ? null : clampWithinRowRange(baselineSource);
+        ? (bucketRange.min + bucketRange.max) / 2
+        : null;
+    const baselineSource =
+      desiredFloat ?? rowMidpoint ?? exteriorMidpoint(input.exterior) ?? null;
+    const baseline =
+      baselineSource == null ? null : clampWithinRowRange(baselineSource);
     const adjusted =
       baseline == null
         ? null

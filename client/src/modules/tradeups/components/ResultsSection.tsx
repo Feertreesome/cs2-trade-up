@@ -4,9 +4,10 @@ import { formatNumber, formatPercent } from "../utils/format";
 
 interface ResultsSectionProps {
   calculation: TradeupCalculationResponse;
+  totalBuyerCost: number;
 }
 
-export default function ResultsSection({ calculation }: ResultsSectionProps) {
+export default function ResultsSection({ calculation, totalBuyerCost }: ResultsSectionProps) {
   return (
     <section className="mt-4">
       <h3 className="h5">4. Результаты</h3>
@@ -45,6 +46,7 @@ export default function ResultsSection({ calculation }: ResultsSectionProps) {
               <th>Wear</th>
               <th>Buyer $</th>
               <th>Net $ (после комиссии)</th>
+              <th>Прибыль</th>
               <th>Вероятность</th>
             </tr>
           </thead>
@@ -57,6 +59,7 @@ export default function ResultsSection({ calculation }: ResultsSectionProps) {
                 <td>{outcome.exterior}</td>
                 <td>{outcome.buyerPrice != null ? `$${formatNumber(outcome.buyerPrice)}` : "—"}</td>
                 <td>{outcome.netPrice != null ? `$${formatNumber(outcome.netPrice)}` : "—"}</td>
+                <td>{outcome.netPrice != null ? `$${formatNumber(outcome.netPrice - totalBuyerCost)}` : "—"}</td>
                 <td>{formatPercent(outcome.probability)}</td>
               </tr>
             ))}
