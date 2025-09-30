@@ -57,6 +57,7 @@ export interface CollectionInputSummary {
 export interface CollectionInputsResponse {
   collectionTag: string;
   collectionId: string | null;
+  rarity: "Classified" | "Restricted";
   inputs: CollectionInputSummary[];
 }
 
@@ -160,9 +161,15 @@ export async function fetchCollectionTargets(collectionTag: string, rarity: Targ
   return (await response.json()) as CollectionTargetsResponse;
 }
 
-/** Выгружает Classified-входы для коллекции (используется при автозаполнении таблицы). */
-export async function fetchCollectionInputs(collectionTag: string) {
-  const response = await fetch(`/api/tradeups/collections/${encodeURIComponent(collectionTag)}/inputs`);
+/** Выгружает входы для коллекции (используется при автозаполнении таблицы). */
+export async function fetchCollectionInputs(
+  collectionTag: string,
+  targetRarity: TargetRarity = "Covert",
+) {
+  const qs = new URLSearchParams({ rarity: targetRarity });
+  const response = await fetch(
+    `/api/tradeups/collections/${encodeURIComponent(collectionTag)}/inputs?${qs.toString()}`,
+  );
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}`);
   }

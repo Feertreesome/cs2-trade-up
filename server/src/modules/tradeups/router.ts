@@ -109,14 +109,17 @@ export const createTradeupsRouter = () => {
     }
   });
 
-  /** Список Classified-входов, которыми можно заполнить слоты trade-up'а. */
+  /** Список входов, которыми можно заполнить слоты trade-up'а. */
   router.get("/collections/:collectionTag/inputs", async (request, response) => {
     const collectionTag = String(request.params?.collectionTag ?? "").trim();
     if (!collectionTag) {
       return response.status(400).json({ error: "collectionTag is required" });
     }
     try {
-      const result = await fetchCollectionInputs(collectionTag);
+      const rarityParam = String(request.query?.rarity ?? "Covert").trim();
+      const normalized = rarityParam.toLowerCase();
+      const targetRarity = normalized === "classified" ? "Classified" : "Covert";
+      const result = await fetchCollectionInputs(collectionTag, targetRarity);
       response.json(result);
     } catch (error) {
       response.status(503).json({ error: String(error) });

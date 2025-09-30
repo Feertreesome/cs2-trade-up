@@ -27,7 +27,7 @@ import {
   parseMarketHashExterior,
   type Exterior,
 } from "../skins/service";
-import { getSkinFloatRange } from "./floatRanges";
+import { getSkinFloatRange, type SkinFloatRange } from "./floatRanges";
 
 const DEFAULT_BUYER_TO_NET = 1.15;
 
@@ -372,11 +372,21 @@ export const fetchCollectionTargets = async (
   const items = await fetchEntireCollection({ collectionTag, rarity });
   const grouped = new Map<string, CollectionTargetSummary>();
   const baseNames: string[] = [];
+  const floatCache = new Map<string, SkinFloatRange | undefined>();
 
   for (const item of items) {
     const exterior = parseMarketHashExterior(item.market_hash_name);
     const baseName = baseFromMarketHash(item.market_hash_name);
-    const floats = rarity === "Covert" ? COVERT_FLOAT_BY_BASENAME.get(baseName) : undefined;
+    let floats: SkinFloatRange | undefined;
+    if (rarity === "Covert") {
+      floats = COVERT_FLOAT_BY_BASENAME.get(baseName);
+    } else {
+      if (!floatCache.has(baseName)) {
+        const range = await getSkinFloatRange(item.market_hash_name);
+        floatCache.set(baseName, range ?? undefined);
+      }
+      floats = floatCache.get(baseName);
+    }
 
     let entry = grouped.get(baseName);
     if (!entry) {
@@ -420,19 +430,23 @@ export interface CollectionInputSummary {
 export interface CollectionInputsResult {
   collectionTag: string;
   collectionId: string | null;
+  rarity: "Classified" | "Restricted";
   inputs: CollectionInputSummary[];
 }
 
 /**
- * Получает список Classified-предметов коллекции, которые могут служить входами.
+ * Получает список предметов коллекции, которые могут служить входами для trade-up'а.
  */
 export const fetchCollectionInputs = async (
   collectionTag: string,
+  targetRarity: "Covert" | "Classified" = "Covert",
 ): Promise<CollectionInputsResult> => {
   ensureCollectionCaches();
+  const inputRarity: "Classified" | "Restricted" =
+    targetRarity === "Classified" ? "Restricted" : "Classified";
   const items = await fetchEntireCollection({
     collectionTag,
-    rarity: "Classified",
+    rarity: inputRarity,
   });
 
   const inputs: CollectionInputSummary[] = items.map((item) => ({
@@ -450,7 +464,7 @@ export const fetchCollectionInputs = async (
     );
   }
 
-  return { collectionTag, collectionId, inputs };
+  return { collectionTag, collectionId, rarity: inputRarity, inputs };
 };
 
 /**

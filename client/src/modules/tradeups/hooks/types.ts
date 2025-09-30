@@ -1,6 +1,7 @@
 import type { Exterior } from "../../skins/services/types";
 import type {
   CollectionInputSummary,
+  CollectionInputsResponse,
   CollectionTargetsResponse,
   TargetRarity,
   TradeupCalculationResponse,
@@ -98,10 +99,7 @@ export interface CollectionLookupContext {
   steamCollections: Array<{ tag: string; name: string; collectionId: string | null }>;
   steamCollectionsByTag: Map<string, { tag: string; name: string; collectionId: string | null }>;
   targetsByCollection: Record<string, Partial<Record<TargetRarity, CollectionTargetsResponse>>>;
-  inputsByCollection: Record<
-    string,
-    { collectionId: string | null; collectionTag: string; inputs: CollectionInputSummary[] }
-  >;
+  inputsByCollection: Record<string, Partial<Record<TargetRarity, CollectionInputsResponse>>>;
 }
 
 export interface TradeupBuilderState {
