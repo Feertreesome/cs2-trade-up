@@ -1,6 +1,8 @@
 import type { Exterior } from "../../skins/services/types";
 import { batchPriceOverview } from "../../skins/services/api";
 
+export type TargetRarity = "Covert" | "Classified";
+
 /**
  * Клиентский слой работы с trade-up API. Предоставляет функции для загрузки коллекций,
  * целей, входов и для отправки данных на расчёт EV.
@@ -41,6 +43,7 @@ export interface CollectionTargetSummary {
 export interface CollectionTargetsResponse {
   collectionTag: string;
   collectionId: string | null;
+  rarity: TargetRarity;
   targets: CollectionTargetSummary[];
 }
 
@@ -145,9 +148,12 @@ export async function fetchSteamCollections() {
   return payload.collections;
 }
 
-/** Получает список Covert-результатов для конкретного Steam tag'а. */
-export async function fetchCollectionTargets(collectionTag: string) {
-  const response = await fetch(`/api/tradeups/collections/${encodeURIComponent(collectionTag)}/targets`);
+/** Получает список результатов указанной редкости для конкретного Steam tag'а. */
+export async function fetchCollectionTargets(collectionTag: string, rarity: TargetRarity = "Covert") {
+  const qs = new URLSearchParams({ rarity });
+  const response = await fetch(
+    `/api/tradeups/collections/${encodeURIComponent(collectionTag)}/targets?${qs.toString()}`,
+  );
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}`);
   }

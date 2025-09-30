@@ -2,6 +2,7 @@ import type { Exterior } from "../../skins/services/types";
 import type {
   CollectionInputSummary,
   CollectionTargetsResponse,
+  TargetRarity,
   TradeupCalculationResponse,
   TradeupCollection,
 } from "../services/api";
@@ -96,7 +97,7 @@ export interface CollectionLookupContext {
   catalogMap: Map<string, TradeupCollection>;
   steamCollections: Array<{ tag: string; name: string; collectionId: string | null }>;
   steamCollectionsByTag: Map<string, { tag: string; name: string; collectionId: string | null }>;
-  targetsByCollection: Record<string, CollectionTargetsResponse>;
+  targetsByCollection: Record<string, Partial<Record<TargetRarity, CollectionTargetsResponse>>>;
   inputsByCollection: Record<
     string,
     { collectionId: string | null; collectionTag: string; inputs: CollectionInputSummary[] }
@@ -111,6 +112,8 @@ export interface TradeupBuilderState {
   loadingSteamCollections: boolean;
   steamCollectionError: string | null;
   activeCollectionTag: string | null;
+  targetRarity: TargetRarity;
+  setTargetRarity: (rarity: TargetRarity) => void;
   selectCollection: (tag: string) => void;
   collectionTargets: CollectionTargetsResponse["targets"];
   loadingTargets: boolean;

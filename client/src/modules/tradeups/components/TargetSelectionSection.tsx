@@ -2,6 +2,7 @@ import React from "react";
 import type {
   CollectionTargetExterior,
   CollectionTargetSummary,
+  TargetRarity,
 } from "../services/api";
 import type { SelectedTarget } from "../hooks/useTradeupBuilder";
 import { formatNumber } from "../utils/format";
@@ -9,6 +10,8 @@ import { shortExterior } from "../utils/wear";
 
 interface TargetSelectionSectionProps {
   activeCollectionTag: string | null;
+  targetRarity: TargetRarity;
+  setTargetRarity: (rarity: TargetRarity) => void;
   collectionTargets: CollectionTargetSummary[];
   loadingTargets: boolean;
   targetsError: string | null;
@@ -24,6 +27,8 @@ interface TargetSelectionSectionProps {
 
 export default function TargetSelectionSection({
   activeCollectionTag,
+  targetRarity,
+  setTargetRarity,
   collectionTargets,
   loadingTargets,
   targetsError,
@@ -32,14 +37,37 @@ export default function TargetSelectionSection({
   inputsLoading,
   inputsError,
 }: TargetSelectionSectionProps) {
+  const rarityLabel = targetRarity === "Covert" ? "Covert" : "Classified";
+
   return (
     <section>
       <h3 className="h5">2. Целевой скин</h3>
+      <div className="d-flex flex-wrap align-items-center gap-2 mb-2">
+        <span className="text-muted small">Качество результата:</span>
+        <div className="btn-group btn-group-sm" role="group">
+          <button
+            type="button"
+            className={`btn ${targetRarity === "Covert" ? "btn-primary" : "btn-outline-light"}`}
+            onClick={() => setTargetRarity("Covert")}
+            disabled={loadingTargets}
+          >
+            Covert
+          </button>
+          <button
+            type="button"
+            className={`btn ${targetRarity === "Classified" ? "btn-primary" : "btn-outline-light"}`}
+            onClick={() => setTargetRarity("Classified")}
+            disabled={loadingTargets}
+          >
+            Classified
+          </button>
+        </div>
+      </div>
       {!activeCollectionTag && <div className="text-muted">Сначала выберите коллекцию.</div>}
       {targetsError && <div className="text-danger">{targetsError}</div>}
       {loadingTargets && <div className="text-muted">Загрузка скинов…</div>}
       {activeCollectionTag && !loadingTargets && collectionTargets.length === 0 && !targetsError && (
-        <div className="text-muted">Для этой коллекции не найдены Covert-скины.</div>
+        <div className="text-muted">Для этой коллекции не найдены {rarityLabel}-скины.</div>
       )}
       {collectionTargets.length > 0 && (
         <div className="tradeup-targets">

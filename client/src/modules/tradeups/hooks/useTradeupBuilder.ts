@@ -10,6 +10,7 @@ import {
   type CollectionTargetExterior,
   type CollectionTargetsResponse,
   type SteamCollectionSummary,
+  type TargetRarity,
   type TradeupCalculationResponse,
   type TradeupCollection,
 } from "../services/api";
@@ -52,8 +53,9 @@ export default function useTradeupBuilder() {
   const [steamCollectionError, setSteamCollectionError] = React.useState<string | null>(null);
 
   const [activeCollectionTag, setActiveCollectionTag] = React.useState<string | null>(null);
+  const [targetRarity, setTargetRarityState] = React.useState<TargetRarity>("Covert");
   const [targetsByCollection, setTargetsByCollection] = React.useState<
-    Record<string, CollectionTargetsResponse>
+    Record<string, Partial<Record<TargetRarity, CollectionTargetsResponse>>>
   >({});
   const [loadingTargets, setLoadingTargets] = React.useState(false);
   const [targetsError, setTargetsError] = React.useState<string | null>(null);
@@ -80,6 +82,14 @@ export default function useTradeupBuilder() {
   const [targetPriceOverrides, setTargetPriceOverrides] = React.useState<Record<string, number>>({});
 
   const buyerToNetRate = 1 + Math.max(0, buyerFeePercent) / 100;
+
+  const targetCacheResponses = React.useMemo(
+    () =>
+      Object.values(targetsByCollection).flatMap((entry) =>
+        Object.values(entry ?? {}).filter(Boolean) as CollectionTargetsResponse[],
+      ),
+    [targetsByCollection],
+  );
 
   // При первом рендере подтягиваем встроенный каталог коллекций для подсказок.
   React.useEffect(() => {
@@ -154,7 +164,7 @@ export default function useTradeupBuilder() {
       }
     }
 
-    for (const entry of Object.values(targetsByCollection)) {
+    for (const entry of targetCacheResponses) {
       const value = buildCollectionSelectValue(entry.collectionId, entry.collectionTag);
       register(value, {
         collectionId: entry.collectionId ?? null,
@@ -192,7 +202,7 @@ export default function useTradeupBuilder() {
   }, [
     steamCollections,
     steamCollectionsByTag,
-    targetsByCollection,
+    targetCacheResponses,
     inputsByCollection,
     catalogCollections,
     catalogMap,
@@ -242,7 +252,7 @@ export default function useTradeupBuilder() {
       }
     }
 
-    for (const entry of Object.values(targetsByCollection)) {
+    for (const entry of targetCacheResponses) {
       if (entry.collectionId) {
         map.set(entry.collectionTag, entry.collectionId);
       }
@@ -261,7 +271,7 @@ export default function useTradeupBuilder() {
     return map;
   }, [
     steamCollections,
-    targetsByCollection,
+    targetCacheResponses,
     inputsByCollection,
     selectedCollectionId,
     activeCollectionTag,
@@ -314,8 +324,8 @@ export default function useTradeupBuilder() {
 
   const activeTargets = React.useMemo(() => {
     if (!activeCollectionTag) return [];
-    return targetsByCollection[activeCollectionTag]?.targets ?? [];
-  }, [activeCollectionTag, targetsByCollection]);
+    return targetsByCollection[activeCollectionTag]?.[targetRarity]?.targets ?? [];
+  }, [activeCollectionTag, targetRarity, targetsByCollection]);
 
   React.useEffect(() => {
     if (!activeTargets.length) return;
@@ -355,6 +365,49 @@ export default function useTradeupBuilder() {
     };
   }, [activeTargets, targetPriceOverrides]);
 
+  const setTargetRarity = React.useCallback(
+    (rarity: TargetRarity) => {
+      if (rarity === targetRarity) return;
+      setTargetRarityState(rarity);
+      setTargetsError(null);
+      setSelectedTarget(null);
+      setCalculation(null);
+      if (!activeCollectionTag) return;
+      const cached = targetsByCollection[activeCollectionTag]?.[rarity];
+      if (cached) {
+        if (cached.collectionId) {
+          setSelectedCollectionId(cached.collectionId);
+          rememberSteamCollectionId(activeCollectionTag, cached.collectionId);
+        }
+        return;
+      }
+      setLoadingTargets(true);
+      (async () => {
+        try {
+          const result = await fetchCollectionTargets(activeCollectionTag, rarity);
+          setTargetsByCollection((prev) => ({
+            ...prev,
+            [activeCollectionTag]: { ...(prev[activeCollectionTag] ?? {}), [rarity]: result },
+          }));
+          if (result.collectionId) {
+            setSelectedCollectionId(result.collectionId);
+            rememberSteamCollectionId(activeCollectionTag, result.collectionId);
+          }
+        } catch (error: any) {
+          setTargetsError(String(error?.message || error));
+        } finally {
+          setLoadingTargets(false);
+        }
+      })();
+    },
+    [
+      activeCollectionTag,
+      rememberSteamCollectionId,
+      targetRarity,
+      targetsByCollection,
+    ],
+  );
+
   /**
    * Выбор коллекции: сбрасывает форму, подгружает цели и при наличии — collectionId из справочника.
    */
@@ -369,26 +422,38 @@ export default function useTradeupBuilder() {
       setCalculationError(null);
 
       const steamEntry = steamCollections.find((entry) => entry.tag === collectionTag);
-      const cachedCollectionId = targetsByCollection[collectionTag]?.collectionId;
-      const initialCollectionId = cachedCollectionId ?? steamEntry?.collectionId ?? null;
+      const cachedByRarity = targetsByCollection[collectionTag];
+      const cachedForSelectedRarity = cachedByRarity?.[targetRarity];
+      const fallbackCached = cachedByRarity
+        ? (Object.values(cachedByRarity).find((entry) => entry?.collectionId) as
+            | CollectionTargetsResponse
+            | undefined)
+        : undefined;
+      const initialCollectionId =
+        cachedForSelectedRarity?.collectionId ??
+        fallbackCached?.collectionId ??
+        steamEntry?.collectionId ??
+        null;
       setSelectedCollectionId(initialCollectionId ?? null);
       if (initialCollectionId) {
         rememberSteamCollectionId(collectionTag, initialCollectionId);
       }
 
-      if (targetsByCollection[collectionTag]) {
-        const cached = targetsByCollection[collectionTag];
-        if (cached.collectionId) {
-          setSelectedCollectionId(cached.collectionId);
-          rememberSteamCollectionId(collectionTag, cached.collectionId);
+      if (cachedForSelectedRarity) {
+        if (cachedForSelectedRarity.collectionId) {
+          setSelectedCollectionId(cachedForSelectedRarity.collectionId);
+          rememberSteamCollectionId(collectionTag, cachedForSelectedRarity.collectionId);
         }
         return;
       }
 
       try {
         setLoadingTargets(true);
-        const result = await fetchCollectionTargets(collectionTag);
-        setTargetsByCollection((prev) => ({ ...prev, [collectionTag]: result }));
+        const result = await fetchCollectionTargets(collectionTag, targetRarity);
+        setTargetsByCollection((prev) => ({
+          ...prev,
+          [collectionTag]: { ...(prev[collectionTag] ?? {}), [targetRarity]: result },
+        }));
         if (result.collectionId) {
           setSelectedCollectionId(result.collectionId);
           rememberSteamCollectionId(collectionTag, result.collectionId);
@@ -399,7 +464,7 @@ export default function useTradeupBuilder() {
         setLoadingTargets(false);
       }
     },
-    [rememberSteamCollectionId, steamCollections, targetsByCollection],
+    [rememberSteamCollectionId, steamCollections, targetRarity, targetsByCollection],
   );
 
   /** Загружает список Classified-входов и кеширует его по collectionTag. */
@@ -507,9 +572,17 @@ export default function useTradeupBuilder() {
       setCalculationError(null);
       try {
         const response = await loadInputsForCollection(collectionTag);
+        const cachedTargets = targetsByCollection[collectionTag];
+        const cachedCollectionId = cachedTargets
+          ? cachedTargets[targetRarity]?.collectionId ??
+            ((Object.values(cachedTargets).find((entry) => entry?.collectionId) as
+              | CollectionTargetsResponse
+              | undefined)
+              ?.collectionId ?? null)
+          : null;
         const resolvedCollectionId =
           response.collectionId ??
-          targetsByCollection[collectionTag]?.collectionId ??
+          cachedCollectionId ??
           steamCollections.find((entry) => entry.tag === collectionTag)?.collectionId ??
           catalogCollections.find((collection) =>
             collection.covert.some((covert) => covert.baseName === baseName),
@@ -522,8 +595,22 @@ export default function useTradeupBuilder() {
           rememberSteamCollectionId(collectionTag, resolvedCollectionId);
           setTargetsByCollection((prev) => {
             const current = prev[collectionTag];
-            if (!current || current.collectionId === resolvedCollectionId) return prev;
-            return { ...prev, [collectionTag]: { ...current, collectionId: resolvedCollectionId } };
+            if (!current) return prev;
+            let changed = false;
+            const updated: Partial<Record<TargetRarity, CollectionTargetsResponse>> = {};
+            (Object.entries(current) as [TargetRarity, CollectionTargetsResponse | undefined][]).forEach(
+              ([rarityKey, entry]) => {
+                if (!entry) return;
+                if (entry.collectionId === resolvedCollectionId) {
+                  updated[rarityKey] = entry;
+                  return;
+                }
+                updated[rarityKey] = { ...entry, collectionId: resolvedCollectionId };
+                changed = true;
+              },
+            );
+            if (!changed) return prev;
+            return { ...prev, [collectionTag]: { ...current, ...updated } };
           });
           setInputsByCollection((prev) => {
             const current = prev[collectionTag];
@@ -550,6 +637,7 @@ export default function useTradeupBuilder() {
       rememberSteamCollectionId,
       selectedCollectionId,
       steamCollections,
+      targetRarity,
       targetsByCollection,
     ],
   );
@@ -727,6 +815,8 @@ export default function useTradeupBuilder() {
     loadingSteamCollections,
     steamCollectionError,
     activeCollectionTag,
+    targetRarity,
+    setTargetRarity,
     selectCollection,
     collectionTargets: activeTargets,
     loadingTargets,
