@@ -99,7 +99,10 @@ export const createTradeupsRouter = () => {
       return response.status(400).json({ error: "collectionTag is required" });
     }
     try {
-      const result = await fetchCollectionTargets(collectionTag);
+      const rarityParam = String(request.query?.rarity ?? "Covert").trim();
+      const normalized = rarityParam.toLowerCase();
+      const rarity = normalized === "classified" ? "Classified" : "Covert";
+      const result = await fetchCollectionTargets(collectionTag, rarity);
       response.json(result);
     } catch (error) {
       response.status(503).json({ error: String(error) });

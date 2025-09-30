@@ -20,6 +20,8 @@ export default function TradeupBuilder() {
     loadingSteamCollections,
     steamCollectionError,
     activeCollectionTag,
+    targetRarity,
+    setTargetRarity,
     selectCollection,
     collectionTargets,
     loadingTargets,
@@ -81,6 +83,8 @@ export default function TradeupBuilder() {
 
       <TargetSelectionSection
         activeCollectionTag={activeCollectionTag}
+        targetRarity={targetRarity}
+        setTargetRarity={setTargetRarity}
         collectionTargets={collectionTargets}
         loadingTargets={loadingTargets}
         targetsError={targetsError}

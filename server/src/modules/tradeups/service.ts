@@ -357,6 +357,7 @@ export interface CollectionTargetSummary {
 export interface CollectionTargetsResult {
   collectionTag: string;
   collectionId: string | null;
+  rarity: "Covert" | "Classified";
   targets: CollectionTargetSummary[];
 }
 
@@ -365,16 +366,17 @@ export interface CollectionTargetsResult {
  */
 export const fetchCollectionTargets = async (
   collectionTag: string,
+  rarity: "Covert" | "Classified" = "Covert",
 ): Promise<CollectionTargetsResult> => {
   ensureCollectionCaches();
-  const items = await fetchEntireCollection({ collectionTag, rarity: "Covert" });
+  const items = await fetchEntireCollection({ collectionTag, rarity });
   const grouped = new Map<string, CollectionTargetSummary>();
   const baseNames: string[] = [];
 
   for (const item of items) {
     const exterior = parseMarketHashExterior(item.market_hash_name);
     const baseName = baseFromMarketHash(item.market_hash_name);
-    const floats = COVERT_FLOAT_BY_BASENAME.get(baseName);
+    const floats = rarity === "Covert" ? COVERT_FLOAT_BY_BASENAME.get(baseName) : undefined;
 
     let entry = grouped.get(baseName);
     if (!entry) {
@@ -403,6 +405,7 @@ export const fetchCollectionTargets = async (
   return {
     collectionTag,
     collectionId,
+    rarity,
     targets: Array.from(grouped.values()),
   };
 };
