@@ -27,7 +27,7 @@ import {
   parseMarketHashExterior,
   type Exterior,
 } from "../skins/service";
-import { getSkinFloatRange } from "./floatRanges";
+import { getSkinFloatRange, type SkinFloatRange } from "./floatRanges";
 
 const DEFAULT_BUYER_TO_NET = 1.15;
 
@@ -372,11 +372,21 @@ export const fetchCollectionTargets = async (
   const items = await fetchEntireCollection({ collectionTag, rarity });
   const grouped = new Map<string, CollectionTargetSummary>();
   const baseNames: string[] = [];
+  const floatCache = new Map<string, SkinFloatRange | undefined>();
 
   for (const item of items) {
     const exterior = parseMarketHashExterior(item.market_hash_name);
     const baseName = baseFromMarketHash(item.market_hash_name);
-    const floats = rarity === "Covert" ? COVERT_FLOAT_BY_BASENAME.get(baseName) : undefined;
+    let floats: SkinFloatRange | undefined;
+    if (rarity === "Covert") {
+      floats = COVERT_FLOAT_BY_BASENAME.get(baseName);
+    } else {
+      if (!floatCache.has(baseName)) {
+        const range = await getSkinFloatRange(item.market_hash_name);
+        floatCache.set(baseName, range ?? undefined);
+      }
+      floats = floatCache.get(baseName);
+    }
 
     let entry = grouped.get(baseName);
     if (!entry) {
