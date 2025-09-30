@@ -99,6 +99,24 @@ export default function useTradeupBuilder() {
     return new Map(catalogCollections.map((collection) => [collection.id, collection] as const));
   }, [catalogCollections]);
 
+  const singleCovertCollectionIds = React.useMemo(() => {
+    return new Set(
+      catalogCollections
+        .filter((collection) => collection.covert.length === 1)
+        .map((collection) => collection.id),
+    );
+  }, [catalogCollections]);
+
+  const singleCovertCollectionTags = React.useMemo(() => {
+    const tags = new Set<string>();
+    for (const entry of steamCollections) {
+      if (entry.collectionId && singleCovertCollectionIds.has(entry.collectionId)) {
+        tags.add(entry.tag);
+      }
+    }
+    return tags;
+  }, [steamCollections, singleCovertCollectionIds]);
+
   /** Отдельная карта steam-tag → информация о коллекции для быстрых lookup'ов. */
   const steamCollectionsByTag = React.useMemo(
     () => new Map(steamCollections.map((entry) => [entry.tag, entry] as const)),
@@ -744,6 +762,7 @@ export default function useTradeupBuilder() {
     totalBuyerCost,
     totalNetCost,
     selectedCollectionDetails,
+    singleCovertCollectionTags,
     autofillPrices,
     priceLoading,
     calculate,

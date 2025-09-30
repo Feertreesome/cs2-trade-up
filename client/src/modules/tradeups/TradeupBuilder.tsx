@@ -37,6 +37,7 @@ export default function TradeupBuilder() {
     totalBuyerCost,
     totalNetCost,
     selectedCollectionDetails,
+    singleCovertCollectionTags,
     autofillPrices,
     priceLoading,
     calculate,
@@ -75,6 +76,7 @@ export default function TradeupBuilder() {
         activeCollectionTag={activeCollectionTag}
         selectCollection={selectCollection}
         selectedCollectionDetails={selectedCollectionDetails}
+        singleCovertCollectionTags={singleCovertCollectionTags}
       />
 
       <hr className="border-secondary" />
