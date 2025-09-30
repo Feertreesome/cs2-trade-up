@@ -430,19 +430,23 @@ export interface CollectionInputSummary {
 export interface CollectionInputsResult {
   collectionTag: string;
   collectionId: string | null;
+  rarity: "Classified" | "Restricted";
   inputs: CollectionInputSummary[];
 }
 
 /**
- * Получает список Classified-предметов коллекции, которые могут служить входами.
+ * Получает список предметов коллекции, которые могут служить входами для trade-up'а.
  */
 export const fetchCollectionInputs = async (
   collectionTag: string,
+  targetRarity: "Covert" | "Classified" = "Covert",
 ): Promise<CollectionInputsResult> => {
   ensureCollectionCaches();
+  const inputRarity: "Classified" | "Restricted" =
+    targetRarity === "Classified" ? "Restricted" : "Classified";
   const items = await fetchEntireCollection({
     collectionTag,
-    rarity: "Classified",
+    rarity: inputRarity,
   });
 
   const inputs: CollectionInputSummary[] = items.map((item) => ({
@@ -460,7 +464,7 @@ export const fetchCollectionInputs = async (
     );
   }
 
-  return { collectionTag, collectionId, inputs };
+  return { collectionTag, collectionId, rarity: inputRarity, inputs };
 };
 
 /**
