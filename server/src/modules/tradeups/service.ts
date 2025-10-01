@@ -33,6 +33,12 @@ import { getSkinFloatRange, type SkinFloatRange } from "./floatRanges";
 
 const DEFAULT_BUYER_TO_NET = 1.15;
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const jitter = (ms: number, spread = 0.35) => {
+  const delta = ms * spread;
+  return Math.floor(ms - delta + Math.random() * delta * 2);
+};
+
 const STEAM_APP_ID = 730;
 const buildListingRenderUrl = (marketHashName: string) =>
   `https://steamcommunity.com/market/listings/${STEAM_APP_ID}/${encodeURIComponent(marketHashName)}/render`;
@@ -751,7 +757,7 @@ const parseSteamCents = (value: unknown): number => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
-const fetchListingCandidates = async (
+const requestListingCandidates = async (
   marketHashName: string,
   limit: number,
 ): Promise<TradeupRealityListing[]> => {
@@ -827,26 +833,123 @@ const fetchListingCandidates = async (
   return listings;
 };
 
-const fetchFloatForInspect = async (inspectUrl: string): Promise<number | null> => {
-  try {
-    const endpoint = new URL("https://api.csgofloat.com/");
-    endpoint.searchParams.set("url", inspectUrl);
-    const response = await fetch(endpoint.toString(), {
-      headers: { "User-Agent": "cs2-tradeup-ev/0.5" },
-    });
-    if (!response.ok) {
-      return null;
+const REALITY_LISTING_CACHE_MS = 60_000;
+const listingCandidatesCache = new Map<
+  string,
+  { expiresAt: number; listings: TradeupRealityListing[] }
+>();
+
+const cacheKeyForListings = (marketHashName: string, limit: number) =>
+  `${marketHashName}::${limit}`;
+
+const cloneListing = (listing: TradeupRealityListing): TradeupRealityListing => ({
+  listingId: listing.listingId,
+  price: listing.price,
+  inspectUrl: listing.inspectUrl,
+  float: listing.float,
+  difference: listing.difference,
+  sellerId: listing.sellerId,
+});
+
+const fetchListingCandidates = async (
+  marketHashName: string,
+  limit: number,
+): Promise<TradeupRealityListing[]> => {
+  const key = cacheKeyForListings(marketHashName, limit);
+  const cached = listingCandidatesCache.get(key);
+  const now = Date.now();
+  if (cached && cached.expiresAt > now) {
+    return cached.listings.map(cloneListing);
+  }
+
+  const maxAttempts = 4;
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      const listings = await requestListingCandidates(marketHashName, limit);
+      listingCandidatesCache.set(key, {
+        expiresAt: Date.now() + REALITY_LISTING_CACHE_MS,
+        listings: listings.map(cloneListing),
+      });
+      return listings;
+    } catch (error) {
+      lastError = error;
+      if (attempt === maxAttempts - 1) break;
+      await sleep(jitter(800 * Math.max(1, attempt + 1)));
     }
-    const payload = (await response.json()) as {
-      iteminfo?: { floatvalue?: number };
-    };
-    const value = payload?.iteminfo?.floatvalue;
-    return typeof value === "number" && Number.isFinite(value) ? value : null;
+  }
+
+  throw lastError ?? new Error("Failed to fetch listing candidates");
+};
+
+const FLOAT_QUEUE_MAX_PARALLEL = 1;
+const FLOAT_QUEUE_DELAY_MS = 900;
+const floatQueue: Array<{
+  run: () => Promise<number | null>;
+  resolve: (value: number | null) => void;
+  reject: (error: unknown) => void;
+}> = [];
+let floatQueueActive = 0;
+
+const drainFloatQueue = async (): Promise<void> => {
+  if (!floatQueue.length || floatQueueActive >= FLOAT_QUEUE_MAX_PARALLEL) return;
+  const job = floatQueue.shift();
+  if (!job) return;
+  floatQueueActive++;
+  try {
+    const value = await job.run();
+    job.resolve(value);
   } catch (error) {
-    console.warn(`[tradeups] Failed to fetch float for inspect`, error);
-    return null;
+    job.reject(error);
+  } finally {
+    await sleep(jitter(FLOAT_QUEUE_DELAY_MS));
+    floatQueueActive--;
+    void drainFloatQueue();
   }
 };
+
+const enqueueFloatJob = (run: () => Promise<number | null>) =>
+  new Promise<number | null>((resolve, reject) => {
+    floatQueue.push({ run, resolve, reject });
+    void drainFloatQueue();
+  });
+
+const fetchFloatForInspect = async (inspectUrl: string): Promise<number | null> =>
+  enqueueFloatJob(async () => {
+    const endpoint = new URL("https://api.csgofloat.com/");
+    endpoint.searchParams.set("url", inspectUrl);
+    const maxAttempts = 4;
+    let lastError: unknown;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        const response = await fetch(endpoint.toString(), {
+          headers: { "User-Agent": "cs2-tradeup-ev/0.5" },
+        });
+        if (!response.ok) {
+          lastError = new Error(`Float API responded with ${response.status}`);
+        } else {
+          const payload = (await response.json()) as {
+            iteminfo?: { floatvalue?: number };
+          };
+          const value = payload?.iteminfo?.floatvalue;
+          return typeof value === "number" && Number.isFinite(value) ? value : null;
+        }
+      } catch (error) {
+        lastError = error;
+      }
+
+      if (attempt < maxAttempts - 1) {
+        await sleep(jitter(700 * Math.max(1, attempt + 1)));
+      }
+    }
+
+    if (lastError) {
+      console.warn(`[tradeups] Failed to fetch float for inspect`, lastError);
+    }
+    return null;
+  });
 
 export const checkOutcomeReality = async ({
   marketHashName,
