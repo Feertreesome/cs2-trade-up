@@ -14,14 +14,17 @@ interface RemoteSkin {
   collections?: Array<{ name?: string | null } | null> | null;
 }
 
+type FloatRange = {
+  baseName: string;
+  minFloat: number;
+  maxFloat: number;
+};
+
 interface CollectionFloatCatalogEntry {
   id: string;
   name: string;
-  covert: Array<{
-    baseName: string;
-    minFloat: number;
-    maxFloat: number;
-  }>;
+  covert: FloatRange[];
+  classified: FloatRange[];
 }
 
 const execFileAsync = (file: string, args: string[]) =>
@@ -70,7 +73,8 @@ const buildCatalog = (skins: RemoteSkin[]): CollectionFloatCatalogEntry[] => {
   const catalog = new Map<string, CollectionFloatCatalogEntry>();
 
   for (const skin of skins) {
-    if (skin?.rarity?.name !== "Covert") continue;
+    const rarityName = skin?.rarity?.name;
+    if (rarityName !== "Covert" && rarityName !== "Classified") continue;
     if (!Array.isArray(skin.collections) || !skin.collections.length) continue;
 
     const minFloat = parseFloatOr(skin.min_float, 0);
@@ -87,18 +91,19 @@ const buildCatalog = (skins: RemoteSkin[]): CollectionFloatCatalogEntry[] => {
 
       let entry = catalog.get(collectionName);
       if (!entry) {
-        entry = { id: collectionId, name: collectionName, covert: [] };
+        entry = { id: collectionId, name: collectionName, covert: [], classified: [] };
         catalog.set(collectionName, entry);
       }
 
-      const existing = entry.covert.find((item) => item.baseName === baseName);
+      const targetList = rarityName === "Classified" ? entry.classified : entry.covert;
+      const existing = targetList.find((item) => item.baseName === baseName);
       if (existing) {
         existing.minFloat = Math.min(existing.minFloat, minFloat);
         existing.maxFloat = Math.max(existing.maxFloat, maxFloat);
         continue;
       }
 
-      entry.covert.push({
+      targetList.push({
         baseName,
         minFloat,
         maxFloat,
@@ -109,6 +114,7 @@ const buildCatalog = (skins: RemoteSkin[]): CollectionFloatCatalogEntry[] => {
   const sorted = Array.from(catalog.values()).sort((a, b) => a.name.localeCompare(b.name));
   for (const entry of sorted) {
     entry.covert.sort((a, b) => a.baseName.localeCompare(b.baseName));
+    entry.classified.sort((a, b) => a.baseName.localeCompare(b.baseName));
   }
   return sorted;
 };
@@ -121,7 +127,7 @@ const formatFile = async (entries: CollectionFloatCatalogEntry[]): Promise<strin
  * Last updated: ${timestamp}
  * Source: ${SOURCE_URL}
  */
-export interface CovertFloatRange {
+export interface CollectionFloatRange {
   /** Базовое название скина без указания износа. */
   baseName: string;
   /** Минимальное возможное значение float для данного скина. */
@@ -130,6 +136,10 @@ export interface CovertFloatRange {
   maxFloat: number;
 }
 
+export type CovertFloatRange = CollectionFloatRange;
+
+export type ClassifiedFloatRange = CollectionFloatRange;
+
 export interface CollectionFloatCatalogEntry {
   /** Удобный идентификатор коллекции (kebab-case). */
   id: string;
@@ -137,6 +147,8 @@ export interface CollectionFloatCatalogEntry {
   name: string;
   /** Список Covert-предметов и их диапазонов float. */
   covert: CovertFloatRange[];
+  /** Список Classified-предметов и их диапазонов float. */
+  classified: ClassifiedFloatRange[];
 }
 
 export const COLLECTIONS_WITH_FLOAT: CollectionFloatCatalogEntry[] = ${dataLiteral};
@@ -147,18 +159,24 @@ export const COLLECTIONS_WITH_FLOAT_BY_NAME = new Map<string, CollectionFloatCat
 
 export const COVERT_FLOAT_BY_BASENAME = new Map<string, CovertFloatRange>();
 
+export const CLASSIFIED_FLOAT_BY_BASENAME = new Map<string, ClassifiedFloatRange>();
+
 export const rebuildCollectionFloatCaches = (
   entries: CollectionFloatCatalogEntry[] = COLLECTIONS_WITH_FLOAT,
 ): void => {
   COLLECTIONS_WITH_FLOAT_MAP.clear();
   COLLECTIONS_WITH_FLOAT_BY_NAME.clear();
   COVERT_FLOAT_BY_BASENAME.clear();
+  CLASSIFIED_FLOAT_BY_BASENAME.clear();
 
   for (const entry of entries) {
     COLLECTIONS_WITH_FLOAT_MAP.set(entry.id, entry);
     COLLECTIONS_WITH_FLOAT_BY_NAME.set(entry.name.toLowerCase(), entry);
     for (const covert of entry.covert) {
       COVERT_FLOAT_BY_BASENAME.set(covert.baseName, covert);
+    }
+    for (const classified of entry.classified) {
+      CLASSIFIED_FLOAT_BY_BASENAME.set(classified.baseName, classified);
     }
   }
 };

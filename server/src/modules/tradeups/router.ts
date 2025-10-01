@@ -17,6 +17,9 @@ const parseBody = (body: any): TradeupRequestPayload => {
   const targetCollectionIds = Array.isArray(body?.targetCollectionIds)
     ? body.targetCollectionIds
     : [];
+  const rarityParam = String(body?.targetRarity ?? "Covert").trim().toLowerCase();
+  const targetRarity: "Covert" | "Classified" =
+    rarityParam === "classified" ? "Classified" : "Covert";
   const options = body?.options && typeof body.options === "object" ? body.options : undefined;
   const targetOverridesRaw = Array.isArray(body?.targetOverrides) ? body.targetOverrides : [];
 
@@ -40,6 +43,7 @@ const parseBody = (body: any): TradeupRequestPayload => {
       }))
       .filter((slot: any) => slot.marketHashName && slot.collectionId),
     targetCollectionIds: targetCollectionIds.map((id: any) => String(id)).slice(0, 20),
+    targetRarity,
     options: options,
     targetOverrides: targetOverridesRaw
       .map((override: any) => ({

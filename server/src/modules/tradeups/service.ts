@@ -9,9 +9,10 @@ import {
   COLLECTIONS_WITH_FLOAT_MAP,
   COLLECTIONS_WITH_FLOAT_BY_NAME,
   COVERT_FLOAT_BY_BASENAME,
+  CLASSIFIED_FLOAT_BY_BASENAME,
   rebuildCollectionFloatCaches,
   type CollectionFloatCatalogEntry,
-  type CovertFloatRange,
+  type CollectionFloatRange,
 } from "../../../../data/CollectionsWithFloat";
 import { STEAM_MAX_AUTO_LIMIT, STEAM_PAGE_SIZE } from "../../config";
 import {
@@ -116,6 +117,7 @@ export interface TargetOverrideRequest {
 export interface TradeupRequestPayload {
   inputs: TradeupInputSlot[];
   targetCollectionIds: string[];
+  targetRarity?: "Covert" | "Classified";
   options?: TradeupOptions;
   targetOverrides?: TargetOverrideRequest[];
 }
@@ -168,14 +170,22 @@ const buildOutcome = async (
   options: {
     normalizedAverageFloat: number;
     collection: CollectionFloatCatalogEntry;
-    entry: CovertFloatRange;
+    entry: CollectionFloatRange;
     collectionProbability: number;
+    rangeCount: number;
     buyerToNetRate: number;
     override?: TargetOverrideRequest;
   },
 ): Promise<TradeupOutcome> => {
-  const { normalizedAverageFloat, collection, entry, collectionProbability, buyerToNetRate, override } =
-    options;
+  const {
+    normalizedAverageFloat,
+    collection,
+    entry,
+    collectionProbability,
+    rangeCount,
+    buyerToNetRate,
+    override,
+  } = options;
 
   const minFloat = override?.minFloat ?? entry.minFloat;
   const maxFloat = override?.maxFloat ?? entry.maxFloat;
@@ -194,7 +204,7 @@ const buildOutcome = async (
   }
 
   const netPrice = buyerPrice == null ? null : buyerPrice / buyerToNetRate;
-  const probability = collectionProbability / collection.covert.length;
+  const probability = rangeCount > 0 ? collectionProbability / rangeCount : 0;
 
   return {
     collectionId: collection.id,
@@ -285,7 +295,10 @@ const findCollectionIdByTag = (tag: string): string | null => {
 const guessCollectionIdByBaseNames = (baseNames: string[]): string | null => {
   ensureCollectionCaches();
   for (const entry of COLLECTIONS_WITH_FLOAT) {
-    if (entry.covert.some((covert) => baseNames.includes(covert.baseName))) {
+    const hasMatch =
+      entry.covert.some((covert) => baseNames.includes(covert.baseName)) ||
+      entry.classified.some((classified) => baseNames.includes(classified.baseName));
+    if (hasMatch) {
       return entry.id;
     }
   }
@@ -373,14 +386,14 @@ export const fetchCollectionTargets = async (
   const grouped = new Map<string, CollectionTargetSummary>();
   const baseNames: string[] = [];
   const floatCache = new Map<string, SkinFloatRange | undefined>();
+  const predefinedFloats =
+    rarity === "Classified" ? CLASSIFIED_FLOAT_BY_BASENAME : COVERT_FLOAT_BY_BASENAME;
 
   for (const item of items) {
     const exterior = parseMarketHashExterior(item.market_hash_name);
     const baseName = baseFromMarketHash(item.market_hash_name);
-    let floats: SkinFloatRange | undefined;
-    if (rarity === "Covert") {
-      floats = COVERT_FLOAT_BY_BASENAME.get(baseName);
-    } else {
+    let floats = predefinedFloats.get(baseName);
+    if (!floats) {
       if (!floatCache.has(baseName)) {
         const range = await getSkinFloatRange(item.market_hash_name);
         floatCache.set(baseName, range ?? undefined);
@@ -534,6 +547,9 @@ export const calculateTradeup = async (
     }
   }
 
+  const targetRarity: "Covert" | "Classified" =
+    payload.targetRarity === "Classified" ? "Classified" : "Covert";
+
   const targetCollections = payload.targetCollectionIds
     .map((id) => COLLECTIONS_WITH_FLOAT_MAP.get(id))
     .filter((collection): collection is CollectionFloatCatalogEntry => Boolean(collection));
@@ -545,12 +561,19 @@ export const calculateTradeup = async (
   const outcomes = await Promise.all(
     targetCollections.flatMap((collection) => {
       const collectionProbability = (collectionCounts.get(collection.id) ?? 0) / totalInputs;
-      return collection.covert.map((entry) =>
+      const candidates =
+        targetRarity === "Classified" ? collection.classified : collection.covert;
+      const rangeCount = candidates.length;
+      if (!rangeCount) {
+        return [];
+      }
+      return candidates.map((entry) =>
         buildOutcome({
           normalizedAverageFloat,
           collection,
           entry,
           collectionProbability,
+          rangeCount,
           buyerToNetRate,
           override: overridesByCollection.get(`${collection.id}:${entry.baseName.toLowerCase()}`),
         }),

@@ -8,16 +8,21 @@ export type TargetRarity = "Covert" | "Classified";
  * целей, входов и для отправки данных на расчёт EV.
  */
 
-export interface CovertFloatRange {
+export interface CollectionFloatRange {
   baseName: string;
   minFloat: number;
   maxFloat: number;
 }
 
+export type CovertFloatRange = CollectionFloatRange;
+
+export type ClassifiedFloatRange = CollectionFloatRange;
+
 export interface TradeupCollection {
   id: string;
   name: string;
   covert: CovertFloatRange[];
+  classified: ClassifiedFloatRange[];
 }
 
 export interface SteamCollectionSummary {
@@ -88,6 +93,7 @@ export interface TradeupTargetOverridePayload {
 export interface TradeupCalculationPayload {
   inputs: TradeupInputPayload[];
   targetCollectionIds: string[];
+  targetRarity?: TargetRarity;
   options?: TradeupOptionsPayload;
   targetOverrides?: TradeupTargetOverridePayload[];
 }

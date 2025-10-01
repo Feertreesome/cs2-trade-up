@@ -590,7 +590,8 @@ export default function useTradeupBuilder() {
           cachedCollectionId ??
           steamCollections.find((entry) => entry.tag === collectionTag)?.collectionId ??
           catalogCollections.find((collection) =>
-            collection.covert.some((covert) => covert.baseName === baseName),
+            collection.covert.some((covert) => covert.baseName === baseName) ||
+            collection.classified.some((classified) => classified.baseName === baseName),
           )?.id ??
           selectedCollectionId ??
           null;
@@ -732,6 +733,7 @@ export default function useTradeupBuilder() {
       targetPriceOverrides,
       buyerToNetRate,
       totalNetCost,
+      targetRarity,
     });
   }, [
     activeTargets,
@@ -741,6 +743,7 @@ export default function useTradeupBuilder() {
     selectedTarget,
     targetPriceOverrides,
     totalNetCost,
+    targetRarity,
   ]);
 
   const calculate = React.useCallback(async () => {
@@ -807,6 +810,7 @@ export default function useTradeupBuilder() {
             : undefined,
         })),
         targetCollectionIds: [resolvedCollectionId],
+        targetRarity,
         options: { buyerToNetRate },
         targetOverrides,
       };
@@ -824,6 +828,7 @@ export default function useTradeupBuilder() {
     rememberSteamCollectionId,
     rowResolution,
     selectedTarget,
+    targetRarity,
   ]);
 
   return {

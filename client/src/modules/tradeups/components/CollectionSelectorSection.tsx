@@ -63,13 +63,30 @@ export default function CollectionSelectorSection({
             {selectedCollectionDetails.map((collection) => (
               <div key={collection.id} className="tradeup-hint card bg-secondary-subtle text-dark p-2">
                 <div className="fw-semibold">{collection.name}</div>
-                <ul className="mb-0 small">
-                  {collection.covert.map((skin) => (
-                    <li key={skin.baseName}>
-                      {skin.baseName}: {skin.minFloat.toFixed(3)} – {skin.maxFloat.toFixed(3)}
-                    </li>
-                  ))}
-                </ul>
+                {collection.covert.length > 0 && (
+                  <div className="mb-2">
+                    <div className="small text-uppercase fw-semibold text-secondary">Covert</div>
+                    <ul className="mb-0 small">
+                      {collection.covert.map((skin) => (
+                        <li key={`covert-${skin.baseName}`}>
+                          {skin.baseName}: {skin.minFloat.toFixed(3)} – {skin.maxFloat.toFixed(3)}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {collection.classified.length > 0 && (
+                  <div>
+                    <div className="small text-uppercase fw-semibold text-secondary">Classified</div>
+                    <ul className="mb-0 small">
+                      {collection.classified.map((skin) => (
+                        <li key={`classified-${skin.baseName}`}>
+                          {skin.baseName}: {skin.minFloat.toFixed(3)} – {skin.maxFloat.toFixed(3)}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
             ))}
           </div>
