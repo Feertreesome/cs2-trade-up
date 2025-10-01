@@ -1,6 +1,6 @@
 import type { Exterior } from "../../skins/services/types";
 import { parseExterior } from "../../skins/services/utils";
-import type { CollectionTargetSummary, TradeupCollection } from "../services/api";
+import type { CollectionTargetSummary, TargetRarity, TradeupCollection } from "../services/api";
 import { EXTERIOR_FLOAT_RANGES, WEAR_BUCKET_SEQUENCE } from "./constants";
 import { clampFloat, isFloatWithinExteriorRange } from "./helpers";
 import type {
@@ -19,6 +19,7 @@ interface FloatlessAnalysisParams {
   targetPriceOverrides: Record<string, number>;
   buyerToNetRate: number;
   totalNetCost: number;
+  targetRarity: TargetRarity;
 }
 
 type WearSlot = { exterior: Exterior; bucket: { min: number; max: number } };
@@ -31,6 +32,7 @@ export const evaluateFloatlessTradeup = ({
   targetPriceOverrides,
   buyerToNetRate,
   totalNetCost,
+  targetRarity,
 }: FloatlessAnalysisParams): FloatlessAnalysisResult => {
   const issues: string[] = [];
   const wearCounts: Partial<Record<Exterior, number>> = {};
@@ -148,7 +150,9 @@ export const evaluateFloatlessTradeup = ({
     }
 
     if (minFloat == null || maxFloat == null) {
-      const fallback = catalogEntry?.covert.find((entry) => entry.baseName === target.baseName);
+      const fallbackList =
+        targetRarity === "Classified" ? catalogEntry?.classified : catalogEntry?.covert;
+      const fallback = fallbackList?.find((entry) => entry.baseName === target.baseName);
       if (fallback) {
         minFloat = fallback.minFloat;
         maxFloat = fallback.maxFloat;
