@@ -46,6 +46,10 @@ export default function TradeupBuilder() {
     calculating,
     calculationError,
     floatlessAnalysis,
+    realPurchaseCheckResult,
+    realPurchaseCheckError,
+    realPurchaseCheckLoading,
+    runRealPurchaseCheck,
   } = useTradeupBuilder();
 
   return (
@@ -110,7 +114,16 @@ export default function TradeupBuilder() {
 
       <FloatlessAnalysisSection floatlessAnalysis={floatlessAnalysis} />
 
-      {calculation && <ResultsSection calculation={calculation} totalBuyerCost={totalBuyerCost} />}
+      {calculation && (
+        <ResultsSection
+          calculation={calculation}
+          totalBuyerCost={totalBuyerCost}
+          onRunRealPurchaseCheck={runRealPurchaseCheck}
+          realPurchaseCheckResult={realPurchaseCheckResult}
+          realPurchaseCheckLoading={realPurchaseCheckLoading}
+          realPurchaseCheckError={realPurchaseCheckError}
+        />
+      )}
     </div>
   );
 }

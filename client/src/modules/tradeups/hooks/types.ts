@@ -44,6 +44,22 @@ export interface SelectedTarget {
   price?: number | null;
 }
 
+export interface RealPurchaseItem {
+  baseName: string;
+  marketHashName: string;
+  exterior: Exterior;
+  price: number | null;
+  minFloat: number | null;
+  maxFloat: number | null;
+}
+
+export interface RealPurchaseCheckResult {
+  collectionTag: string | null;
+  collectionName: string | null;
+  rarity: "Classified" | "Restricted";
+  items: RealPurchaseItem[];
+}
+
 export interface ResolvedTradeupRow {
   marketHashName: string;
   collectionId: string;
@@ -140,4 +156,8 @@ export interface TradeupBuilderState {
   calculating: boolean;
   calculationError: string | null;
   floatlessAnalysis: FloatlessAnalysisResult;
+  realPurchaseCheckResult: RealPurchaseCheckResult | null;
+  realPurchaseCheckError: string | null;
+  realPurchaseCheckLoading: boolean;
+  runRealPurchaseCheck: () => Promise<void>;
 }

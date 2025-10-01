@@ -57,6 +57,8 @@ export interface CollectionInputSummary {
   marketHashName: string;
   exterior: Exterior;
   price?: number | null;
+  minFloat?: number;
+  maxFloat?: number;
 }
 
 export interface CollectionInputsResponse {

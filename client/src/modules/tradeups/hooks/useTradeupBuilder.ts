@@ -28,6 +28,8 @@ import type {
   CollectionValueMeta,
   FloatlessAnalysisResult,
   ParsedTradeupRow,
+  RealPurchaseCheckResult,
+  RealPurchaseItem,
   RowResolution,
   SelectedTarget,
   TradeupInputFormRow,
@@ -40,6 +42,8 @@ export type {
   FloatlessOutcomeExterior,
   FloatlessOutcomeSummary,
   FloatlessAnalysisResult,
+  RealPurchaseCheckResult,
+  RealPurchaseItem,
 } from "./types";
 
 /**
@@ -78,6 +82,11 @@ export default function useTradeupBuilder() {
   const [calculationError, setCalculationError] = React.useState<string | null>(null);
   const [priceLoading, setPriceLoading] = React.useState(false);
   const [targetPriceOverrides, setTargetPriceOverrides] = React.useState<Record<string, number>>({});
+  const [realPurchaseCheckResult, setRealPurchaseCheckResult] = React.useState<
+    RealPurchaseCheckResult | null
+  >(null);
+  const [realPurchaseCheckLoading, setRealPurchaseCheckLoading] = React.useState(false);
+  const [realPurchaseCheckError, setRealPurchaseCheckError] = React.useState<string | null>(null);
 
   const buyerToNetRate = 1 + Math.max(0, buyerFeePercent) / 100;
 
@@ -422,6 +431,8 @@ export default function useTradeupBuilder() {
       setCalculation(null);
       setRows(createInitialRows());
       setCalculationError(null);
+      setRealPurchaseCheckResult(null);
+      setRealPurchaseCheckError(null);
 
       const steamEntry = steamCollections.find((entry) => entry.tag === collectionTag);
       const cachedByRarity = targetsByCollection[collectionTag];
@@ -784,6 +795,8 @@ export default function useTradeupBuilder() {
 
     setCalculating(true);
     setCalculationError(null);
+    setRealPurchaseCheckResult(null);
+    setRealPurchaseCheckError(null);
     try {
       const targetOverrides =
         selectedTarget && resolvedCollectionId
@@ -831,6 +844,107 @@ export default function useTradeupBuilder() {
     targetRarity,
   ]);
 
+  const runRealPurchaseCheck = React.useCallback(async () => {
+    const candidateTags: Array<string | null> = [];
+    if (selectedTarget?.collectionTag) {
+      candidateTags.push(selectedTarget.collectionTag);
+    }
+    if (activeCollectionTag) {
+      candidateTags.push(activeCollectionTag);
+    }
+    const resolvedRowTag = rowResolution.rows.find((row) => row.resolvedTag)?.resolvedTag ?? null;
+    if (resolvedRowTag) {
+      candidateTags.push(resolvedRowTag);
+    }
+
+    const resolvedCollectionTag = candidateTags.find((tag) => tag) ?? null;
+
+    if (!resolvedCollectionTag) {
+      setRealPurchaseCheckError("Не удалось определить коллекцию для проверки.");
+      setRealPurchaseCheckResult(null);
+      return;
+    }
+
+    setRealPurchaseCheckLoading(true);
+    setRealPurchaseCheckError(null);
+    try {
+      const response = await loadInputsForCollection(resolvedCollectionTag, targetRarity);
+      const inputs = response.inputs ?? [];
+
+      let collectionName =
+        rowResolution.rows.find((row) => row.resolvedCollectionName)?.resolvedCollectionName ?? null;
+      if (!collectionName && response.collectionId) {
+        collectionName = catalogMap.get(response.collectionId)?.name ?? null;
+      }
+      if (!collectionName) {
+        collectionName = steamCollectionsByTag.get(resolvedCollectionTag)?.name ?? null;
+      }
+
+      const rawItems: RealPurchaseItem[] = inputs.map((input) => ({
+        baseName: input.baseName,
+        marketHashName: input.marketHashName,
+        exterior: input.exterior,
+        price: input.price ?? null,
+        minFloat: input.minFloat ?? null,
+        maxFloat: input.maxFloat ?? null,
+      }));
+
+      const missingPriceNames = rawItems
+        .filter((item) => item.price == null)
+        .map((item) => item.marketHashName);
+
+      let fetchedPrices: Record<string, number | null> = {};
+      if (missingPriceNames.length) {
+        try {
+          fetchedPrices = await batchPriceOverview(missingPriceNames);
+        } catch (error) {
+          console.warn("Failed to fetch prices for real purchase check", error);
+        }
+      }
+
+      const enrichedItems = rawItems.map((item) => {
+        const fetchedPrice = fetchedPrices[item.marketHashName];
+        const price =
+          item.price ?? (typeof fetchedPrice === "number" ? fetchedPrice : item.price ?? null);
+        return { ...item, price } satisfies RealPurchaseItem;
+      });
+
+      const sortedItems = enrichedItems.sort((a, b) => {
+        const aFloat = a.minFloat ?? Number.POSITIVE_INFINITY;
+        const bFloat = b.minFloat ?? Number.POSITIVE_INFINITY;
+        if (aFloat === bFloat) {
+          const aPrice = a.price ?? Number.POSITIVE_INFINITY;
+          const bPrice = b.price ?? Number.POSITIVE_INFINITY;
+          return aPrice - bPrice;
+        }
+        return aFloat - bFloat;
+      });
+
+      const inputRarity: "Classified" | "Restricted" =
+        targetRarity === "Classified" ? "Restricted" : "Classified";
+
+      setRealPurchaseCheckResult({
+        collectionTag: resolvedCollectionTag,
+        collectionName,
+        rarity: inputRarity,
+        items: sortedItems,
+      });
+    } catch (error: any) {
+      setRealPurchaseCheckError(String(error?.message || error));
+      setRealPurchaseCheckResult(null);
+    } finally {
+      setRealPurchaseCheckLoading(false);
+    }
+  }, [
+    activeCollectionTag,
+    catalogMap,
+    loadInputsForCollection,
+    rowResolution,
+    selectedTarget,
+    steamCollectionsByTag,
+    targetRarity,
+  ]);
+
   return {
     catalogCollections,
     steamCollections,
@@ -865,5 +979,9 @@ export default function useTradeupBuilder() {
     calculating,
     calculationError,
     floatlessAnalysis,
+    realPurchaseCheckResult,
+    realPurchaseCheckError,
+    realPurchaseCheckLoading,
+    runRealPurchaseCheck,
   };
 }

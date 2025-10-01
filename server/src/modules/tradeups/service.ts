@@ -4,15 +4,10 @@
  * Здесь же реализованы вспомогательные структуры и кеши для сопоставления
  * коллекций Steam с нашим справочником float-диапазонов.
  */
-import {
-  COLLECTIONS_WITH_FLOAT,
-  COLLECTIONS_WITH_FLOAT_MAP,
-  COLLECTIONS_WITH_FLOAT_BY_NAME,
-  COVERT_FLOAT_BY_BASENAME,
-  CLASSIFIED_FLOAT_BY_BASENAME,
-  rebuildCollectionFloatCaches,
-  type CollectionFloatCatalogEntry,
-  type CollectionFloatRange,
+import * as collectionFloats from "../../../../data/CollectionsWithFloat";
+import type {
+  CollectionFloatCatalogEntry,
+  CollectionFloatRange,
 } from "../../../../data/CollectionsWithFloat";
 import { STEAM_MAX_AUTO_LIMIT, STEAM_PAGE_SIZE } from "../../config";
 import {
@@ -29,6 +24,17 @@ import {
   type Exterior,
 } from "../skins/service";
 import { getSkinFloatRange, type SkinFloatRange } from "./floatRanges";
+
+const {
+  COLLECTIONS_WITH_FLOAT,
+  COLLECTIONS_WITH_FLOAT_MAP,
+  COLLECTIONS_WITH_FLOAT_BY_NAME,
+  COVERT_FLOAT_BY_BASENAME,
+  CLASSIFIED_FLOAT_BY_BASENAME,
+  rebuildCollectionFloatCaches,
+} =
+  (collectionFloats as typeof import("../../../../data/CollectionsWithFloat")).default ??
+  (collectionFloats as typeof import("../../../../data/CollectionsWithFloat"));
 
 const DEFAULT_BUYER_TO_NET = 1.15;
 
@@ -440,6 +446,8 @@ export interface CollectionInputSummary {
   marketHashName: string;
   exterior: Exterior;
   price?: number | null;
+  minFloat?: number;
+  maxFloat?: number;
 }
 
 export interface CollectionInputsResult {
@@ -464,12 +472,27 @@ export const fetchCollectionInputs = async (
     rarity: inputRarity,
   });
 
-  const inputs: CollectionInputSummary[] = items.map((item) => ({
-    baseName: baseFromMarketHash(item.market_hash_name),
-    marketHashName: item.market_hash_name,
-    exterior: parseMarketHashExterior(item.market_hash_name),
-    price: item.price,
-  }));
+  const floatCache = new Map<string, SkinFloatRange | undefined>();
+
+  for (const item of items) {
+    const baseName = baseFromMarketHash(item.market_hash_name);
+    if (floatCache.has(baseName)) continue;
+    const range = await getSkinFloatRange(item.market_hash_name);
+    floatCache.set(baseName, range ?? undefined);
+  }
+
+  const inputs: CollectionInputSummary[] = items.map((item) => {
+    const baseName = baseFromMarketHash(item.market_hash_name);
+    const floats = floatCache.get(baseName);
+    return {
+      baseName,
+      marketHashName: item.market_hash_name,
+      exterior: parseMarketHashExterior(item.market_hash_name),
+      price: item.price,
+      minFloat: floats?.minFloat,
+      maxFloat: floats?.maxFloat,
+    } satisfies CollectionInputSummary;
+  });
 
   let collectionId = findCollectionIdByTag(collectionTag);
   if (collectionId == null && inputs.length) {
