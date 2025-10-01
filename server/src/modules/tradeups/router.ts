@@ -4,6 +4,7 @@ import {
   fetchCollectionInputs,
   fetchCollectionTargets,
   fetchSteamCollections,
+  checkOutcomeReality,
   getCollectionsCatalog,
   type TradeupRequestPayload,
 } from "./service";
@@ -138,6 +139,23 @@ export const createTradeupsRouter = () => {
       response.json(result);
     } catch (error) {
       response.status(400).json({ error: String(error) });
+    }
+  });
+
+  router.get("/outcomes/reality", async (request, response) => {
+    const marketHashName = String(request.query?.marketHashName ?? "").trim();
+    if (!marketHashName) {
+      return response.status(400).json({ error: "marketHashName is required" });
+    }
+    const rollFloatRaw = request.query?.rollFloat;
+    const parsedRollFloat = Number(rollFloatRaw);
+    const rollFloat = Number.isFinite(parsedRollFloat) ? parsedRollFloat : 0;
+
+    try {
+      const result = await checkOutcomeReality({ marketHashName, rollFloat });
+      response.json(result);
+    } catch (error) {
+      response.status(503).json({ error: String(error) });
     }
   });
 

@@ -19,6 +19,7 @@ import {
   fetchCollectionTags,
   getPriceUSD,
   searchByCollection,
+  steamGet,
   RARITY_TO_TAG,
   type SearchItem,
   type SteamCollectionTag,
@@ -31,6 +32,51 @@ import {
 import { getSkinFloatRange, type SkinFloatRange } from "./floatRanges";
 
 const DEFAULT_BUYER_TO_NET = 1.15;
+
+const STEAM_APP_ID = 730;
+const buildListingRenderUrl = (marketHashName: string) =>
+  `https://steamcommunity.com/market/listings/${STEAM_APP_ID}/${encodeURIComponent(marketHashName)}/render`;
+
+interface ListingMarketAction {
+  link?: string | null;
+  name?: string | null;
+}
+
+interface ListingAssetPayload {
+  id?: string;
+  classid?: string;
+  instanceid?: string;
+  ownerid?: string;
+  owner?: string;
+  market_hash_name?: string;
+  actions?: ListingMarketAction[];
+  market_actions?: ListingMarketAction[];
+}
+
+interface ListingInfoPayload {
+  listingid?: string;
+  price?: number;
+  fee?: number;
+  converted_price?: number;
+  converted_fee?: number;
+  steamid_lister?: string;
+  asset?: {
+    appid?: number | string;
+    contextid?: string;
+    id?: string;
+    classid?: string;
+    instanceid?: string;
+    actions?: ListingMarketAction[];
+    market_actions?: ListingMarketAction[];
+  };
+}
+
+interface ListingRenderResponse {
+  success?: boolean;
+  total_count?: number;
+  listinginfo?: Record<string, ListingInfoPayload>;
+  assets?: Record<string, Record<string, Record<string, ListingAssetPayload>>>;
+}
 
 const WEAR_BUCKETS: Array<{ exterior: Exterior; min: number; max: number }> = [
   { exterior: "Factory New", min: 0, max: 0.06999999999999999 },
@@ -629,5 +675,210 @@ export const calculateTradeup = async (
     maxBudgetPerSlot,
     positiveOutcomeProbability,
     warnings,
+  };
+};
+
+export interface TradeupRealityListing {
+  listingId: string;
+  price: number | null;
+  inspectUrl?: string | null;
+  float?: number | null;
+  difference?: number | null;
+  sellerId?: string | null;
+}
+
+export interface TradeupRealityCheckResult {
+  marketHashName: string;
+  rollFloat: number;
+  listings: TradeupRealityListing[];
+  bestMatchListingId?: string | null;
+}
+
+const REALITY_MAX_LISTINGS = 15;
+
+const extractFirstActionLink = (actions?: ListingMarketAction[]): string | null => {
+  if (!Array.isArray(actions)) return null;
+  for (const action of actions) {
+    if (!action?.link) continue;
+    const name = String(action?.name ?? "").toLowerCase();
+    if (name.includes("inspect")) {
+      return String(action.link);
+    }
+  }
+  const first = actions.find((action) => action?.link);
+  return first?.link ? String(first.link) : null;
+};
+
+const resolveAssetDetails = (
+  payload: ListingRenderResponse,
+  appId: string | number | undefined,
+  contextId: string | undefined,
+  assetId: string | undefined,
+): ListingAssetPayload | undefined => {
+  if (!assetId) return undefined;
+  const stringAppId = appId != null ? String(appId) : String(STEAM_APP_ID);
+  const appAssets = payload.assets?.[stringAppId];
+  if (!appAssets) return undefined;
+  if (contextId) {
+    const contextAssets = appAssets[contextId];
+    const direct = contextAssets?.[assetId];
+    if (direct) return direct;
+  }
+  for (const contextAssets of Object.values(appAssets)) {
+    const found = contextAssets?.[assetId];
+    if (found) return found;
+  }
+  return undefined;
+};
+
+const buildInspectUrl = (
+  template: string,
+  replacements: Record<string, string | undefined | null>,
+): string | null => {
+  if (!template) return null;
+  return template.replace(/%([a-zA-Z0-9_]+)%/g, (match, key) => {
+    const lower = key.toLowerCase();
+    const value = replacements[lower] ?? replacements[key] ?? replacements[key.toUpperCase()];
+    return value != null ? String(value) : match;
+  });
+};
+
+const parseSteamCents = (value: unknown): number => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  const parsed = Number.parseInt(String(value ?? "0"), 10);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const fetchListingCandidates = async (
+  marketHashName: string,
+  limit: number,
+): Promise<TradeupRealityListing[]> => {
+  const count = Math.max(1, Math.min(100, limit));
+  const params = new URLSearchParams({
+    start: "0",
+    count: String(count),
+    currency: "1",
+    language: "english",
+    format: "json",
+  });
+  const url = `${buildListingRenderUrl(marketHashName)}?${params.toString()}`;
+  const response = await steamGet<ListingRenderResponse>(url, {
+    headers: {
+      Referer: `https://steamcommunity.com/market/listings/${STEAM_APP_ID}/${encodeURIComponent(marketHashName)}`,
+    },
+  });
+  const payload = response.data ?? {};
+  const listingEntries = Object.entries(payload.listinginfo ?? {});
+  const listings: TradeupRealityListing[] = [];
+
+  for (const [listingIdKey, info] of listingEntries) {
+    if (listings.length >= limit) break;
+    const listingId = info?.listingid ?? listingIdKey;
+    if (!listingId) continue;
+
+    const assetId = info?.asset?.id ? String(info.asset.id) : undefined;
+    const contextId = info?.asset?.contextid ? String(info.asset.contextid) : undefined;
+    const appId = info?.asset?.appid ?? STEAM_APP_ID;
+    const assetDetails = resolveAssetDetails(payload, appId, contextId, assetId);
+
+    const actionTemplate =
+      extractFirstActionLink(info?.asset?.market_actions) ??
+      extractFirstActionLink(info?.asset?.actions) ??
+      extractFirstActionLink(assetDetails?.market_actions) ??
+      extractFirstActionLink(assetDetails?.actions);
+
+    const inspectUrl = actionTemplate
+      ? buildInspectUrl(actionTemplate, {
+          listingid: listingId,
+          assetid: assetId,
+          assetid_low: assetId,
+          assetid_high: assetId,
+          d: assetId,
+          ownerid: info?.steamid_lister ?? assetDetails?.ownerid ?? assetDetails?.owner,
+          classid: info?.asset?.classid ?? assetDetails?.classid,
+          instanceid: info?.asset?.instanceid ?? assetDetails?.instanceid,
+          market_hash_name: assetDetails?.market_hash_name,
+        })
+      : null;
+
+    const basePrice = parseSteamCents(info?.converted_price ?? info?.price);
+    const fee = parseSteamCents(info?.converted_fee ?? info?.fee);
+    const total = basePrice + fee;
+
+    listings.push({
+      listingId: String(listingId),
+      price: total > 0 ? total / 100 : null,
+      inspectUrl,
+      sellerId: info?.steamid_lister ? String(info.steamid_lister) : null,
+    });
+  }
+
+  listings.sort((a, b) => {
+    const aPrice = a.price ?? Number.POSITIVE_INFINITY;
+    const bPrice = b.price ?? Number.POSITIVE_INFINITY;
+    if (aPrice === bPrice) {
+      return a.listingId.localeCompare(b.listingId);
+    }
+    return aPrice - bPrice;
+  });
+
+  return listings;
+};
+
+const fetchFloatForInspect = async (inspectUrl: string): Promise<number | null> => {
+  try {
+    const endpoint = new URL("https://api.csgofloat.com/");
+    endpoint.searchParams.set("url", inspectUrl);
+    const response = await fetch(endpoint.toString(), {
+      headers: { "User-Agent": "cs2-tradeup-ev/0.5" },
+    });
+    if (!response.ok) {
+      return null;
+    }
+    const payload = (await response.json()) as {
+      iteminfo?: { floatvalue?: number };
+    };
+    const value = payload?.iteminfo?.floatvalue;
+    return typeof value === "number" && Number.isFinite(value) ? value : null;
+  } catch (error) {
+    console.warn(`[tradeups] Failed to fetch float for inspect`, error);
+    return null;
+  }
+};
+
+export const checkOutcomeReality = async ({
+  marketHashName,
+  rollFloat,
+}: {
+  marketHashName: string;
+  rollFloat: number;
+}): Promise<TradeupRealityCheckResult> => {
+  const normalizedFloat = clamp(Number(rollFloat) || 0, 0, 1);
+  const listings = await fetchListingCandidates(marketHashName, REALITY_MAX_LISTINGS);
+
+  for (const listing of listings) {
+    if (!listing.inspectUrl) continue;
+    const float = await fetchFloatForInspect(listing.inspectUrl);
+    listing.float = float;
+    listing.difference = float != null ? Math.abs(float - normalizedFloat) : null;
+  }
+
+  let bestMatchListingId: string | null = null;
+  let bestDifference = Number.POSITIVE_INFINITY;
+  for (const listing of listings) {
+    if (listing.difference == null) continue;
+    if (listing.difference < bestDifference) {
+      bestDifference = listing.difference;
+      bestMatchListingId = listing.listingId;
+    }
+  }
+
+  return {
+    marketHashName,
+    rollFloat: normalizedFloat,
+    listings,
+    bestMatchListingId,
   };
 };

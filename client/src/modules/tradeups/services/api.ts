@@ -115,6 +115,22 @@ export interface TradeupOutcomeResponse {
   withinRange: boolean;
 }
 
+export interface TradeupRealityListing {
+  listingId: string;
+  price: number | null;
+  inspectUrl?: string | null;
+  float?: number | null;
+  difference?: number | null;
+  sellerId?: string | null;
+}
+
+export interface TradeupRealityCheckResponse {
+  marketHashName: string;
+  rollFloat: number;
+  listings: TradeupRealityListing[];
+  bestMatchListingId?: string | null;
+}
+
 export interface TradeupInputSummaryResponse extends TradeupInputPayload {
   priceMarket?: number | null;
   netPrice?: number | null;
@@ -194,6 +210,22 @@ export async function requestTradeupCalculation(payload: TradeupCalculationPaylo
     throw new Error(text || `HTTP ${response.status}`);
   }
   return (await response.json()) as TradeupCalculationResponse;
+}
+
+export async function fetchOutcomeReality(
+  marketHashName: string,
+  rollFloat: number,
+): Promise<TradeupRealityCheckResponse> {
+  const params = new URLSearchParams({
+    marketHashName,
+    rollFloat: String(rollFloat),
+  });
+  const response = await fetch(`/api/tradeups/outcomes/reality?${params.toString()}`);
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || `HTTP ${response.status}`);
+  }
+  return (await response.json()) as TradeupRealityCheckResponse;
 }
 
 export { batchPriceOverview };
