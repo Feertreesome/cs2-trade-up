@@ -168,7 +168,7 @@ const toMarketHashName = (baseName: string, exterior: Exterior) =>
  */
 const buildOutcome = async (
   options: {
-    normalizedAverageFloat: number;
+    inputAverageFloat: number;
     collection: CollectionFloatCatalogEntry;
     entry: CollectionFloatRange;
     collectionProbability: number;
@@ -178,7 +178,7 @@ const buildOutcome = async (
   },
 ): Promise<TradeupOutcome> => {
   const {
-    normalizedAverageFloat,
+    inputAverageFloat,
     collection,
     entry,
     collectionProbability,
@@ -189,7 +189,9 @@ const buildOutcome = async (
 
   const minFloat = override?.minFloat ?? entry.minFloat;
   const maxFloat = override?.maxFloat ?? entry.maxFloat;
-  const raw = normalizedAverageFloat * (maxFloat - minFloat) + minFloat;
+  // В игре trade-up использует средний float входов (InputFloat) и линейно
+  // преобразует его в диапазон результата: OutputFloat = (Maxout - Minout) * InputFloat + Minout.
+  const raw = inputAverageFloat * (maxFloat - minFloat) + minFloat;
   const rollFloat = clamp(raw, minFloat, maxFloat);
   const exterior = override?.exterior ?? getExteriorByFloat(rollFloat);
   const wearRange = getWearRange(exterior);
@@ -569,7 +571,7 @@ export const calculateTradeup = async (
       }
       return candidates.map((entry) =>
         buildOutcome({
-          normalizedAverageFloat,
+          inputAverageFloat: averageFloat,
           collection,
           entry,
           collectionProbability,
