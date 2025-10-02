@@ -1,13 +1,30 @@
 import React from "react";
+import type { RealPurchaseCheckResult } from "../hooks/useTradeupBuilder";
 import type { TradeupCalculationResponse } from "../services/api";
 import { formatNumber, formatPercent } from "../utils/format";
 
 interface ResultsSectionProps {
   calculation: TradeupCalculationResponse;
   totalBuyerCost: number;
+  onRunRealPurchaseCheck: () => void;
+  realPurchaseCheckResult: RealPurchaseCheckResult | null;
+  realPurchaseCheckLoading: boolean;
+  realPurchaseCheckError: string | null;
 }
 
-export default function ResultsSection({ calculation, totalBuyerCost }: ResultsSectionProps) {
+export default function ResultsSection({
+  calculation,
+  totalBuyerCost,
+  onRunRealPurchaseCheck,
+  realPurchaseCheckResult,
+  realPurchaseCheckLoading,
+  realPurchaseCheckError,
+}: ResultsSectionProps) {
+  const topRealPurchaseItems = React.useMemo(() => {
+    if (!realPurchaseCheckResult?.items?.length) return [];
+    return realPurchaseCheckResult.items.slice(0, 10);
+  }, [realPurchaseCheckResult]);
+
   return (
     <section className="mt-4">
       <h3 className="h5">4. Результаты</h3>
@@ -34,6 +51,75 @@ export default function ResultsSection({ calculation, totalBuyerCost }: ResultsS
             ))}
           </ul>
         </div>
+      )}
+
+      <div className="d-flex flex-wrap align-items-center gap-2 mt-3">
+        <button
+          type="button"
+          className="btn btn-outline-light btn-sm"
+          onClick={() => onRunRealPurchaseCheck()}
+          disabled={realPurchaseCheckLoading}
+        >
+          {realPurchaseCheckLoading ? "Проверка…" : "Проверка реальности покупки"}
+        </button>
+        {realPurchaseCheckLoading && <span className="small text-muted">Подбор входов…</span>}
+      </div>
+      {realPurchaseCheckError && <div className="text-danger mt-2">{realPurchaseCheckError}</div>}
+
+      {realPurchaseCheckResult && topRealPurchaseItems.length > 0 && (
+        <div className="card bg-secondary-subtle text-dark mt-3">
+          <div className="card-body p-3">
+            <div className="d-flex flex-wrap justify-content-between align-items-start gap-2">
+              <div>
+                <div className="fw-semibold">
+                  Лучшие входы ({realPurchaseCheckResult.rarity})
+                </div>
+                {realPurchaseCheckResult.collectionName && (
+                  <div className="small text-muted">{realPurchaseCheckResult.collectionName}</div>
+                )}
+              </div>
+              <div className="small text-muted">
+                Показаны топ {topRealPurchaseItems.length} по минимальному float
+              </div>
+            </div>
+            <div className="table-responsive mt-2">
+              <table className="table table-sm align-middle mb-0">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Предмет</th>
+                    <th>Float</th>
+                    <th>Float диапазон</th>
+                    <th>Buyer $</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {topRealPurchaseItems.map((item, index) => {
+                    const floatRange =
+                      item.minFloat != null && item.maxFloat != null
+                        ? `${item.minFloat.toFixed(5)} — ${item.maxFloat.toFixed(5)}`
+                        : item.minFloat != null
+                        ? `${item.minFloat.toFixed(5)} — ?`
+                        : "—";
+                    const floatDisplay = item.floatValue != null ? item.floatValue.toFixed(5) : "—";
+                    return (
+                      <tr key={item.marketHashName}>
+                        <td>{index + 1}</td>
+                        <td>{`${item.baseName} (${item.exterior})`}</td>
+                        <td>{floatDisplay}</td>
+                        <td>{floatRange}</td>
+                        <td>{item.price != null ? `$${formatNumber(item.price)}` : "—"}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+      {realPurchaseCheckResult && topRealPurchaseItems.length === 0 && !realPurchaseCheckError && (
+        <div className="text-muted mt-2">Не удалось подобрать входы с известным float.</div>
       )}
 
       <div className="table-responsive mt-3">

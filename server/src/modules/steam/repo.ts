@@ -76,8 +76,44 @@ interface AppFiltersResponse {
 }
 
 /** Формат ответа listings/.../render (для наших целей достаточно total_count) */
+interface ListingAssetAction {
+  link?: string | null;
+}
+
+interface ListingAssetDescriptor {
+  id?: string;
+  classid?: string;
+  instanceid?: string;
+  market_actions?: ListingAssetAction[] | null;
+  actions?: ListingAssetAction[] | null;
+}
+
+interface ListingInfoAsset {
+  appid?: number;
+  contextid?: string;
+  id?: string;
+  classid?: string;
+  instanceid?: string;
+}
+
+interface ListingInfoEntry {
+  listingid?: string;
+  asset?: ListingInfoAsset | null;
+  assetid?: string;
+}
+
 interface ListingRenderResponse {
   total_count?: number;
+  listinginfo?: Record<string, ListingInfoEntry | null | undefined> | null;
+  assets?:
+    | Record<string, Record<string, Record<string, Record<string, ListingAssetDescriptor | null>>>>
+    | null;
+}
+
+export interface ListingInspectLink {
+  listingId: string;
+  assetId: string;
+  inspectLink: string;
 }
 
 /** Глобальная очередь с адаптивным троттлингом */
@@ -591,4 +627,84 @@ export const fetchListingTotalCount = async (
     }
   }
   return null;
+};
+
+const buildAssetIndex = (payload?: ListingRenderResponse | null) => {
+  const index = new Map<string, ListingAssetDescriptor>();
+  const appAssets = payload?.assets?.[String(APP_ID)];
+  if (!appAssets) return index;
+
+  for (const contextAssets of Object.values(appAssets)) {
+    if (!contextAssets) continue;
+    for (const classAssets of Object.values(contextAssets)) {
+      if (!classAssets) continue;
+      for (const asset of Object.values(classAssets)) {
+        if (!asset) continue;
+        const id = asset.id;
+        if (id) {
+          index.set(String(id), asset);
+        }
+      }
+    }
+  }
+  return index;
+};
+
+const resolveInspectTemplate = (descriptor?: ListingAssetDescriptor | null) => {
+  const actions = descriptor?.market_actions ?? descriptor?.actions ?? [];
+  return actions?.find((action) => action?.link?.includes("csgo_econ_action_preview"))?.link ?? null;
+};
+
+const applyInspectTemplate = (template: string, listingId: string, assetId: string) =>
+  template
+    .replace(/%listingid%/gi, listingId)
+    .replace(/%assetid%/gi, assetId)
+    .replace(/%owner_steamid%/gi, "0")
+    .replace(/%purchaser_steamid%/gi, "0")
+    .replace(/%steamid%/gi, "0")
+    .replace(/%original_amount%/gi, "1")
+    .replace(/%amount%/gi, "1");
+
+export const fetchListingInspectLinks = async (
+  marketHashName: string,
+  options: { start?: number; count?: number } = {},
+): Promise<ListingInspectLink[]> => {
+  const params = new URLSearchParams({
+    start: String(options.start ?? 0),
+    count: String(options.count ?? 10),
+    currency: "1",
+    language: "english",
+    format: "json",
+  });
+  const url = `${LISTING_URL(marketHashName)}?${params.toString()}`;
+  const cacheKey = `inspect:${url}`;
+  const cached = memoryCache.get(cacheKey) as ListingInspectLink[] | undefined;
+  if (cached !== undefined) return cached;
+
+  try {
+    const payload = await steamGetData<ListingRenderResponse>(url);
+    const assetIndex = buildAssetIndex(payload);
+    const inspectLinks: ListingInspectLink[] = [];
+    const seen = new Set<string>();
+    const entries = payload?.listinginfo ?? {};
+    for (const entry of Object.values(entries)) {
+      if (!entry) continue;
+      const listingId = String(entry.listingid ?? entry.assetid ?? "");
+      const assetId = String(entry.asset?.id ?? entry.assetid ?? "");
+      if (!listingId || !assetId) continue;
+      const descriptor = assetIndex.get(assetId);
+      const template = resolveInspectTemplate(descriptor);
+      if (!template) continue;
+      const inspectLinkKey = `${listingId}:${assetId}`;
+      if (seen.has(inspectLinkKey)) continue;
+      seen.add(inspectLinkKey);
+      const inspectLink = applyInspectTemplate(template, listingId, assetId);
+      inspectLinks.push({ listingId, assetId, inspectLink });
+    }
+    memoryCache.set(cacheKey, inspectLinks);
+    return inspectLinks;
+  } catch (error) {
+    console.warn(`[steam] Failed to fetch listing inspect links for ${marketHashName}: ${String(error)}`);
+    return [];
+  }
 };
