@@ -885,6 +885,7 @@ export default function useTradeupBuilder() {
         marketHashName: input.marketHashName,
         exterior: input.exterior,
         price: input.price ?? null,
+        floatValue: input.floatValue ?? null,
         minFloat: input.minFloat ?? null,
         maxFloat: input.maxFloat ?? null,
       }));
@@ -910,8 +911,8 @@ export default function useTradeupBuilder() {
       });
 
       const sortedItems = enrichedItems.sort((a, b) => {
-        const aFloat = a.minFloat ?? Number.POSITIVE_INFINITY;
-        const bFloat = b.minFloat ?? Number.POSITIVE_INFINITY;
+        const aFloat = a.floatValue ?? a.minFloat ?? Number.POSITIVE_INFINITY;
+        const bFloat = b.floatValue ?? b.minFloat ?? Number.POSITIVE_INFINITY;
         if (aFloat === bFloat) {
           const aPrice = a.price ?? Number.POSITIVE_INFINITY;
           const bPrice = b.price ?? Number.POSITIVE_INFINITY;

@@ -4,6 +4,7 @@
  * Здесь же реализованы вспомогательные структуры и кеши для сопоставления
  * коллекций Steam с нашим справочником float-диапазонов.
  */
+import axios from "axios";
 import * as collectionFloats from "../../../../data/CollectionsWithFloat";
 import type {
   CollectionFloatCatalogEntry,
@@ -17,6 +18,7 @@ import {
   RARITY_TO_TAG,
   type SearchItem,
   type SteamCollectionTag,
+  fetchListingInspectLinks,
 } from "../steam/repo";
 import {
   baseFromMarketHash,
@@ -37,6 +39,146 @@ const {
   (collectionFloats as typeof import("../../../../data/CollectionsWithFloat"));
 
 const DEFAULT_BUYER_TO_NET = 1.15;
+
+const MARKET_FLOAT_CACHE_TTL_MS = 1000 * 60 * 15;
+const MARKET_FLOAT_LOOKUP_LIMIT = 40;
+const MARKET_FLOAT_SAMPLE_SIZE = 8;
+const MARKET_FLOAT_TARGET_HITS = 3;
+
+const marketFloatCache = new Map<string, { value: number | null; expiresAt: number }>();
+
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const getCachedMarketFloat = (marketHashName: string) => {
+  const entry = marketFloatCache.get(marketHashName);
+  if (!entry) return undefined;
+  if (entry.expiresAt <= Date.now()) {
+    marketFloatCache.delete(marketHashName);
+    return undefined;
+  }
+  return entry.value;
+};
+
+const rememberMarketFloat = (marketHashName: string, value: number | null) => {
+  marketFloatCache.set(marketHashName, {
+    value,
+    expiresAt: Date.now() + MARKET_FLOAT_CACHE_TTL_MS,
+  });
+};
+
+interface CsgofloatResponse {
+  iteminfo?: { floatvalue?: number | string | null } | null;
+}
+
+const fetchFloatFromInspect = async (inspectLink: string): Promise<number | null> => {
+  try {
+    const url = `https://api.csgofloat.com/?url=${encodeURIComponent(inspectLink)}`;
+    const response = await axios.get<CsgofloatResponse>(url, { timeout: 12_000 });
+    const value = response.data?.iteminfo?.floatvalue;
+    const parsed = typeof value === "number" ? value : Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  } catch (error) {
+    console.warn(`[tradeups] Failed to fetch float from inspect link: ${String(error)}`);
+    return null;
+  }
+};
+
+const fetchMarketFloat = async (marketHashName: string): Promise<number | null> => {
+  const cached = getCachedMarketFloat(marketHashName);
+  if (cached !== undefined) return cached;
+
+  try {
+    const inspectLinks = await fetchListingInspectLinks(marketHashName, {
+      count: MARKET_FLOAT_SAMPLE_SIZE,
+    });
+    if (!inspectLinks.length) {
+      rememberMarketFloat(marketHashName, null);
+      return null;
+    }
+
+    const floats: number[] = [];
+    for (const entry of inspectLinks) {
+      const value = await fetchFloatFromInspect(entry.inspectLink);
+      if (value != null) {
+        floats.push(value);
+        if (floats.length >= MARKET_FLOAT_TARGET_HITS) break;
+      }
+      await delay(150);
+    }
+
+    const result = floats.length ? Math.min(...floats) : null;
+    rememberMarketFloat(marketHashName, result);
+    return result;
+  } catch (error) {
+    console.warn(
+      `[tradeups] Failed to resolve market float for ${marketHashName}: ${String(error)}`,
+    );
+    rememberMarketFloat(marketHashName, null);
+    return null;
+  }
+};
+
+const attachMarketFloats = async (
+  inputs: CollectionInputSummary[],
+): Promise<CollectionInputSummary[]> => {
+  if (!inputs.length) return inputs;
+
+  const priceByName = new Map<string, number | null>();
+  for (const input of inputs) {
+    const price = input.price ?? null;
+    const existing = priceByName.get(input.marketHashName);
+    if (price == null) {
+      if (!priceByName.has(input.marketHashName)) {
+        priceByName.set(input.marketHashName, null);
+      }
+      continue;
+    }
+    if (existing == null || price < existing) {
+      priceByName.set(input.marketHashName, price);
+    }
+  }
+
+  const uniqueNames = Array.from(new Set(inputs.map((input) => input.marketHashName)));
+  uniqueNames.sort((a, b) => {
+    const priceA = priceByName.get(a);
+    const priceB = priceByName.get(b);
+    if (priceA == null && priceB == null) return a.localeCompare(b);
+    if (priceA == null) return 1;
+    if (priceB == null) return -1;
+    if (priceA === priceB) return a.localeCompare(b);
+    return priceA - priceB;
+  });
+
+  const floatMap = new Map<string, number | null>();
+  const namesToLookup: string[] = [];
+
+  for (const name of uniqueNames) {
+    const cached = getCachedMarketFloat(name);
+    if (cached !== undefined) {
+      floatMap.set(name, cached);
+      continue;
+    }
+    if (namesToLookup.length < MARKET_FLOAT_LOOKUP_LIMIT) {
+      namesToLookup.push(name);
+    }
+  }
+
+  for (const name of namesToLookup) {
+    const value = await fetchMarketFloat(name);
+    floatMap.set(name, value);
+  }
+
+  for (const name of uniqueNames) {
+    if (floatMap.has(name)) continue;
+    const cached = getCachedMarketFloat(name);
+    floatMap.set(name, cached !== undefined ? cached : null);
+  }
+
+  return inputs.map((input) => ({
+    ...input,
+    floatValue: floatMap.get(input.marketHashName) ?? null,
+  }));
+};
 
 const WEAR_BUCKETS: Array<{ exterior: Exterior; min: number; max: number }> = [
   { exterior: "Factory New", min: 0, max: 0.06999999999999999 },
@@ -446,6 +588,7 @@ export interface CollectionInputSummary {
   marketHashName: string;
   exterior: Exterior;
   price?: number | null;
+  floatValue?: number | null;
   minFloat?: number;
   maxFloat?: number;
 }
@@ -481,7 +624,7 @@ export const fetchCollectionInputs = async (
     floatCache.set(baseName, range ?? undefined);
   }
 
-  const inputs: CollectionInputSummary[] = items.map((item) => {
+  let inputs: CollectionInputSummary[] = items.map((item) => {
     const baseName = baseFromMarketHash(item.market_hash_name);
     const floats = floatCache.get(baseName);
     return {
@@ -493,6 +636,8 @@ export const fetchCollectionInputs = async (
       maxFloat: floats?.maxFloat,
     } satisfies CollectionInputSummary;
   });
+
+  inputs = await attachMarketFloats(inputs);
 
   let collectionId = findCollectionIdByTag(collectionTag);
   if (collectionId == null && inputs.length) {

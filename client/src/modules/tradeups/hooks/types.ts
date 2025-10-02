@@ -49,6 +49,7 @@ export interface RealPurchaseItem {
   marketHashName: string;
   exterior: Exterior;
   price: number | null;
+  floatValue: number | null;
   minFloat: number | null;
   maxFloat: number | null;
 }

@@ -88,6 +88,7 @@ export default function ResultsSection({
                   <tr>
                     <th>#</th>
                     <th>Предмет</th>
+                    <th>Float</th>
                     <th>Float диапазон</th>
                     <th>Buyer $</th>
                   </tr>
@@ -100,10 +101,12 @@ export default function ResultsSection({
                         : item.minFloat != null
                         ? `${item.minFloat.toFixed(5)} — ?`
                         : "—";
+                    const floatDisplay = item.floatValue != null ? item.floatValue.toFixed(5) : "—";
                     return (
                       <tr key={item.marketHashName}>
                         <td>{index + 1}</td>
                         <td>{`${item.baseName} (${item.exterior})`}</td>
+                        <td>{floatDisplay}</td>
                         <td>{floatRange}</td>
                         <td>{item.price != null ? `$${formatNumber(item.price)}` : "—"}</td>
                       </tr>
