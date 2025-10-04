@@ -4,6 +4,7 @@
  * Здесь же реализованы вспомогательные структуры и кеши для сопоставления
  * коллекций Steam с нашим справочником float-диапазонов.
  */
+import axios from "axios";
 import {
   COLLECTIONS_WITH_FLOAT,
   COLLECTIONS_WITH_FLOAT_MAP,
@@ -19,6 +20,7 @@ import {
   fetchCollectionTags,
   getPriceUSD,
   searchByCollection,
+  steamGet,
   RARITY_TO_TAG,
   type SearchItem,
   type SteamCollectionTag,
@@ -629,5 +631,417 @@ export const calculateTradeup = async (
     maxBudgetPerSlot,
     positiveOutcomeProbability,
     warnings,
+  };
+};
+
+const STEAM_APP_ID = 730;
+const STEAM_LISTING_PAGE_SIZE = 10;
+const MAX_LISTINGS_PER_ITEM = 50;
+const FLOAT_REQUEST_INTERVAL_MS = 1500;
+const FLOAT_API_ENDPOINT = "https://api.csgofloat.com/";
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+interface ListingRenderAction {
+  link?: string;
+}
+
+interface ListingRenderAsset {
+  id?: string;
+  classid?: string;
+  instanceid?: string;
+  market_hash_name?: string;
+  market_actions?: ListingRenderAction[];
+  actions?: ListingRenderAction[];
+}
+
+interface ListingRenderListingInfo {
+  listingid?: string;
+  converted_price?: number;
+  converted_fee?: number;
+  steamid_lister?: string;
+  steamid_owner?: string;
+  asset?: {
+    currency?: number;
+    appid?: number;
+    contextid?: string;
+    id?: string;
+    assetid?: string;
+    market_actions?: ListingRenderAction[];
+    actions?: ListingRenderAction[];
+  };
+}
+
+interface ListingRenderResponse {
+  total_count?: number;
+  listinginfo?: Record<string, ListingRenderListingInfo | undefined>;
+  assets?: Record<string, Record<string, Record<string, ListingRenderAsset>>>;
+}
+
+interface MarketListingItem {
+  listingId: string;
+  marketHashName: string;
+  price: number | null;
+  inspectLink: string | null;
+  sellerId: string | null;
+  assetId: string | null;
+}
+
+interface MarketListingWithFloat extends MarketListingItem {
+  float: number | null;
+  floatError: string | null;
+}
+
+const buildListingUrl = (marketHashName: string, start: number, count: number) => {
+  const params = new URLSearchParams({
+    start: String(Math.max(0, start)),
+    count: String(Math.max(1, Math.min(STEAM_LISTING_PAGE_SIZE, count))),
+    currency: "1",
+    language: "english",
+    format: "json",
+    country: "US",
+  });
+  return `https://steamcommunity.com/market/listings/${STEAM_APP_ID}/${encodeURIComponent(marketHashName)}/render?${params.toString()}`;
+};
+
+const resolveInspectLink = (
+  listingId: string,
+  info: ListingRenderListingInfo,
+  asset: ListingRenderAsset | undefined,
+): string | null => {
+  const actions =
+    asset?.market_actions ??
+    asset?.actions ??
+    info.asset?.market_actions ??
+    info.asset?.actions ??
+    [];
+  const template = actions[0]?.link;
+  if (!template) return null;
+  const assetId = asset?.id ?? info.asset?.id ?? info.asset?.assetid ?? "";
+  const owner = info.steamid_lister ?? info.steamid_owner ?? "";
+  return template
+    .replace(/%listingid%/g, listingId)
+    .replace(/%assetid%/g, assetId)
+    .replace(/%owner_steamid%/g, owner);
+};
+
+const fetchListingPage = async (
+  marketHashName: string,
+  start: number,
+  count: number,
+): Promise<{ total: number; listings: MarketListingItem[] }> => {
+  const url = buildListingUrl(marketHashName, start, count);
+  const response = await steamGet<ListingRenderResponse>(url, {
+    headers: {
+      Referer: `https://steamcommunity.com/market/listings/${STEAM_APP_ID}/${encodeURIComponent(marketHashName)}`,
+    },
+  });
+  const payload = response.data ?? {};
+  const total = typeof payload.total_count === "number" ? payload.total_count : 0;
+  const listings: MarketListingItem[] = [];
+  const assetsByApp = payload.assets ?? {};
+
+  for (const [listingId, info] of Object.entries(payload.listinginfo ?? {})) {
+    if (!info || !listingId) continue;
+    const appId = String(info.asset?.appid ?? STEAM_APP_ID);
+    const contextId = String(info.asset?.contextid ?? "2");
+    const assetId = info.asset?.id ?? info.asset?.assetid ?? "";
+    const asset = assetsByApp?.[appId]?.[contextId]?.[assetId];
+    const inspectLink = resolveInspectLink(listingId, info, asset);
+    const priceCents =
+      typeof info.converted_price === "number" && typeof info.converted_fee === "number"
+        ? info.converted_price + info.converted_fee
+        : null;
+    listings.push({
+      listingId,
+      marketHashName: asset?.market_hash_name ?? marketHashName,
+      price: priceCents != null ? priceCents / 100 : null,
+      inspectLink,
+      sellerId: info.steamid_lister ?? info.steamid_owner ?? null,
+      assetId: assetId || null,
+    });
+  }
+
+  listings.sort((a, b) => (a.price ?? Number.POSITIVE_INFINITY) - (b.price ?? Number.POSITIVE_INFINITY));
+  return { total, listings };
+};
+
+const fetchMarketListings = async (
+  marketHashName: string,
+  limit: number,
+): Promise<MarketListingItem[]> => {
+  const normalizedName = marketHashName.trim();
+  if (!normalizedName) return [];
+
+  const effectiveLimit = Math.max(1, Math.min(MAX_LISTINGS_PER_ITEM, limit));
+  const result: MarketListingItem[] = [];
+  const seen = new Set<string>();
+  let start = 0;
+  let total = Number.POSITIVE_INFINITY;
+
+  while (result.length < effectiveLimit && start < total) {
+    const remaining = effectiveLimit - result.length;
+    const count = Math.min(STEAM_LISTING_PAGE_SIZE, remaining);
+    const { total: pageTotal, listings } = await fetchListingPage(normalizedName, start, count);
+    total = Number.isFinite(pageTotal) && pageTotal > 0 ? pageTotal : total;
+    if (!listings.length) {
+      break;
+    }
+    for (const listing of listings) {
+      if (seen.has(listing.listingId)) continue;
+      seen.add(listing.listingId);
+      result.push(listing);
+      if (result.length >= effectiveLimit) break;
+    }
+    start += STEAM_LISTING_PAGE_SIZE;
+    if (start >= total) break;
+  }
+
+  result.sort((a, b) => (a.price ?? Number.POSITIVE_INFINITY) - (b.price ?? Number.POSITIVE_INFINITY));
+  return result.slice(0, effectiveLimit);
+};
+
+let floatQueue: Promise<void> = Promise.resolve();
+let lastFloatRequestedAt = 0;
+
+const enqueueFloatRequest = async <T>(task: () => Promise<T>): Promise<T> => {
+  const runner = async () => {
+    const now = Date.now();
+    const waitFor = Math.max(0, FLOAT_REQUEST_INTERVAL_MS - (now - lastFloatRequestedAt));
+    if (waitFor > 0) {
+      await sleep(waitFor);
+    }
+    try {
+      const result = await task();
+      return result;
+    } finally {
+      lastFloatRequestedAt = Date.now();
+    }
+  };
+
+  const next = floatQueue.then(runner, runner);
+  floatQueue = next.then(
+    () => undefined,
+    () => undefined,
+  );
+  return next;
+};
+
+interface CsgoFloatResponse {
+  iteminfo?: {
+    floatvalue?: number;
+  };
+  error?: string;
+}
+
+const fetchFloatForListing = async (
+  listing: MarketListingItem,
+): Promise<MarketListingWithFloat> => {
+  if (!listing.inspectLink) {
+    return { ...listing, float: null, floatError: "inspect_link_missing" };
+  }
+
+  const maxAttempts = 3;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      const response = await enqueueFloatRequest(() =>
+        axios.get<CsgoFloatResponse>(FLOAT_API_ENDPOINT, {
+          params: { url: listing.inspectLink },
+          timeout: 20_000,
+        }),
+      );
+      const floatValue = response.data?.iteminfo?.floatvalue;
+      if (typeof floatValue === "number" && Number.isFinite(floatValue)) {
+        return { ...listing, float: floatValue, floatError: null };
+      }
+      if (response.data?.error) {
+        throw new Error(response.data.error);
+      }
+      throw new Error("float_missing");
+    } catch (error: any) {
+      if (attempt === maxAttempts - 1) {
+        return { ...listing, float: null, floatError: String(error?.message || error) };
+      }
+    }
+  }
+
+  return { ...listing, float: null, floatError: "unknown" };
+};
+
+const fetchListingsWithFloats = async (
+  marketHashName: string,
+  limit: number,
+): Promise<MarketListingWithFloat[]> => {
+  const listings = await fetchMarketListings(marketHashName, limit);
+  const enriched: MarketListingWithFloat[] = [];
+  for (const listing of listings) {
+    enriched.push(await fetchFloatForListing(listing));
+  }
+  return enriched;
+};
+
+export interface TradeupAvailabilityOutcomeRequest {
+  marketHashName: string;
+  minFloat?: number | null;
+  maxFloat?: number | null;
+  rollFloat?: number | null;
+}
+
+export interface TradeupAvailabilitySlotRequest {
+  index: number;
+  marketHashName: string;
+}
+
+export interface TradeupAvailabilityRequest {
+  outcome: TradeupAvailabilityOutcomeRequest;
+  slots: TradeupAvailabilitySlotRequest[];
+  limit?: number;
+  targetAverageFloat?: number | null;
+}
+
+export interface TradeupAvailabilityListing extends MarketListingWithFloat {}
+
+export interface TradeupAvailabilitySlotResult {
+  index: number;
+  marketHashName: string;
+  listing: TradeupAvailabilityListing | null;
+}
+
+export interface TradeupAvailabilityResult {
+  outcome: {
+    marketHashName: string;
+    minFloat: number | null;
+    maxFloat: number | null;
+    rollFloat: number | null;
+  };
+  targetAverageFloat: number | null;
+  assignedAverageFloat: number | null;
+  slots: TradeupAvailabilitySlotResult[];
+  missingSlots: number[];
+  groups: Record<string, TradeupAvailabilityListing[]>;
+}
+
+export const checkTradeupAvailability = async (
+  payload: TradeupAvailabilityRequest,
+): Promise<TradeupAvailabilityResult> => {
+  const slots = Array.isArray(payload.slots)
+    ? payload.slots.filter((slot) => slot && slot.marketHashName)
+    : [];
+  if (!slots.length) {
+    throw new Error("Не переданы входные слоты");
+  }
+
+  const limit = Math.max(1, Math.min(MAX_LISTINGS_PER_ITEM, Number(payload.limit ?? MAX_LISTINGS_PER_ITEM)));
+  const outcomeName = String(payload.outcome?.marketHashName ?? "").trim();
+  if (!outcomeName) {
+    throw new Error("Не указан результат для проверки");
+  }
+
+  const uniqueNames = new Map<string, number>();
+  for (const slot of slots) {
+    uniqueNames.set(slot.marketHashName, (uniqueNames.get(slot.marketHashName) ?? 0) + 1);
+  }
+
+  const listingsByName = new Map<string, TradeupAvailabilityListing[]>();
+  for (const name of uniqueNames.keys()) {
+    const listings = await fetchListingsWithFloats(name, limit);
+    listingsByName.set(name, listings);
+  }
+
+  const providedTarget =
+    typeof payload.targetAverageFloat === "number" && Number.isFinite(payload.targetAverageFloat)
+      ? clamp(payload.targetAverageFloat, 0, 1)
+      : null;
+
+  const minFloat =
+    typeof payload.outcome?.minFloat === "number" && Number.isFinite(payload.outcome.minFloat)
+      ? payload.outcome.minFloat
+      : null;
+  const maxFloat =
+    typeof payload.outcome?.maxFloat === "number" && Number.isFinite(payload.outcome.maxFloat)
+      ? payload.outcome.maxFloat
+      : null;
+  const rollFloat =
+    typeof payload.outcome?.rollFloat === "number" && Number.isFinite(payload.outcome.rollFloat)
+      ? payload.outcome.rollFloat
+      : null;
+
+  let targetAverageFloat = providedTarget;
+  if (
+    targetAverageFloat == null &&
+    minFloat != null &&
+    maxFloat != null &&
+    maxFloat > minFloat &&
+    rollFloat != null
+  ) {
+    targetAverageFloat = clamp((rollFloat - minFloat) / (maxFloat - minFloat), 0, 1);
+  }
+
+  const comparator = (a: TradeupAvailabilityListing, b: TradeupAvailabilityListing) => {
+    if (targetAverageFloat != null) {
+      const diffA =
+        a.float != null && Number.isFinite(a.float)
+          ? Math.abs(a.float - targetAverageFloat)
+          : Number.POSITIVE_INFINITY;
+      const diffB =
+        b.float != null && Number.isFinite(b.float)
+          ? Math.abs(b.float - targetAverageFloat)
+          : Number.POSITIVE_INFINITY;
+      if (diffA !== diffB) {
+        return diffA - diffB;
+      }
+    }
+    const priceA = a.price ?? Number.POSITIVE_INFINITY;
+    const priceB = b.price ?? Number.POSITIVE_INFINITY;
+    if (priceA !== priceB) {
+      return priceA - priceB;
+    }
+    return a.listingId.localeCompare(b.listingId);
+  };
+
+  const pools = new Map<string, TradeupAvailabilityListing[]>();
+  for (const [name, listings] of listingsByName.entries()) {
+    pools.set(name, listings.slice().sort(comparator));
+  }
+
+  const slotResults: TradeupAvailabilitySlotResult[] = [];
+  const missingSlots: number[] = [];
+  for (const slot of slots) {
+    const pool = pools.get(slot.marketHashName);
+    if (!pool || !pool.length) {
+      slotResults.push({ index: slot.index, marketHashName: slot.marketHashName, listing: null });
+      missingSlots.push(slot.index);
+      continue;
+    }
+    const listing = pool.shift() ?? null;
+    slotResults.push({ index: slot.index, marketHashName: slot.marketHashName, listing });
+  }
+
+  slotResults.sort((a, b) => a.index - b.index);
+
+  const floats = slotResults
+    .map((slot) => slot.listing?.float)
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  const assignedAverageFloat = floats.length
+    ? floats.reduce((sum, value) => sum + value, 0) / floats.length
+    : null;
+
+  const groups: Record<string, TradeupAvailabilityListing[]> = {};
+  for (const [name, listings] of listingsByName.entries()) {
+    groups[name] = listings;
+  }
+
+  return {
+    outcome: {
+      marketHashName: outcomeName,
+      minFloat: minFloat ?? null,
+      maxFloat: maxFloat ?? null,
+      rollFloat: rollFloat ?? null,
+    },
+    targetAverageFloat,
+    assignedAverageFloat,
+    slots: slotResults,
+    missingSlots,
+    groups,
   };
 };

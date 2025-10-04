@@ -6,6 +6,7 @@ import {
   fetchSteamCollections,
   fetchTradeupCollections,
   requestTradeupCalculation,
+  requestTradeupAvailability,
   type CollectionInputSummary,
   type CollectionInputsResponse,
   type CollectionTargetExterior,
@@ -31,6 +32,7 @@ import type {
   RowResolution,
   SelectedTarget,
   TradeupInputFormRow,
+  TradeupAvailabilityState,
 } from "./types";
 
 export type {
@@ -78,6 +80,14 @@ export default function useTradeupBuilder() {
   const [calculationError, setCalculationError] = React.useState<string | null>(null);
   const [priceLoading, setPriceLoading] = React.useState(false);
   const [targetPriceOverrides, setTargetPriceOverrides] = React.useState<Record<string, number>>({});
+  const [availabilityState, setAvailabilityState] = React.useState<TradeupAvailabilityState>({
+    activeOutcomeKey: null,
+    loading: false,
+    error: null,
+    result: null,
+    outcomeLabel: null,
+    outcomeMarketHashName: null,
+  });
 
   const buyerToNetRate = 1 + Math.max(0, buyerFeePercent) / 100;
 
@@ -831,6 +841,68 @@ export default function useTradeupBuilder() {
     targetRarity,
   ]);
 
+  const checkAvailability = React.useCallback(
+    async (outcome: TradeupCalculationResponse["outcomes"][number]) => {
+      if (!calculation) {
+        setAvailabilityState({
+          activeOutcomeKey: null,
+          loading: false,
+          error: "Сначала рассчитайте trade-up",
+          result: null,
+          outcomeLabel: null,
+          outcomeMarketHashName: null,
+        });
+        return;
+      }
+
+      const slots = calculation.inputs.map((input, index) => ({
+        index,
+        marketHashName: input.marketHashName,
+      }));
+
+      const outcomeKey = `${outcome.collectionId}:${outcome.marketHashName}`;
+      const outcomeLabel = `${outcome.baseName} (${outcome.exterior})`;
+
+      setAvailabilityState((prev) => ({
+        ...prev,
+        activeOutcomeKey: outcomeKey,
+        loading: true,
+        error: null,
+        outcomeLabel,
+        outcomeMarketHashName: outcome.marketHashName,
+      }));
+
+      try {
+        const payload = {
+          outcome: {
+            marketHashName: outcome.marketHashName,
+            minFloat: outcome.minFloat,
+            maxFloat: outcome.maxFloat,
+            rollFloat: outcome.rollFloat,
+          },
+          slots,
+          limit: 50,
+          targetAverageFloat: calculation.averageFloat,
+        } satisfies Parameters<typeof requestTradeupAvailability>[0];
+        const result = await requestTradeupAvailability(payload);
+        setAvailabilityState((prev) => ({
+          ...prev,
+          loading: false,
+          result,
+          error: null,
+        }));
+      } catch (error: any) {
+        setAvailabilityState((prev) => ({
+          ...prev,
+          loading: false,
+          result: null,
+          error: String(error?.message || error),
+        }));
+      }
+    },
+    [calculation],
+  );
+
   return {
     catalogCollections,
     steamCollections,
@@ -865,5 +937,7 @@ export default function useTradeupBuilder() {
     calculating,
     calculationError,
     floatlessAnalysis,
+    availabilityState,
+    checkAvailability,
   };
 }

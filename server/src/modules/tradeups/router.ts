@@ -1,13 +1,21 @@
 import { Router } from "express";
 import {
   calculateTradeup,
+  checkTradeupAvailability,
   fetchCollectionInputs,
   fetchCollectionTargets,
   fetchSteamCollections,
   getCollectionsCatalog,
+  type TradeupAvailabilityRequest,
   type TradeupRequestPayload,
 } from "./service";
 import type { Exterior } from "../skins/service";
+
+const parseNumber = (value: any): number | undefined => {
+  if (value === null || value === undefined || value === "") return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
 
 /**
  * Приводит тело запроса к валидной структуре TradeupRequestPayload, фильтруя лишние поля.
@@ -22,12 +30,6 @@ const parseBody = (body: any): TradeupRequestPayload => {
     rarityParam === "classified" ? "Classified" : "Covert";
   const options = body?.options && typeof body.options === "object" ? body.options : undefined;
   const targetOverridesRaw = Array.isArray(body?.targetOverrides) ? body.targetOverrides : [];
-
-  const parseNumber = (value: any) => {
-    if (value === null || value === undefined || value === "") return undefined;
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : undefined;
-  };
 
   return {
     inputs: inputs
@@ -69,6 +71,37 @@ const parseBody = (body: any): TradeupRequestPayload => {
         price: parseNumber(override?.price),
       }))
       .filter((override: any) => override.baseName),
+  };
+};
+
+const parseAvailabilityBody = (body: any): TradeupAvailabilityRequest => {
+  const outcomeRaw = body?.outcome ?? {};
+  const slotsRaw = Array.isArray(body?.slots) ? body.slots : [];
+
+  const slots = slotsRaw
+    .map((slot: any, index: number) => {
+      const parsedIndex = parseNumber(slot?.index);
+      return {
+        index: parsedIndex != null ? Math.trunc(parsedIndex) : index,
+        marketHashName: String(slot?.marketHashName || "").trim(),
+      };
+    })
+    .filter((slot) => slot.marketHashName)
+    .slice(0, 10);
+
+  const limitValue = parseNumber(body?.limit);
+  const targetAverage = parseNumber(body?.targetAverageFloat);
+
+  return {
+    outcome: {
+      marketHashName: String(outcomeRaw?.marketHashName || "").trim(),
+      minFloat: parseNumber(outcomeRaw?.minFloat) ?? null,
+      maxFloat: parseNumber(outcomeRaw?.maxFloat) ?? null,
+      rollFloat: parseNumber(outcomeRaw?.rollFloat) ?? null,
+    },
+    slots,
+    limit: limitValue,
+    targetAverageFloat: targetAverage,
   };
 };
 
@@ -135,6 +168,16 @@ export const createTradeupsRouter = () => {
     try {
       const payload = parseBody(request.body);
       const result = await calculateTradeup(payload);
+      response.json(result);
+    } catch (error) {
+      response.status(400).json({ error: String(error) });
+    }
+  });
+
+  router.post("/availability", async (request, response) => {
+    try {
+      const payload = parseAvailabilityBody(request.body);
+      const result = await checkTradeupAvailability(payload);
       response.json(result);
     } catch (error) {
       response.status(400).json({ error: String(error) });

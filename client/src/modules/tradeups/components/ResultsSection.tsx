@@ -1,13 +1,24 @@
 import React from "react";
 import type { TradeupCalculationResponse } from "../services/api";
+import type { TradeupAvailabilityState } from "../hooks/types";
+import AvailabilitySuggestionSection from "./AvailabilitySuggestionSection";
 import { formatNumber, formatPercent } from "../utils/format";
 
 interface ResultsSectionProps {
   calculation: TradeupCalculationResponse;
   totalBuyerCost: number;
+  availabilityState: TradeupAvailabilityState;
+  onCheckAvailability: (
+    outcome: TradeupCalculationResponse["outcomes"][number],
+  ) => void | Promise<void>;
 }
 
-export default function ResultsSection({ calculation, totalBuyerCost }: ResultsSectionProps) {
+export default function ResultsSection({
+  calculation,
+  totalBuyerCost,
+  availabilityState,
+  onCheckAvailability,
+}: ResultsSectionProps) {
   return (
     <section className="mt-4">
       <h3 className="h5">4. Результаты</h3>
@@ -48,12 +59,17 @@ export default function ResultsSection({ calculation, totalBuyerCost }: ResultsS
               <th>Net $ (после комиссии)</th>
               <th>Прибыль</th>
               <th>Вероятность</th>
+              <th>Доступность</th>
             </tr>
           </thead>
           <tbody>
-            {calculation.outcomes.map((outcome) => (
-              <tr key={`${outcome.collectionId}-${outcome.baseName}`}>
-                <td>{`${outcome.baseName} (${outcome.exterior})`}</td>
+            {calculation.outcomes.map((outcome) => {
+              const outcomeKey = `${outcome.collectionId}:${outcome.marketHashName}`;
+              const isChecking =
+                availabilityState.loading && availabilityState.activeOutcomeKey === outcomeKey;
+              return (
+                <tr key={`${outcome.collectionId}-${outcome.baseName}`}>
+                  <td>{`${outcome.baseName} (${outcome.exterior})`}</td>
                 <td>{outcome.collectionName}</td>
                 <td>{outcome.rollFloat.toFixed(5)}</td>
                 <td>{outcome.exterior}</td>
@@ -61,11 +77,26 @@ export default function ResultsSection({ calculation, totalBuyerCost }: ResultsS
                 <td>{outcome.netPrice != null ? `$${formatNumber(outcome.netPrice)}` : "—"}</td>
                 <td>{outcome.netPrice != null ? `$${formatNumber(outcome.netPrice - totalBuyerCost)}` : "—"}</td>
                 <td>{formatPercent(outcome.probability)}</td>
-              </tr>
-            ))}
+                  <td>
+                    <button
+                      type="button"
+                      className="btn btn-outline-info btn-sm"
+                      onClick={() => onCheckAvailability(outcome)}
+                      disabled={isChecking}
+                    >
+                      {isChecking ? "Проверяем…" : "Проверить наличие"}
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
+      <AvailabilitySuggestionSection
+        availabilityState={availabilityState}
+        inputs={calculation.inputs}
+      />
     </section>
   );
 }

@@ -135,6 +135,56 @@ export interface TradeupCalculationResponse {
   warnings: string[];
 }
 
+export interface TradeupAvailabilityOutcomePayload {
+  marketHashName: string;
+  minFloat?: number | null;
+  maxFloat?: number | null;
+  rollFloat?: number | null;
+}
+
+export interface TradeupAvailabilitySlotPayload {
+  index: number;
+  marketHashName: string;
+}
+
+export interface TradeupAvailabilityRequestPayload {
+  outcome: TradeupAvailabilityOutcomePayload;
+  slots: TradeupAvailabilitySlotPayload[];
+  limit?: number;
+  targetAverageFloat?: number | null;
+}
+
+export interface TradeupAvailabilityListing {
+  listingId: string | null;
+  assetId: string | null;
+  marketHashName: string;
+  price: number | null;
+  float: number | null;
+  floatError?: string | null;
+  inspectLink: string | null;
+  sellerId: string | null;
+}
+
+export interface TradeupAvailabilitySlotResult {
+  index: number;
+  marketHashName: string;
+  listing: TradeupAvailabilityListing | null;
+}
+
+export interface TradeupAvailabilityResponse {
+  outcome: {
+    marketHashName: string;
+    minFloat: number | null;
+    maxFloat: number | null;
+    rollFloat: number | null;
+  };
+  targetAverageFloat: number | null;
+  assignedAverageFloat: number | null;
+  slots: TradeupAvailabilitySlotResult[];
+  missingSlots: number[];
+  groups: Record<string, TradeupAvailabilityListing[]>;
+}
+
 /** Загружает локальный справочник коллекций с float-диапазонами. */
 export async function fetchTradeupCollections() {
   const response = await fetch("/api/tradeups/collections");
@@ -194,6 +244,19 @@ export async function requestTradeupCalculation(payload: TradeupCalculationPaylo
     throw new Error(text || `HTTP ${response.status}`);
   }
   return (await response.json()) as TradeupCalculationResponse;
+}
+
+export async function requestTradeupAvailability(payload: TradeupAvailabilityRequestPayload) {
+  const response = await fetch("/api/tradeups/availability", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || `HTTP ${response.status}`);
+  }
+  return (await response.json()) as TradeupAvailabilityResponse;
 }
 
 export { batchPriceOverview };
