@@ -4,7 +4,7 @@
  * Здесь же реализованы вспомогательные структуры и кеши для сопоставления
  * коллекций Steam с нашим справочником float-диапазонов.
  */
-import axios from "axios";
+import axios, { isAxiosError } from "axios";
 import {
   COLLECTIONS_WITH_FLOAT,
   COLLECTIONS_WITH_FLOAT_MAP,
@@ -859,6 +859,18 @@ const fetchFloatForListing = async (
       }
       throw new Error("float_missing");
     } catch (error: any) {
+      if (isAxiosError(error) && error.response?.status === 429) {
+        if (attempt < maxAttempts - 1) {
+          const retryAfterHeader = error.response.headers?.["retry-after"];
+          const retryAfterSeconds = Number(retryAfterHeader);
+          const delay = Number.isFinite(retryAfterSeconds)
+            ? retryAfterSeconds * 1000
+            : FLOAT_REQUEST_INTERVAL_MS;
+          await sleep(delay);
+          continue;
+        }
+        return { ...listing, float: null, floatError: "float_rate_limited" };
+      }
       if (attempt === maxAttempts - 1) {
         return { ...listing, float: null, floatError: String(error?.message || error) };
       }

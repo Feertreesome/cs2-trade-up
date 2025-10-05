@@ -15,6 +15,15 @@ const formatFloat = (value: number | null | undefined, fallback = "—") => {
   return value.toFixed(5);
 };
 
+const FLOAT_ERROR_MESSAGES: Record<string, string> = {
+  inspect_link_missing: "Нет inspect-ссылки",
+  float_missing: "Не удалось получить float",
+  float_rate_limited: "Сервис проверки float временно ограничил запросы. Попробуйте позже.",
+  "Request failed with status code 429": "Сервис проверки float временно ограничил запросы. Попробуйте позже.",
+};
+
+const formatFloatError = (error: string) => FLOAT_ERROR_MESSAGES[error] ?? error;
+
 export default function AvailabilitySuggestionSection({
   availabilityState,
   inputs,
@@ -70,7 +79,7 @@ export default function AvailabilitySuggestionSection({
                   if (listing?.float != null) {
                     floatText = formatFloat(listing.float);
                   } else if (listing?.floatError) {
-                    floatText = `Ошибка: ${listing.floatError}`;
+                    floatText = `Ошибка: ${formatFloatError(listing.floatError)}`;
                   }
                   return (
                     <tr key={index}>
