@@ -4,7 +4,7 @@
  * Здесь же реализованы вспомогательные структуры и кеши для сопоставления
  * коллекций Steam с нашим справочником float-диапазонов.
  */
-import axios from "axios";
+import axios, { isAxiosError } from "axios";
 import {
   COLLECTIONS_WITH_FLOAT,
   COLLECTIONS_WITH_FLOAT_MAP,
@@ -842,7 +842,10 @@ const fetchFloatForListing = async (
   }
 
   const maxAttempts = 3;
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+  let attempt = 0;
+  // Повторяем запрос, пока не получим float или не исчерпаем лимит попыток для
+  // ошибок, не связанных с rate limit. Для 429 ждём и пытаемся снова.
+  for (;;) {
     try {
       const response = await enqueueFloatRequest(() =>
         axios.get<CsgoFloatResponse>(FLOAT_API_ENDPOINT, {
@@ -859,9 +862,20 @@ const fetchFloatForListing = async (
       }
       throw new Error("float_missing");
     } catch (error: any) {
-      if (attempt === maxAttempts - 1) {
+      if (isAxiosError(error) && error.response?.status === 429) {
+        const retryAfterHeader = error.response.headers?.["retry-after"];
+        const retryAfterSeconds = Number(retryAfterHeader);
+        const delay = Number.isFinite(retryAfterSeconds)
+          ? retryAfterSeconds * 1000
+          : FLOAT_REQUEST_INTERVAL_MS;
+        await sleep(delay);
+        continue;
+      }
+      attempt += 1;
+      if (attempt >= maxAttempts) {
         return { ...listing, float: null, floatError: String(error?.message || error) };
       }
+      await sleep(FLOAT_REQUEST_INTERVAL_MS);
     }
   }
 
