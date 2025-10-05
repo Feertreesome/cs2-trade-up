@@ -9,6 +9,7 @@ interface CollectionSelectorSectionProps {
   activeCollectionTag: string | null;
   selectCollection: (tag: string) => void;
   selectedCollectionDetails: TradeupCollection[];
+  singleCovertCollectionTags: Set<string>;
 }
 
 export default function CollectionSelectorSection({
@@ -19,7 +20,20 @@ export default function CollectionSelectorSection({
   activeCollectionTag,
   selectCollection,
   selectedCollectionDetails,
+  singleCovertCollectionTags,
 }: CollectionSelectorSectionProps) {
+  const [singleCovertOnly, setSingleCovertOnly] = React.useState(false);
+
+  const collectionsToShow = React.useMemo(() => {
+    if (!singleCovertOnly) return steamCollections;
+    return steamCollections.filter((collection) =>
+      singleCovertCollectionTags.has(collection.tag),
+    );
+  }, [singleCovertOnly, steamCollections, singleCovertCollectionTags]);
+
+  const canFilterSingleCovert = singleCovertCollectionTags.size > 0;
+  const showEmptyState = singleCovertOnly && collectionsToShow.length === 0;
+
   return (
     <section>
       <h3 className="h5">1. Выбор коллекции</h3>
@@ -32,14 +46,27 @@ export default function CollectionSelectorSection({
         >
           {loadingSteamCollections ? "Загрузка…" : "Get all collections"}
         </button>
+        <div className="form-check form-switch text-nowrap small mb-0">
+          <input
+            className="form-check-input"
+            type="checkbox"
+            id="singleCovertOnly"
+            checked={singleCovertOnly && canFilterSingleCovert}
+            onChange={(event) => setSingleCovertOnly(event.target.checked)}
+            disabled={!canFilterSingleCovert}
+          />
+          <label className="form-check-label" htmlFor="singleCovertOnly">
+            Только 1 Covert
+          </label>
+        </div>
         {steamCollections.length === 0 && !loadingSteamCollections && (
           <span className="text-muted small">Нажмите кнопку, чтобы получить список коллекций.</span>
         )}
       </div>
       {steamCollectionError && <div className="text-danger mb-2">{steamCollectionError}</div>}
-      {steamCollections.length > 0 && (
+      {collectionsToShow.length > 0 && (
         <div className="tradeup-collections-list">
-          {steamCollections.map((collection) => {
+          {collectionsToShow.map((collection) => {
             const isActive = collection.tag === activeCollectionTag;
             const supported = Boolean(collection.collectionId);
             return (
@@ -55,6 +82,9 @@ export default function CollectionSelectorSection({
             );
           })}
         </div>
+      )}
+      {showEmptyState && (
+        <div className="text-muted small">Нет коллекций с одним Covert скином.</div>
       )}
       {selectedCollectionDetails.length > 0 && (
         <div className="mt-3">

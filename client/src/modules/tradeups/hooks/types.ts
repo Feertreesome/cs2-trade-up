@@ -134,6 +134,7 @@ export interface TradeupBuilderState {
   totalBuyerCost: number;
   totalNetCost: number;
   selectedCollectionDetails: TradeupCollection[];
+  singleCovertCollectionTags: Set<string>;
   autofillPrices: (namesOverride?: string[]) => Promise<void> | void;
   priceLoading: boolean;
   calculate: () => Promise<void>;
