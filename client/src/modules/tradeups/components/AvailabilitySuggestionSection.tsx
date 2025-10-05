@@ -44,7 +44,11 @@ export default function AvailabilitySuggestionSection({
       <h4 className="h6 mb-2">
         Подбор входов{outcomeLabel ? ` • ${outcomeLabel}` : ""}
       </h4>
-      {loading && <div className="text-info small mb-2">Поиск доступных предметов…</div>}
+      {loading && (
+        <div className="text-info small mb-2">
+          Поиск доступных предметов… Проверка float может занять больше времени.
+        </div>
+      )}
       {error && <div className="text-danger small mb-2">{error}</div>}
       {result && (
         <>

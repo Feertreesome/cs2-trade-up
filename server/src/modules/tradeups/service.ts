@@ -842,7 +842,10 @@ const fetchFloatForListing = async (
   }
 
   const maxAttempts = 3;
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+  let attempt = 0;
+  // Повторяем запрос, пока не получим float или не исчерпаем лимит попыток для
+  // ошибок, не связанных с rate limit. Для 429 ждём и пытаемся снова.
+  for (;;) {
     try {
       const response = await enqueueFloatRequest(() =>
         axios.get<CsgoFloatResponse>(FLOAT_API_ENDPOINT, {
@@ -860,20 +863,19 @@ const fetchFloatForListing = async (
       throw new Error("float_missing");
     } catch (error: any) {
       if (isAxiosError(error) && error.response?.status === 429) {
-        if (attempt < maxAttempts - 1) {
-          const retryAfterHeader = error.response.headers?.["retry-after"];
-          const retryAfterSeconds = Number(retryAfterHeader);
-          const delay = Number.isFinite(retryAfterSeconds)
-            ? retryAfterSeconds * 1000
-            : FLOAT_REQUEST_INTERVAL_MS;
-          await sleep(delay);
-          continue;
-        }
-        return { ...listing, float: null, floatError: "float_rate_limited" };
+        const retryAfterHeader = error.response.headers?.["retry-after"];
+        const retryAfterSeconds = Number(retryAfterHeader);
+        const delay = Number.isFinite(retryAfterSeconds)
+          ? retryAfterSeconds * 1000
+          : FLOAT_REQUEST_INTERVAL_MS;
+        await sleep(delay);
+        continue;
       }
-      if (attempt === maxAttempts - 1) {
+      attempt += 1;
+      if (attempt >= maxAttempts) {
         return { ...listing, float: null, floatError: String(error?.message || error) };
       }
+      await sleep(FLOAT_REQUEST_INTERVAL_MS);
     }
   }
 
