@@ -4,6 +4,7 @@ import type {
   CollectionInputsResponse,
   CollectionTargetsResponse,
   TargetRarity,
+  TradeupAvailabilityResponse,
   TradeupCalculationResponse,
   TradeupCollection,
 } from "../services/api";
@@ -140,4 +141,17 @@ export interface TradeupBuilderState {
   calculating: boolean;
   calculationError: string | null;
   floatlessAnalysis: FloatlessAnalysisResult;
+  availabilityState: TradeupAvailabilityState;
+  checkAvailability: (
+    outcome: TradeupCalculationResponse["outcomes"][number],
+  ) => Promise<void>;
+}
+
+export interface TradeupAvailabilityState {
+  activeOutcomeKey: string | null;
+  loading: boolean;
+  error: string | null;
+  result: TradeupAvailabilityResponse | null;
+  outcomeLabel: string | null;
+  outcomeMarketHashName: string | null;
 }

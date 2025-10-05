@@ -46,6 +46,8 @@ export default function TradeupBuilder() {
     calculating,
     calculationError,
     floatlessAnalysis,
+    availabilityState,
+    checkAvailability,
   } = useTradeupBuilder();
 
   return (
@@ -110,7 +112,14 @@ export default function TradeupBuilder() {
 
       <FloatlessAnalysisSection floatlessAnalysis={floatlessAnalysis} />
 
-      {calculation && <ResultsSection calculation={calculation} totalBuyerCost={totalBuyerCost} />}
+      {calculation && (
+        <ResultsSection
+          calculation={calculation}
+          totalBuyerCost={totalBuyerCost}
+          availabilityState={availabilityState}
+          onCheckAvailability={checkAvailability}
+        />
+      )}
     </div>
   );
 }
