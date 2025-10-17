@@ -2,14 +2,13 @@
   "name": "cs2-tradeup-ev-server",
   "version": "0.1.0",
   "private": true,
-  "type": "module",
   "scripts": {
-    "dev": "node --experimental-specifier-resolution=node --loader ts-node/esm src/index.ts",
+    "dev": "ts-node --project tsconfig.json src/index.ts",
     "build": "tsc -p .",
     "start": "node dist/index.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate deploy",
-    "worker": "node --experimental-specifier-resolution=node --loader ts-node/esm src/worker.ts"
+    "worker": "ts-node --project tsconfig.json src/worker.ts"
   },
   "dependencies": {
     "bullmq": "^5.12.2",
