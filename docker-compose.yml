@@ -21,34 +21,33 @@ services:
       - "6379:6379"
 
   api:
-    image: node:20-alpine
-    working_dir: /app
+    build: .
+    image: cs2-tradeup-ev
+    restart: unless-stopped
     depends_on:
       - postgres
       - redis
     environment:
-      NODE_ENV: development
+      NODE_ENV: production
       DATABASE_URL: postgresql://cs2:cs2@postgres:5432/cs2tradeup?schema=public
       REDIS_URL: redis://redis:6379
       PORT: 5174
-    volumes:
-      - ./:/app
-    command: ["npm", "run", "server:dev"]
+    ports:
+      - "5174:5174"
+    command: ["sh", "-c", "npm --workspace=cs2-tradeup-ev-server run prisma:migrate && node server/dist/index.js"]
 
   worker:
-    image: node:20-alpine
-    working_dir: /app
+    image: cs2-tradeup-ev
+    restart: unless-stopped
     depends_on:
       - postgres
       - redis
     environment:
-      NODE_ENV: development
+      NODE_ENV: production
       DATABASE_URL: postgresql://cs2:cs2@postgres:5432/cs2tradeup?schema=public
       REDIS_URL: redis://redis:6379
       CATALOG_SYNC_CONCURRENCY: 1
-    volumes:
-      - ./:/app
-    command: ["npm", "--workspace", "cs2-tradeup-ev-server", "run", "worker"]
+    command: ["sh", "-c", "npm --workspace=cs2-tradeup-ev-server run prisma:migrate && node server/dist/worker.js"]
 
 volumes:
   postgres_data:

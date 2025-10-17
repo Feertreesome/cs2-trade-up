@@ -29,18 +29,13 @@ npm --workspace=cs2-tradeup-ev-server run prisma:generate
 
 ## Быстрый старт через Docker Compose
 
-1. Убедитесь, что зависимости установлены и Prisma Client сгенерирован (см. раздел выше).
-2. Поднимите весь стек (PostgreSQL, Redis, API и воркер) одной командой:
+1. Соберите и запустите весь стек (PostgreSQL, Redis, API и воркер) одной командой:
    ```bash
-   docker compose up
+   docker compose up --build
    ```
-   При первом запуске Docker примонтирует текущий репозиторий внутрь контейнеров, и Node сразу использует локальные
-   `node_modules`.
-3. Инициализируйте схему базы данных (команда выполнится в контейнере API):
-   ```bash
-   docker compose exec api npm --workspace=cs2-tradeup-ev-server run prisma:migrate
-   ```
-4. После того как сервисы стартовали, инициируйте синхронизацию каталога:
+   Dockerfile устанавливает зависимости, собирает сервер и автоматически запускает миграции перед стартом API и
+   воркера. Повторные запуски можно выполнять без флага `--build`, если код не менялся.
+2. После того как сервисы стартовали, инициируйте синхронизацию каталога:
    ```bash
    curl -X POST http://localhost:5174/api/tradeups/collections/sync
    ```
