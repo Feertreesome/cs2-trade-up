@@ -10,6 +10,12 @@ import {
   type TradeupRequestPayload,
 } from "./service";
 import type { Exterior } from "../skins/service";
+import {
+  requestFullCatalogSync,
+  getSyncJobStatus,
+  getActiveSyncJob,
+  listSyncJobs,
+} from "../sync/service";
 
 const parseNumber = (value: any): number | undefined => {
   if (value === null || value === undefined || value === "") return undefined;
@@ -86,7 +92,7 @@ const parseAvailabilityBody = (body: any): TradeupAvailabilityRequest => {
         marketHashName: String(slot?.marketHashName || "").trim(),
       };
     })
-    .filter((slot) => slot.marketHashName)
+    .filter((slot: { marketHashName: string }) => slot.marketHashName)
     .slice(0, 10);
 
   const limitValue = parseNumber(body?.limit);
@@ -124,6 +130,38 @@ export const createTradeupsRouter = () => {
       response.json({ collections });
     } catch (error) {
       response.status(503).json({ error: String(error) });
+    }
+  });
+
+  router.post("/collections/sync", async (_request, response) => {
+    try {
+      const job = await requestFullCatalogSync();
+      const statusCode = job.status === "pending" || job.status === "running" ? 202 : 200;
+      response.status(statusCode).json({ job });
+    } catch (error) {
+      response.status(500).json({ error: String(error) });
+    }
+  });
+
+  router.get("/collections/sync", async (_request, response) => {
+    try {
+      const [active, jobs] = await Promise.all([getActiveSyncJob(), listSyncJobs()]);
+      response.json({ active, jobs });
+    } catch (error) {
+      response.status(500).json({ error: String(error) });
+    }
+  });
+
+  router.get("/collections/sync/:jobId", async (request, response) => {
+    const jobId = String(request.params?.jobId ?? "").trim();
+    try {
+      const job = jobId ? await getSyncJobStatus(jobId) : undefined;
+      if (!job) {
+        return response.status(404).json({ error: "job_not_found" });
+      }
+      return response.json({ job });
+    } catch (error) {
+      return response.status(500).json({ error: String(error) });
     }
   });
 

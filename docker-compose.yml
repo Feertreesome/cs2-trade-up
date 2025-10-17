@@ -1,0 +1,54 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: cs2
+      POSTGRES_PASSWORD: cs2
+      POSTGRES_DB: cs2tradeup
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
+    ports:
+      - "6379:6379"
+
+  api:
+    image: node:20-alpine
+    working_dir: /app
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://cs2:cs2@postgres:5432/cs2tradeup?schema=public
+      REDIS_URL: redis://redis:6379
+      PORT: 5174
+    volumes:
+      - ./:/app
+    command: ["npm", "run", "server:dev"]
+
+  worker:
+    image: node:20-alpine
+    working_dir: /app
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://cs2:cs2@postgres:5432/cs2tradeup?schema=public
+      REDIS_URL: redis://redis:6379
+      CATALOG_SYNC_CONCURRENCY: 1
+    volumes:
+      - ./:/app
+    command: ["npm", "--workspace", "cs2-tradeup-ev-server", "run", "worker"]
+
+volumes:
+  postgres_data:

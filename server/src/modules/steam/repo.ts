@@ -5,6 +5,7 @@ import axios, {
 } from "axios";
 import { LRUCache } from "lru-cache";
 import { RATE_MAX_MS, RATE_MIN_MS, START_RATE_MS } from "../../config";
+import { recordPriceSnapshot } from "../../database/prices";
 
 /** Базовые константы Steam Community Market */
 const APP_ID = 730;
@@ -274,6 +275,7 @@ export const getPriceUSD = async (
     }
 
     memoryCache.set(cacheKey, parsed);
+    void recordPriceSnapshot(marketHashName, parsed);
     return { price: parsed };
   } catch (error) {
     console.error(`getPriceUSD error for ${marketHashName}`, error);
@@ -293,6 +295,15 @@ export interface SearchItem {
   market_hash_name: string;
   sell_listings: number;
   price: number | null;
+  market_name?: string;
+  name?: string;
+  app_icon?: string;
+  app_name?: string;
+  icon_url?: string;
+  type?: string;
+  classid?: string;
+  instanceid?: string;
+  tradable?: boolean;
 }
 
 export interface SteamCollectionTag {
@@ -336,12 +347,32 @@ export const searchByRarity = async ({
   const payload = await steamGetData<SearchRenderResponse>(url);
 
   const total = payload?.total_count ?? 0;
-  const items: SearchItem[] = (payload?.results ?? []).map((result) => ({
-    market_hash_name: result.hash_name,
-    // Steam иногда возвращает sell_listings строкой, нормализуем в число
-    sell_listings: Number.parseInt(String(result.sell_listings ?? 0), 10) || 0,
-    price: parseSteamPriceText(result.sell_price_text ?? ""),
-  }));
+  const items: SearchItem[] = (payload?.results ?? []).map((result) => {
+    const description = result.asset_description ?? {};
+    const rawTradable = description?.tradable;
+    const tradable =
+      typeof rawTradable === "number"
+        ? rawTradable === 1
+        : typeof rawTradable === "boolean"
+          ? rawTradable
+          : undefined;
+
+    return {
+      market_hash_name: result.hash_name,
+      // Steam иногда возвращает sell_listings строкой, нормализуем в число
+      sell_listings: Number.parseInt(String(result.sell_listings ?? 0), 10) || 0,
+      price: parseSteamPriceText(result.sell_price_text ?? ""),
+      market_name: description?.market_name ?? description?.name ?? result.name,
+      name: result.name,
+      app_icon: result.app_icon,
+      app_name: result.app_name,
+      icon_url: description?.icon_url,
+      type: description?.type,
+      classid: description?.classid,
+      instanceid: description?.instanceid,
+      tradable,
+    };
+  });
 
   const typed = { total, items };
   memoryCache.set(cacheKey, typed);
@@ -457,11 +488,31 @@ const fetchCollectionPage = async ({
 
   const payload = await steamGetData<SearchRenderResponse>(url);
   const total = payload?.total_count ?? 0;
-  const items: SearchItem[] = (payload?.results ?? []).map((result) => ({
-    market_hash_name: result.hash_name,
-    sell_listings: Number.parseInt(String(result.sell_listings ?? 0), 10) || 0,
-    price: parseSteamPriceText(result.sell_price_text ?? ""),
-  }));
+  const items: SearchItem[] = (payload?.results ?? []).map((result) => {
+    const description = result.asset_description ?? {};
+    const rawTradable = description?.tradable;
+    const tradable =
+      typeof rawTradable === "number"
+        ? rawTradable === 1
+        : typeof rawTradable === "boolean"
+          ? rawTradable
+          : undefined;
+
+    return {
+      market_hash_name: result.hash_name,
+      sell_listings: Number.parseInt(String(result.sell_listings ?? 0), 10) || 0,
+      price: parseSteamPriceText(result.sell_price_text ?? ""),
+      market_name: description?.market_name ?? description?.name ?? result.name,
+      name: result.name,
+      app_icon: result.app_icon,
+      app_name: result.app_name,
+      icon_url: description?.icon_url,
+      type: description?.type,
+      classid: description?.classid,
+      instanceid: description?.instanceid,
+      tradable,
+    };
+  });
 
   const typed = { total, items };
   memoryCache.set(cacheKey, typed);

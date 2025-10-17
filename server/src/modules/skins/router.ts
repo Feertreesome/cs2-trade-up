@@ -3,10 +3,10 @@ import type { AxiosError } from "axios";
 import { LRUCache } from "lru-cache";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { searchByRarity, fetchListingTotalCount } from "../steam/repo";
+import { fetchListingTotalCount } from "../steam/repo";
 import { STEAM_PAGE_SIZE } from "../../config";
 import { parseBoolean } from "./validators";
-import { ALL_RARITIES, getTotals } from "./service";
+import { ALL_RARITIES, getTotals, getSkinsPage, getPersistedNames } from "./service";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -75,7 +75,12 @@ export const createSkinsRouter = (): Router => {
       const count = Math.max(1, Math.min(30, parseInt(String(request.query.count ?? "30"), 10)));
       const normalOnly = parseBoolean(request.query.normalOnly, true);
 
-      const { items, total } = await searchByRarity({ rarity: rarity as any, start, count, normalOnly });
+      const { items, total } = await getSkinsPage({
+        rarity: rarity as (typeof ALL_RARITIES)[number],
+        start,
+        count,
+        normalOnly,
+      });
       return response.json({ rarity, start, count: items.length, total, items });
     } catch (error) {
       return handleError(response, error);
@@ -94,27 +99,30 @@ export const createSkinsRouter = (): Router => {
       }
       const normalOnly = parseBoolean(request.query.normalOnly, true);
 
-      const names: string[] = [];
-      let start = 0;
-      while (true) {
-        try {
-          const { items, total } = await searchByRarity({
-            rarity: rarity as any,
-            start,
-            count: STEAM_PAGE_SIZE,
-            normalOnly,
-          });
-          if (!items.length) break;
-          names.push(...items.map((i) => i.market_hash_name));
-          start += items.length;
-          if (start >= total) break;
-        } catch (err) {
-          const status = (err as AxiosError)?.response?.status;
-          if (status === 429) {
-            await sleep(16_000);
-            continue;
+      let names = await getPersistedNames(rarity as any, normalOnly);
+      if (!names || names.length === 0) {
+        names = [];
+        let start = 0;
+        while (true) {
+          try {
+            const { items, total } = await getSkinsPage({
+              rarity: rarity as (typeof ALL_RARITIES)[number],
+              start,
+              count: STEAM_PAGE_SIZE,
+              normalOnly,
+            });
+            if (!items.length) break;
+            names.push(...items.map((i) => i.market_hash_name));
+            start += items.length;
+            if (start >= total) break;
+          } catch (err) {
+            const status = (err as AxiosError)?.response?.status;
+            if (status === 429) {
+              await sleep(16_000);
+              continue;
+            }
+            throw err;
           }
-          throw err;
         }
       }
 
@@ -144,9 +152,9 @@ export const createSkinsRouter = (): Router => {
       for (let i = 0; i < names.length; i += concurrency) {
         const slice = names.slice(i, i + concurrency);
         const totals = await Promise.all(
-          slice.map((name) => fetchListingTotalCount(String(name))),
+          slice.map((name: string) => fetchListingTotalCount(String(name))),
         );
-        slice.forEach((name, idx) => {
+        slice.forEach((name: string, idx: number) => {
           result[name] = totals[idx];
         });
       }

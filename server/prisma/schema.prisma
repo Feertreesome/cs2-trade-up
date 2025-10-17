@@ -1,0 +1,69 @@
+// Prisma schema for CS2 Trade-up database
+// Stores synchronized Steam collections and skin metadata.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Collection {
+  id                 String   @id @default(cuid())
+  steamTag           String   @unique
+  name               String
+  normalizedName     String
+  localCollectionId  String?  @map("local_collection_id")
+  lastDiscoveredCount Int?    @map("last_discovered_count")
+  totalItems         Int      @default(0) @map("total_items")
+  normalItemCount    Int      @default(0) @map("normal_item_count")
+  lastSyncedAt       DateTime? @map("last_synced_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  skins Skin[]
+
+  @@index([normalizedName])
+  @@index([localCollectionId])
+}
+
+model Skin {
+  id             String   @id @default(cuid())
+  collectionId   String   @map("collection_id")
+  collection     Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  marketHashName String   @unique @map("market_hash_name")
+  marketName     String   @map("market_name")
+  baseName       String   @map("base_name")
+  exterior       String
+  rarity         String
+  weaponType     String?  @map("weapon_type")
+  isStatTrak     Boolean  @default(false) @map("is_stattrak")
+  isSouvenir     Boolean  @default(false) @map("is_souvenir")
+  sellListings   Int      @default(0) @map("sell_listings")
+  lastKnownPrice Float?   @map("last_known_price")
+  lastPriceAt    DateTime? @map("last_price_at")
+  classId        String?  @map("class_id")
+  instanceId     String?  @map("instance_id")
+  iconUrl        String?  @map("icon_url")
+  tradable       Boolean?
+  floatMin       Float?   @map("float_min")
+  floatMax       Float?   @map("float_max")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  priceSnapshots PriceSnapshot[]
+
+  @@index([collectionId, rarity, isStatTrak, isSouvenir])
+  @@index([rarity, isStatTrak, isSouvenir])
+}
+
+model PriceSnapshot {
+  id        String   @id @default(cuid())
+  skinId    String   @map("skin_id")
+  skin      Skin     @relation(fields: [skinId], references: [id], onDelete: Cascade)
+  priceUsd  Float?   @map("price_usd")
+  takenAt   DateTime @default(now()) @map("taken_at")
+}
+
