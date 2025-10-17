@@ -5,15 +5,10 @@
  * коллекций Steam с нашим справочником float-диапазонов.
  */
 import axios from "axios";
-import {
-  COLLECTIONS_WITH_FLOAT,
-  COLLECTIONS_WITH_FLOAT_MAP,
-  COLLECTIONS_WITH_FLOAT_BY_NAME,
-  COVERT_FLOAT_BY_BASENAME,
-  CLASSIFIED_FLOAT_BY_BASENAME,
-  rebuildCollectionFloatCaches,
-  type CollectionFloatCatalogEntry,
-  type CollectionFloatRange,
+import * as collectionFloatData from "../../../../data/CollectionsWithFloat";
+import type {
+  CollectionFloatCatalogEntry,
+  CollectionFloatRange,
 } from "../../../../data/CollectionsWithFloat";
 import { STEAM_MAX_AUTO_LIMIT, STEAM_PAGE_SIZE } from "../../config";
 import {
@@ -53,6 +48,15 @@ export type {
   CollectionInputsResult,
   SteamCollectionSummary,
 } from "./types";
+
+const {
+  COLLECTIONS_WITH_FLOAT,
+  COLLECTIONS_WITH_FLOAT_MAP,
+  COLLECTIONS_WITH_FLOAT_BY_NAME,
+  COVERT_FLOAT_BY_BASENAME,
+  CLASSIFIED_FLOAT_BY_BASENAME,
+  rebuildCollectionFloatCaches,
+} = collectionFloatData;
 
 const DEFAULT_BUYER_TO_NET = 1.15;
 
