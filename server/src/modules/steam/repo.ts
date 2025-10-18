@@ -110,6 +110,23 @@ const MAX_PARALLEL_REQUESTS = Math.max(
 );
 const MAX_429_STREAK = Math.max(10, Number(process.env.STEAM_MAX_429_STREAK ?? 60));
 const BASE_RETRY_DELAY_MS = 900;
+const GENERAL_MAX_ATTEMPTS = Math.max(5, Number(process.env.STEAM_MAX_GENERAL_ATTEMPTS ?? 7));
+const LONG_RETRY_STEP_MS = Math.max(
+  60_000,
+  Number(process.env.STEAM_LONG_RETRY_STEP_MS ?? 120_000),
+);
+const LONG_RETRY_MAX_MS = Math.max(
+  LONG_RETRY_STEP_MS,
+  Number(process.env.STEAM_LONG_RETRY_MAX_MS ?? 15 * 60_000),
+);
+const BASE_429_COOLDOWN_MS = Math.max(
+  45_000,
+  Number(process.env.STEAM_429_BASE_COOLDOWN_MS ?? 60_000),
+);
+const MAX_429_COOLDOWN_MS = Math.max(
+  BASE_429_COOLDOWN_MS,
+  Number(process.env.STEAM_429_MAX_COOLDOWN_MS ?? 10 * 60_000),
+);
 
 /**
  * Кладёт вызов в глобальную очередь, ограничивая параллелизм запросов к Steam.
@@ -158,7 +175,7 @@ export const steamGet = async <T = unknown>(
   requestConfig?: AxiosRequestConfig,
 ): Promise<AxiosResponse<T>> =>
   enqueue<AxiosResponse<T>>(async () => {
-    const maxAttempts = 7;
+    const maxAttempts = GENERAL_MAX_ATTEMPTS;
     let attempt = 0;
     let consecutive429 = 0;
 
@@ -180,16 +197,40 @@ export const steamGet = async <T = unknown>(
 
         const is429 = status === 429;
         if (is429) {
-          consecutive429 += 1;
+          consecutive429 = Math.min(consecutive429 + 1, MAX_429_STREAK * 100);
           bumpRate();
-          cooldownUntilTs = Date.now() + 60_000; // более длительный «отдых»
+          const now = Date.now();
+          const streakBlock = Math.floor((consecutive429 - 1) / MAX_429_STREAK);
+          const forcedPause = Math.min(
+            MAX_429_COOLDOWN_MS,
+            BASE_429_COOLDOWN_MS * (streakBlock + 1),
+          );
+          cooldownUntilTs = Math.max(cooldownUntilTs, now + forcedPause);
           if (consecutive429 >= MAX_429_STREAK) {
-            throw error;
+            console.warn(
+              `steamGet: ${consecutive429} consecutive 429 responses for ${url}, pausing for ${forcedPause}ms`,
+            );
+            await sleep(withJitter(forcedPause));
+            continue;
           }
         } else {
           attempt += 1;
           consecutive429 = 0;
-          if (attempt >= maxAttempts) throw error;
+          if (attempt >= maxAttempts) {
+            const penaltyStep = attempt - maxAttempts + 1;
+            const forcedPause = Math.min(
+              LONG_RETRY_MAX_MS,
+              LONG_RETRY_STEP_MS * penaltyStep,
+            );
+            console.warn(
+              `steamGet: ${attempt} retryable errors for ${url}, pausing for ${forcedPause}ms before retrying`,
+            );
+            const now = Date.now();
+            cooldownUntilTs = Math.max(cooldownUntilTs, now + forcedPause);
+            await sleep(withJitter(forcedPause));
+            attempt = Math.max(0, Math.floor(maxAttempts / 2));
+            continue;
+          }
         }
 
         const effectiveAttempt = is429 ? Math.min(consecutive429, maxAttempts) : attempt;
