@@ -63,7 +63,16 @@ const queueName = process.env.CATALOG_SYNC_QUEUE ?? "catalog-sync";
 
 export const catalogSyncQueue = new Queue<CatalogSyncJobData, void, CatalogSyncJobName>(queueName, {
   connection: redisConnection,
+  limiter: {
+    max: 1,
+    duration: 1100,
+  },
   defaultJobOptions: {
+    attempts: 8,
+    backoff: {
+      type: "exponential",
+      delay: 2000,
+    },
     removeOnComplete: {
       age: 60 * 60 * 24,
       count: 10,
