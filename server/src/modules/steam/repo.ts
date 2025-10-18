@@ -95,15 +95,39 @@ const parseRetryAfter = (value: unknown): number | undefined => {
 /** Глобальная очередь с адаптивным троттлингом */
 let requestPauseMs = START_RATE_MS;
 let cooldownUntilTs = 0;
-const queue: Array<{
-  run: () => Promise<any>;
-  resolve: (v: any) => void;
+type InternalJob<T = any> = {
+  run: () => Promise<T>;
+  resolve: (v: T) => void;
   reject: (e: unknown) => void;
-}> = [];
+  attempts: number;
+};
+
+const RETRY_BASE_MS = 2_000;
+const RETRY_MAX_MS = 60_000;
+
+const queue: Array<InternalJob> = [];
 let queueRunning = false;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const withJitter = (ms: number) => Math.floor(ms * (0.8 + Math.random() * 0.4));
+const isNetRetriable = (err: any) => {
+  const status = err?.response?.status as number | undefined;
+  return (
+    err?.name === "RateLimitError" ||
+    status === 429 ||
+    (typeof status === "number" && status >= 500 && status < 600) ||
+    ["ECONNRESET", "ETIMEDOUT", "EAI_AGAIN"].includes(err?.code)
+  );
+};
+
+const computeRetryDelay = (err: any, attempts: number) => {
+  const retryAfter = err?.retryAfterMs as number | undefined;
+  if (typeof retryAfter === "number" && retryAfter >= 0) {
+    return Math.min(retryAfter, 5 * 60_000);
+  }
+  const exp = Math.pow(2, Math.max(0, attempts - 1));
+  return Math.min(RETRY_BASE_MS * exp, RETRY_MAX_MS);
+};
 const bumpRate = () => {
   requestPauseMs = Math.min(
     RATE_MAX_MS,
@@ -122,7 +146,8 @@ const MAX_PARALLEL_REQUESTS = 5;
  */
 const enqueue = <T>(runRequest: () => Promise<T>) =>
   new Promise<T>((resolve, reject) => {
-    queue.push({ run: runRequest, resolve, reject });
+    const job: InternalJob<T> = { run: runRequest, resolve, reject, attempts: 0 };
+    queue.push(job);
     void runQueue();
   });
 
@@ -136,7 +161,7 @@ const runQueue = async () => {
     while (queue.length) {
       const batch = queue.splice(0, MAX_PARALLEL_REQUESTS);
       await Promise.all(
-        batch.map(async (job) => {
+        batch.map(async (job: InternalJob) => {
           const now = Date.now();
           if (cooldownUntilTs > now) await sleep(cooldownUntilTs - now);
           try {
@@ -144,7 +169,15 @@ const runQueue = async () => {
             job.resolve(value);
             relaxRate();
           } catch (error) {
-            job.reject(error);
+            if (isNetRetriable(error)) {
+              job.attempts += 1;
+              const delay = withJitter(computeRetryDelay(error, job.attempts));
+              const next = Date.now() + delay;
+              cooldownUntilTs = Math.max(cooldownUntilTs, next);
+              queue.push(job);
+            } else {
+              job.reject(error);
+            }
           }
           await sleep(withJitter(requestPauseMs));
         }),
