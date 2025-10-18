@@ -7,7 +7,7 @@ import {
   type CatalogSyncJob,
   type CatalogSyncJobName,
 } from "./service";
-import { RateLimitError } from "../steam/repo";
+import { RateLimitError } from "../../lib/http";
 
 export const startCatalogSyncWorker = () => {
   const concurrency = Math.max(1, Number(process.env.CATALOG_SYNC_CONCURRENCY || 1));

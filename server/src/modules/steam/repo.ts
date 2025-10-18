@@ -1,7 +1,9 @@
-import axios, { type AxiosInstance, type AxiosRequestConfig, type AxiosResponse } from "axios";
+import type { AxiosRequestConfig, AxiosResponse } from "axios";
 import { LRUCache } from "lru-cache";
 import { RATE_MAX_MS, RATE_MIN_MS, START_RATE_MS } from "../../config";
 import { recordPriceSnapshot } from "../../database/prices";
+import { http, RateLimitError } from "../../lib/http";
+export { RateLimitError } from "../../lib/http";
 
 /** Базовые константы Steam Community Market */
 const APP_ID = 730;
@@ -77,16 +79,6 @@ interface ListingRenderResponse {
   total_count?: number;
 }
 
-export class RateLimitError extends Error {
-  readonly retryAfterMs?: number;
-
-  constructor(message: string, retryAfterMs?: number, options?: { cause?: unknown }) {
-    super(message, options);
-    this.name = "RateLimitError";
-    this.retryAfterMs = retryAfterMs;
-  }
-}
-
 const parseRetryAfter = (value: unknown): number | undefined => {
   if (value == null) return undefined;
   const asNumber = Number(value);
@@ -99,34 +91,6 @@ const parseRetryAfter = (value: unknown): number | undefined => {
   const diff = date.getTime() - Date.now();
   return Number.isFinite(diff) && diff > 0 ? diff : undefined;
 };
-
-const createSteamHttpClient = (): AxiosInstance => {
-  const instance = axios.create({
-    headers: { "User-Agent": "cs2-tradeup-ev/0.5" },
-    timeout: 20_000,
-  });
-
-  instance.interceptors.response.use(
-    (response) => response,
-    (error) => {
-      const status = error?.response?.status;
-      if (status === 429) {
-        const retryAfterMs = parseRetryAfter(error?.response?.headers?.["retry-after"]);
-        const rateError = new RateLimitError("Steam rate limit", retryAfterMs, {
-          cause: error,
-        });
-        (rateError as any).config = error?.config;
-        (rateError as any).response = error?.response;
-        throw rateError;
-      }
-      return Promise.reject(error);
-    },
-  );
-
-  return instance;
-};
-
-const steamHttp = createSteamHttpClient();
 
 /** Глобальная очередь с адаптивным троттлингом */
 let requestPauseMs = START_RATE_MS;
@@ -205,7 +169,7 @@ export const steamGet = async <T = unknown>(
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       try {
-        return await steamHttp.get<T>(url, {
+        return await http.get<T>(url, {
           ...requestConfig,
         });
       } catch (error: any) {
