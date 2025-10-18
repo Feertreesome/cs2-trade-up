@@ -104,7 +104,12 @@ const relaxRate = () => {
 };
 
 /** Максимальное количество одновременных запросов к Steam */
-const MAX_PARALLEL_REQUESTS = 5;
+const MAX_PARALLEL_REQUESTS = Math.max(
+  1,
+  Number(process.env.STEAM_MAX_PARALLEL_REQUESTS ?? 2),
+);
+const MAX_429_STREAK = Math.max(10, Number(process.env.STEAM_MAX_429_STREAK ?? 60));
+const BASE_RETRY_DELAY_MS = 900;
 
 /**
  * Кладёт вызов в глобальную очередь, ограничивая параллелизм запросов к Steam.
@@ -154,9 +159,10 @@ export const steamGet = async <T = unknown>(
 ): Promise<AxiosResponse<T>> =>
   enqueue<AxiosResponse<T>>(async () => {
     const maxAttempts = 7;
-    const baseDelayMs = 900;
+    let attempt = 0;
+    let consecutive429 = 0;
 
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    for (;;) {
       try {
         return await axios.get<T>(url, {
           headers: { "User-Agent": "cs2-tradeup-ev/0.5" },
@@ -170,16 +176,28 @@ export const steamGet = async <T = unknown>(
           (typeof status === "number" && status >= 500 && status < 600) ||
           ["ECONNRESET", "ETIMEDOUT"].includes(error?.code);
 
-        if (!isRetriable || attempt === maxAttempts - 1) throw error;
+        if (!isRetriable) throw error;
 
-        if (status === 429) {
+        const is429 = status === 429;
+        if (is429) {
+          consecutive429 += 1;
           bumpRate();
-          cooldownUntilTs = Date.now() + 15_000; // общий «отдых»
+          cooldownUntilTs = Date.now() + 60_000; // более длительный «отдых»
+          if (consecutive429 >= MAX_429_STREAK) {
+            throw error;
+          }
+        } else {
+          attempt += 1;
+          consecutive429 = 0;
+          if (attempt >= maxAttempts) throw error;
         }
-        await sleep(withJitter(baseDelayMs * Math.pow(2, attempt)));
+
+        const effectiveAttempt = is429 ? Math.min(consecutive429, maxAttempts) : attempt;
+        const delayBase = is429 ? BASE_RETRY_DELAY_MS * 2 : BASE_RETRY_DELAY_MS;
+        const delayMultiplier = Math.pow(2, effectiveAttempt);
+        await sleep(withJitter(delayBase * delayMultiplier));
       }
     }
-    throw new Error("Unreachable");
   });
 
 /**
