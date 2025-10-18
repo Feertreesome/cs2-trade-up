@@ -66,6 +66,23 @@ export interface CollectionInputsResponse {
   inputs: CollectionInputSummary[];
 }
 
+export interface SyncJobProgress {
+  totalCollections: number;
+  syncedCollections: number;
+  currentCollectionTag?: string;
+  currentCollectionName?: string;
+  currentRarity?: string;
+}
+
+export interface SyncJobStatus {
+  id: string;
+  status: "pending" | "running" | "completed" | "failed";
+  startedAt: string;
+  finishedAt?: string;
+  error?: string;
+  progress: SyncJobProgress;
+}
+
 export interface TradeupInputPayload {
   marketHashName: string;
   float: number;
@@ -257,6 +274,29 @@ export async function requestTradeupAvailability(payload: TradeupAvailabilityReq
     throw new Error(text || `HTTP ${response.status}`);
   }
   return (await response.json()) as TradeupAvailabilityResponse;
+}
+
+export async function requestCollectionsSync() {
+  const response = await fetch("/api/tradeups/collections/sync", {
+    method: "POST",
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || `HTTP ${response.status}`);
+  }
+  return (await response.json()) as { job: SyncJobStatus };
+}
+
+export async function fetchCollectionsSyncStatus() {
+  const response = await fetch("/api/tradeups/collections/sync");
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || `HTTP ${response.status}`);
+  }
+  return (await response.json()) as {
+    active: SyncJobStatus | null;
+    jobs: SyncJobStatus[];
+  };
 }
 
 export { batchPriceOverview };
