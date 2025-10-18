@@ -34,7 +34,7 @@ services:
       PORT: 5174
     ports:
       - "5174:5174"
-    command: ["sh", "-c", "npm --workspace=cs2-tradeup-ev-server run prisma:migrate && node server/dist/index.js"]
+    command: ["sh", "-c", "npm --workspace=cs2-tradeup-ev-server run prisma:migrate && node server/dist/server/src/index.js"]
 
   worker:
     image: cs2-tradeup-ev
@@ -47,7 +47,7 @@ services:
       DATABASE_URL: postgresql://cs2:cs2@postgres:5432/cs2tradeup?schema=public
       REDIS_URL: redis://redis:6379
       CATALOG_SYNC_CONCURRENCY: 1
-    command: ["sh", "-c", "npm --workspace=cs2-tradeup-ev-server run prisma:migrate && node server/dist/worker.js"]
+    command: ["sh", "-c", "npm --workspace=cs2-tradeup-ev-server run prisma:migrate && node server/dist/server/src/worker.js"]
 
 volumes:
   postgres_data:
