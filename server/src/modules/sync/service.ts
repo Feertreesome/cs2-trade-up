@@ -57,16 +57,17 @@ export interface CatalogSyncJobData {
   triggeredBy?: "manual" | "schedule";
 }
 
-export type CatalogSyncJob = Job<CatalogSyncJobData, void, CatalogSyncJobName>;
+export type CatalogSyncJob = Job<CatalogSyncJobData, unknown, CatalogSyncJobName>;
 
 const queueName = process.env.CATALOG_SYNC_QUEUE ?? "catalog-sync";
 
-export const catalogSyncQueue = new Queue<CatalogSyncJobData, void, CatalogSyncJobName>(queueName, {
+const QUEUE_RATE_LIMIT = {
+  max: 1,
+  duration: 1100,
+} as const;
+
+export const catalogSyncQueue = new Queue<CatalogSyncJobData, unknown, CatalogSyncJobName>(queueName, {
   connection: redisConnection,
-  limiter: {
-    max: 1,
-    duration: 1100,
-  },
   defaultJobOptions: {
     attempts: 8,
     backoff: {
@@ -83,6 +84,13 @@ export const catalogSyncQueue = new Queue<CatalogSyncJobData, void, CatalogSyncJ
     },
   },
 });
+
+void catalogSyncQueue
+  .waitUntilReady()
+  .then(() => catalogSyncQueue.setGlobalRateLimit(QUEUE_RATE_LIMIT.max, QUEUE_RATE_LIMIT.duration))
+  .catch((error) => {
+    console.error("Failed to set catalog sync queue rate limit", error);
+  });
 
 const rarityOrder = Object.keys(RARITY_TO_TAG) as (keyof typeof RARITY_TO_TAG)[];
 

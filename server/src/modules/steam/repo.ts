@@ -218,7 +218,7 @@ export const steamGet = async <T = unknown>(
         const isRetriable =
           status === 429 ||
           (typeof status === "number" && status >= 500 && status < 600) ||
-          ["ECONNRESET", "ETIMEDOUT"].includes(code);
+          (code ? ["ECONNRESET", "ETIMEDOUT"].includes(code) : false);
 
         if (!isRetriable || attempt === maxAttempts - 1) throw error;
 
