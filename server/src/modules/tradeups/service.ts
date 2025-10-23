@@ -4,16 +4,10 @@
  * Здесь же реализованы вспомогательные структуры и кеши для сопоставления
  * коллекций Steam с нашим справочником float-диапазонов.
  */
-import axios from "axios";
-import {
-  COLLECTIONS_WITH_FLOAT,
-  COLLECTIONS_WITH_FLOAT_MAP,
-  COLLECTIONS_WITH_FLOAT_BY_NAME,
-  COVERT_FLOAT_BY_BASENAME,
-  CLASSIFIED_FLOAT_BY_BASENAME,
-  rebuildCollectionFloatCaches,
-  type CollectionFloatCatalogEntry,
-  type CollectionFloatRange,
+import * as collectionFloatData from "../../../../data/CollectionsWithFloat";
+import type {
+  CollectionFloatCatalogEntry,
+  CollectionFloatRange,
 } from "../../../../data/CollectionsWithFloat";
 import { STEAM_MAX_AUTO_LIMIT, STEAM_PAGE_SIZE } from "../../config";
 import {
@@ -23,7 +17,6 @@ import {
   steamGet,
   RARITY_TO_TAG,
   type SearchItem,
-  type SteamCollectionTag,
 } from "../steam/repo";
 import {
   baseFromMarketHash,
@@ -31,6 +24,38 @@ import {
   type Exterior,
 } from "../skins/service";
 import { getSkinFloatRange, type SkinFloatRange } from "./floatRanges";
+import {
+  getCollectionSummariesFromDb,
+  getCollectionTargetsFromDb,
+  getCollectionInputsFromDb,
+} from "../../database/collections";
+import { isCatalogReady } from "../../database/status";
+import type {
+  CollectionTargetExterior,
+  CollectionTargetSummary,
+  CollectionTargetsResult,
+  CollectionInputSummary,
+  CollectionInputsResult,
+  SteamCollectionSummary,
+} from "./types";
+
+export type {
+  CollectionTargetExterior,
+  CollectionTargetSummary,
+  CollectionTargetsResult,
+  CollectionInputSummary,
+  CollectionInputsResult,
+  SteamCollectionSummary,
+} from "./types";
+
+const {
+  COLLECTIONS_WITH_FLOAT,
+  COLLECTIONS_WITH_FLOAT_MAP,
+  COLLECTIONS_WITH_FLOAT_BY_NAME,
+  COVERT_FLOAT_BY_BASENAME,
+  CLASSIFIED_FLOAT_BY_BASENAME,
+  rebuildCollectionFloatCaches,
+} = collectionFloatData;
 
 const DEFAULT_BUYER_TO_NET = 1.15;
 
@@ -280,10 +305,6 @@ export const warmTradeupCatalog = () => {
   ensureCollectionCaches();
 };
 
-export interface SteamCollectionSummary extends SteamCollectionTag {
-  collectionId: string | null;
-}
-
 const rememberCollectionId = (tag: string, collectionId: string | null) => {
   STEAM_TAG_TO_COLLECTION_ID.set(tag, collectionId);
   return collectionId;
@@ -311,11 +332,24 @@ const guessCollectionIdByBaseNames = (baseNames: string[]): string | null => {
 
 export const fetchSteamCollections = async (): Promise<SteamCollectionSummary[]> => {
   ensureCollectionCaches();
+  if (await isCatalogReady()) {
+    try {
+      const stored = await getCollectionSummariesFromDb();
+      if (stored && stored.length) {
+        return stored.map((entry) => {
+          rememberCollectionId(entry.tag, entry.collectionId);
+          return entry;
+        });
+      }
+    } catch (error) {
+      // Ignore and fall back to Steam
+    }
+  }
   const tags = await fetchCollectionTags();
   return tags.map((tag) => {
     const collection = COLLECTIONS_WITH_FLOAT_BY_NAME.get(tag.name.toLowerCase());
     const collectionId = rememberCollectionId(tag.tag, collection?.id ?? null);
-    return { ...tag, collectionId };
+    return { tag: tag.tag, name: tag.name, count: tag.count, collectionId };
   });
 };
 
@@ -358,26 +392,6 @@ const fetchEntireCollection = async (options: {
   return items;
 };
 
-export interface CollectionTargetExterior {
-  exterior: Exterior;
-  marketHashName: string;
-  price?: number | null;
-  minFloat?: number;
-  maxFloat?: number;
-}
-
-export interface CollectionTargetSummary {
-  baseName: string;
-  exteriors: CollectionTargetExterior[];
-}
-
-export interface CollectionTargetsResult {
-  collectionTag: string;
-  collectionId: string | null;
-  rarity: "Covert" | "Classified";
-  targets: CollectionTargetSummary[];
-}
-
 /**
  * Загружает Covert-предметы коллекции, группирует их по базовому названию и дополняет float-диапазоном.
  */
@@ -386,10 +400,24 @@ export const fetchCollectionTargets = async (
   rarity: "Covert" | "Classified" = "Covert",
 ): Promise<CollectionTargetsResult> => {
   ensureCollectionCaches();
+  let persisted: CollectionTargetsResult | null = null;
+  if (await isCatalogReady()) {
+    try {
+      persisted = await getCollectionTargetsFromDb(collectionTag, rarity);
+      if (persisted && persisted.targets.length) {
+        if (persisted.collectionId) {
+          rememberCollectionId(collectionTag, persisted.collectionId);
+        }
+        return persisted;
+      }
+    } catch (error) {
+      // Ignore and fall back to Steam
+    }
+  }
   const items = await fetchEntireCollection({ collectionTag, rarity });
   const grouped = new Map<string, CollectionTargetSummary>();
   const baseNames: string[] = [];
-  const floatCache = new Map<string, SkinFloatRange | undefined>();
+  const floatCache = new Map<string, CollectionFloatRange | undefined>();
   const predefinedFloats =
     rarity === "Classified" ? CLASSIFIED_FLOAT_BY_BASENAME : COVERT_FLOAT_BY_BASENAME;
 
@@ -400,7 +428,10 @@ export const fetchCollectionTargets = async (
     if (!floats) {
       if (!floatCache.has(baseName)) {
         const range = await getSkinFloatRange(item.market_hash_name);
-        floatCache.set(baseName, range ?? undefined);
+        const normalized = range
+          ? { baseName, minFloat: range.minFloat, maxFloat: range.maxFloat }
+          : undefined;
+        floatCache.set(baseName, normalized);
       }
       floats = floatCache.get(baseName);
     }
@@ -421,7 +452,8 @@ export const fetchCollectionTargets = async (
     });
   }
 
-  let collectionId = findCollectionIdByTag(collectionTag);
+  let collectionId =
+    persisted?.collectionId ?? findCollectionIdByTag(collectionTag);
   if (collectionId == null) {
     collectionId = rememberCollectionId(
       collectionTag,
@@ -437,20 +469,6 @@ export const fetchCollectionTargets = async (
   };
 };
 
-export interface CollectionInputSummary {
-  baseName: string;
-  marketHashName: string;
-  exterior: Exterior;
-  price?: number | null;
-}
-
-export interface CollectionInputsResult {
-  collectionTag: string;
-  collectionId: string | null;
-  rarity: "Classified" | "Restricted";
-  inputs: CollectionInputSummary[];
-}
-
 /**
  * Получает список предметов коллекции, которые могут служить входами для trade-up'а.
  */
@@ -461,6 +479,20 @@ export const fetchCollectionInputs = async (
   ensureCollectionCaches();
   const inputRarity: "Classified" | "Restricted" =
     targetRarity === "Classified" ? "Restricted" : "Classified";
+  let persisted: CollectionInputsResult | null = null;
+  if (await isCatalogReady()) {
+    try {
+      persisted = await getCollectionInputsFromDb(collectionTag, inputRarity);
+      if (persisted && persisted.inputs.length) {
+        if (persisted.collectionId) {
+          rememberCollectionId(collectionTag, persisted.collectionId);
+        }
+        return persisted;
+      }
+    } catch (error) {
+      // Ignore and fall back to Steam
+    }
+  }
   const items = await fetchEntireCollection({
     collectionTag,
     rarity: inputRarity,
@@ -473,7 +505,7 @@ export const fetchCollectionInputs = async (
     price: item.price,
   }));
 
-  let collectionId = findCollectionIdByTag(collectionTag);
+  let collectionId = persisted?.collectionId ?? findCollectionIdByTag(collectionTag);
   if (collectionId == null && inputs.length) {
     collectionId = rememberCollectionId(
       collectionTag,
@@ -845,7 +877,7 @@ const fetchFloatForListing = async (
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
       const response = await enqueueFloatRequest(() =>
-        axios.get<CsgoFloatResponse>(FLOAT_API_ENDPOINT, {
+        steamGet<CsgoFloatResponse>(FLOAT_API_ENDPOINT, {
           params: { url: listing.inspectLink },
           timeout: 20_000,
         }),

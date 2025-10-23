@@ -2,22 +2,35 @@
   "name": "cs2-tradeup-ev-server",
   "version": "0.1.0",
   "private": true,
-  "type": "module",
+  "prisma": {
+    "schema": "./prisma/schema.prisma"
+  },
   "scripts": {
-    "dev": "tsx src/index.ts",
-    "build": "tsc -p .",
-    "start": "node dist/index.js"
+    "dev": "ts-node --project tsconfig.json src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "prisma:generate": "cross-env PRISMA_ENGINES_CHECKSUM_IGNORE_MISSING=1 prisma generate",
+    "prisma:migrate": "cross-env PRISMA_ENGINES_CHECKSUM_IGNORE_MISSING=1 prisma migrate deploy",
+    "worker": "ts-node --project tsconfig.json src/worker.ts"
   },
   "dependencies": {
+    "@prisma/client": "^5.16.2",
     "axios": "^1.7.3",
+    "bullmq": "^5.12.2",
     "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
     "express": "^4.19.2",
+    "ioredis": "^5.4.1",
     "lru-cache": "^11.0.1"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
+    "@types/node": "^22.5.4",
+    "cross-env": "^10.1.0",
+    "prisma": "^5.22.0",
+    "ts-node": "^10.9.2",
     "tsx": "^4.16.2",
-    "typescript": "^5.5.4"
+    "typescript": "^5.9.3"
   }
 }

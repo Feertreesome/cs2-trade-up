@@ -1,10 +1,9 @@
-import axios, {
-  type AxiosRequestConfig,
-  type AxiosResponse,
-  type AxiosError,
-} from "axios";
+import type { AxiosRequestConfig, AxiosResponse } from "axios";
 import { LRUCache } from "lru-cache";
 import { RATE_MAX_MS, RATE_MIN_MS, START_RATE_MS } from "../../config";
+import { recordPriceSnapshot } from "../../database/prices";
+import { http, RateLimitError } from "../../lib/http";
+export { RateLimitError } from "../../lib/http";
 
 /** Базовые константы Steam Community Market */
 const APP_ID = 730;
@@ -80,18 +79,55 @@ interface ListingRenderResponse {
   total_count?: number;
 }
 
+const parseRetryAfter = (value: unknown): number | undefined => {
+  if (value == null) return undefined;
+  const asNumber = Number(value);
+  if (Number.isFinite(asNumber) && asNumber >= 0) {
+    // Retry-After может приходить в секундах
+    return asNumber * 1000;
+  }
+
+  const date = new Date(String(value));
+  const diff = date.getTime() - Date.now();
+  return Number.isFinite(diff) && diff > 0 ? diff : undefined;
+};
+
 /** Глобальная очередь с адаптивным троттлингом */
 let requestPauseMs = START_RATE_MS;
 let cooldownUntilTs = 0;
-const queue: Array<{
-  run: () => Promise<any>;
-  resolve: (v: any) => void;
+type InternalJob<T = any> = {
+  run: () => Promise<T>;
+  resolve: (v: T) => void;
   reject: (e: unknown) => void;
-}> = [];
+  attempts: number;
+};
+
+const RETRY_BASE_MS = 2_000;
+const RETRY_MAX_MS = 60_000;
+
+const queue: Array<InternalJob> = [];
 let queueRunning = false;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const withJitter = (ms: number) => Math.floor(ms * (0.8 + Math.random() * 0.4));
+const isNetRetriable = (err: any) => {
+  const status = err?.response?.status as number | undefined;
+  return (
+    err?.name === "RateLimitError" ||
+    status === 429 ||
+    (typeof status === "number" && status >= 500 && status < 600) ||
+    ["ECONNRESET", "ETIMEDOUT", "EAI_AGAIN"].includes(err?.code)
+  );
+};
+
+const computeRetryDelay = (err: any, attempts: number) => {
+  const retryAfter = err?.retryAfterMs as number | undefined;
+  if (typeof retryAfter === "number" && retryAfter >= 0) {
+    return Math.min(retryAfter, 5 * 60_000);
+  }
+  const exp = Math.pow(2, Math.max(0, attempts - 1));
+  return Math.min(RETRY_BASE_MS * exp, RETRY_MAX_MS);
+};
 const bumpRate = () => {
   requestPauseMs = Math.min(
     RATE_MAX_MS,
@@ -110,7 +146,8 @@ const MAX_PARALLEL_REQUESTS = 5;
  */
 const enqueue = <T>(runRequest: () => Promise<T>) =>
   new Promise<T>((resolve, reject) => {
-    queue.push({ run: runRequest, resolve, reject });
+    const job: InternalJob<T> = { run: runRequest, resolve, reject, attempts: 0 };
+    queue.push(job);
     void runQueue();
   });
 
@@ -124,7 +161,7 @@ const runQueue = async () => {
     while (queue.length) {
       const batch = queue.splice(0, MAX_PARALLEL_REQUESTS);
       await Promise.all(
-        batch.map(async (job) => {
+        batch.map(async (job: InternalJob) => {
           const now = Date.now();
           if (cooldownUntilTs > now) await sleep(cooldownUntilTs - now);
           try {
@@ -132,7 +169,15 @@ const runQueue = async () => {
             job.resolve(value);
             relaxRate();
           } catch (error) {
-            job.reject(error);
+            if (isNetRetriable(error)) {
+              job.attempts += 1;
+              const delay = withJitter(computeRetryDelay(error, job.attempts));
+              const next = Date.now() + delay;
+              cooldownUntilTs = Math.max(cooldownUntilTs, next);
+              queue.push(job);
+            } else {
+              job.reject(error);
+            }
           }
           await sleep(withJitter(requestPauseMs));
         }),
@@ -157,40 +202,43 @@ export const steamGet = async <T = unknown>(
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       try {
-        return await axios.get<T>(url, {
-          headers: { "User-Agent": "cs2-tradeup-ev/0.5" },
-          timeout: 20_000,
+        return await http.get<T>(url, {
           ...requestConfig,
         });
       } catch (error: any) {
-        const status = error?.response?.status as number | undefined;
+        const retryAfterMs =
+          error instanceof RateLimitError
+            ? error.retryAfterMs
+            : parseRetryAfter(error?.response?.headers?.["retry-after"]);
+        const status =
+          error instanceof RateLimitError
+            ? 429
+            : (error?.response?.status as number | undefined);
+        const code = error?.code as string | undefined;
         const isRetriable =
           status === 429 ||
           (typeof status === "number" && status >= 500 && status < 600) ||
-          ["ECONNRESET", "ETIMEDOUT"].includes(error?.code);
+          (code ? ["ECONNRESET", "ETIMEDOUT"].includes(code) : false);
 
         if (!isRetriable || attempt === maxAttempts - 1) throw error;
 
         if (status === 429) {
           bumpRate();
-          cooldownUntilTs = Date.now() + 15_000; // общий «отдых»
+          const cooldownMs =
+            typeof retryAfterMs === "number" ? Math.min(retryAfterMs, 60_000) : 15_000;
+          cooldownUntilTs = Date.now() + cooldownMs;
         }
-        await sleep(withJitter(baseDelayMs * Math.pow(2, attempt)));
+
+        const backoffMs =
+          typeof retryAfterMs === "number"
+            ? retryAfterMs
+            : withJitter(baseDelayMs * Math.pow(2, attempt));
+
+        await sleep(backoffMs);
       }
     }
     throw new Error("Unreachable");
   });
-
-/**
- * То же, что steamGet, но сразу возвращает типизированный payload (response.data).
- */
-const steamGetData = async <T = unknown>(
-  url: string,
-  requestConfig?: AxiosRequestConfig,
-): Promise<T> => {
-  const response = await steamGet<T>(url, requestConfig);
-  return response.data as T;
-};
 
 /**
  * Пытается распарсить цену из текстового поля Steam ("$1.23" / "1,23€" и т.п.).
@@ -243,7 +291,7 @@ export const getPriceUSD = async (
 
   try {
     // ВАЖНО: типизируем data
-    const payload = await steamGetData<PriceOverviewResponse>(
+    const { data: payload } = await steamGet<PriceOverviewResponse>(
       `${PRICE_URL}?${params.toString()}`,
     );
 
@@ -274,6 +322,7 @@ export const getPriceUSD = async (
     }
 
     memoryCache.set(cacheKey, parsed);
+    void recordPriceSnapshot(marketHashName, parsed);
     return { price: parsed };
   } catch (error) {
     console.error(`getPriceUSD error for ${marketHashName}`, error);
@@ -293,6 +342,15 @@ export interface SearchItem {
   market_hash_name: string;
   sell_listings: number;
   price: number | null;
+  market_name?: string;
+  name?: string;
+  app_icon?: string;
+  app_name?: string;
+  icon_url?: string;
+  type?: string;
+  classid?: string;
+  instanceid?: string;
+  tradable?: boolean;
 }
 
 export interface SteamCollectionTag {
@@ -333,15 +391,35 @@ export const searchByRarity = async ({
   if (cached) return cached;
 
   // ВАЖНО: типизируем data
-  const payload = await steamGetData<SearchRenderResponse>(url);
+  const { data: payload } = await steamGet<SearchRenderResponse>(url);
 
   const total = payload?.total_count ?? 0;
-  const items: SearchItem[] = (payload?.results ?? []).map((result) => ({
-    market_hash_name: result.hash_name,
-    // Steam иногда возвращает sell_listings строкой, нормализуем в число
-    sell_listings: Number.parseInt(String(result.sell_listings ?? 0), 10) || 0,
-    price: parseSteamPriceText(result.sell_price_text ?? ""),
-  }));
+  const items: SearchItem[] = (payload?.results ?? []).map((result) => {
+    const description = result.asset_description ?? {};
+    const rawTradable = description?.tradable;
+    const tradable =
+      typeof rawTradable === "number"
+        ? rawTradable === 1
+        : typeof rawTradable === "boolean"
+          ? rawTradable
+          : undefined;
+
+    return {
+      market_hash_name: result.hash_name,
+      // Steam иногда возвращает sell_listings строкой, нормализуем в число
+      sell_listings: Number.parseInt(String(result.sell_listings ?? 0), 10) || 0,
+      price: parseSteamPriceText(result.sell_price_text ?? ""),
+      market_name: description?.market_name ?? description?.name ?? result.name,
+      name: result.name,
+      app_icon: result.app_icon,
+      app_name: result.app_name,
+      icon_url: description?.icon_url,
+      type: description?.type,
+      classid: description?.classid,
+      instanceid: description?.instanceid,
+      tradable,
+    };
+  });
 
   const typed = { total, items };
   memoryCache.set(cacheKey, typed);
@@ -363,7 +441,7 @@ const fetchAppFilters = async (): Promise<Record<string, SearchRenderFacet>> => 
   const params = new URLSearchParams({ norender: "1" });
   const url = `${APP_FILTERS_URL}?${params.toString()}`;
 
-  const payload = await steamGetData<AppFiltersResponse>(url, {
+  const { data: payload } = await steamGet<AppFiltersResponse>(url, {
     headers: { Referer: "https://steamcommunity.com/market/" },
   });
 
@@ -455,13 +533,33 @@ const fetchCollectionPage = async ({
   const cached = memoryCache.get(cacheKey);
   if (cached) return cached;
 
-  const payload = await steamGetData<SearchRenderResponse>(url);
+  const { data: payload } = await steamGet<SearchRenderResponse>(url);
   const total = payload?.total_count ?? 0;
-  const items: SearchItem[] = (payload?.results ?? []).map((result) => ({
-    market_hash_name: result.hash_name,
-    sell_listings: Number.parseInt(String(result.sell_listings ?? 0), 10) || 0,
-    price: parseSteamPriceText(result.sell_price_text ?? ""),
-  }));
+  const items: SearchItem[] = (payload?.results ?? []).map((result) => {
+    const description = result.asset_description ?? {};
+    const rawTradable = description?.tradable;
+    const tradable =
+      typeof rawTradable === "number"
+        ? rawTradable === 1
+        : typeof rawTradable === "boolean"
+          ? rawTradable
+          : undefined;
+
+    return {
+      market_hash_name: result.hash_name,
+      sell_listings: Number.parseInt(String(result.sell_listings ?? 0), 10) || 0,
+      price: parseSteamPriceText(result.sell_price_text ?? ""),
+      market_name: description?.market_name ?? description?.name ?? result.name,
+      name: result.name,
+      app_icon: result.app_icon,
+      app_name: result.app_name,
+      icon_url: description?.icon_url,
+      type: description?.type,
+      classid: description?.classid,
+      instanceid: description?.instanceid,
+      tradable,
+    };
+  });
 
   const typed = { total, items };
   memoryCache.set(cacheKey, typed);
@@ -572,23 +670,13 @@ export const fetchListingTotalCount = async (
   const cached = memoryCache.get(cacheKey);
   if (cached !== undefined) return cached;
 
-  const maxAttempts = 3;
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    try {
-      // ВАЖНО: типизируем data
-      const payload = await steamGetData<ListingRenderResponse>(url);
-      const totalCount =
-        typeof payload?.total_count === "number" ? payload.total_count : null;
-      if (totalCount !== null) memoryCache.set(cacheKey, totalCount);
-      return totalCount;
-    } catch (error) {
-      const status = (error as AxiosError)?.response?.status;
-      if (status === 429 && attempt < maxAttempts - 1) {
-        await sleep(16_000);
-        continue;
-      }
-      return null;
-    }
+  try {
+    const { data: payload } = await steamGet<ListingRenderResponse>(url);
+    const totalCount = typeof payload?.total_count === "number" ? payload.total_count : null;
+    if (totalCount !== null) memoryCache.set(cacheKey, totalCount);
+    return totalCount;
+  } catch (error) {
+    if (error instanceof RateLimitError) throw error;
+    return null;
   }
-  return null;
 };

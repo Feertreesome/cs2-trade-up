@@ -12,7 +12,7 @@
     "lint": "eslint \"{client,server}/**/*.{ts,tsx}\"",
     "lint:fix": "eslint \"{client,server}/**/*.{ts,tsx}\" --fix",
     "check": "npm run lint && tsc -b",
-    "sync:floats": "tsx scripts/syncCollectionFloats.ts"
+    "sync:floats": "node --loader ts-node/esm scripts/syncCollectionFloats.ts"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^8.0.1",
@@ -21,10 +21,12 @@
     "eslint": "^9.9.0",
     "eslint-plugin-jsdoc": "^48.2.7",
     "prettier": "^3.3.3",
+    "ts-node": "^10.9.2",
     "tsx": "^4.16.2"
   },
   "dependencies": {
     "bootstrap": "^5.3.8",
+    "cross-env": "^10.1.0",
     "dotenv": "^17.2.2",
     "server": "^1.0.42"
   }

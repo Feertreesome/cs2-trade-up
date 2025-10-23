@@ -1,4 +1,10 @@
-import { RARITY_TO_TAG, searchByRarity } from "../steam/repo";
+import { RARITY_TO_TAG, searchByRarity, type SearchItem } from "../steam/repo";
+import {
+  getRarityTotalsFromDb,
+  getSkinsPageFromDb,
+  getNamesByRarityFromDb,
+} from "../../database/collections";
+import { isCatalogReady } from "../../database/status";
 
 export type Exterior =
   | "Factory New"
@@ -34,6 +40,23 @@ export const getTotals = async (
   rarities: (keyof typeof RARITY_TO_TAG)[],
   normalOnly: boolean,
 ): Promise<{ perRarity: Record<string, number>; sum: number }> => {
+  if (await isCatalogReady()) {
+    try {
+      const stored = await getRarityTotalsFromDb(rarities, normalOnly);
+      if (stored) {
+        const perRarity: Record<string, number> = {};
+        let sum = 0;
+        for (const rarity of rarities) {
+          const count = stored.perRarity[rarity] ?? 0;
+          perRarity[rarity] = count;
+          sum += count;
+        }
+        return { perRarity, sum };
+      }
+    } catch (error) {
+      // fall back to live Steam data
+    }
+  }
   const perRarity: Record<string, number> = {};
   let sum = 0;
   const concurrency = 5;
@@ -51,4 +74,43 @@ export const getTotals = async (
     });
   }
   return { perRarity, sum };
+};
+
+export const getSkinsPage = async (
+  options: {
+    rarity: (keyof typeof RARITY_TO_TAG);
+    start: number;
+    count: number;
+    normalOnly: boolean;
+  },
+): Promise<{ total: number; items: SearchItem[] }> => {
+  const { rarity, start, count, normalOnly } = options;
+  if (await isCatalogReady()) {
+    try {
+      const stored = await getSkinsPageFromDb(rarity, start, count, normalOnly);
+      if (stored) {
+        return stored;
+      }
+    } catch (error) {
+      // fall back to live Steam data
+    }
+  }
+  return searchByRarity({ rarity, start, count, normalOnly });
+};
+
+export const getPersistedNames = async (
+  rarity: (keyof typeof RARITY_TO_TAG),
+  normalOnly: boolean,
+): Promise<string[] | null> => {
+  if (await isCatalogReady()) {
+    try {
+      const names = await getNamesByRarityFromDb(rarity, normalOnly);
+      if (Array.isArray(names)) {
+        return names;
+      }
+    } catch (error) {
+      // fall back to live Steam data
+    }
+  }
+  return null;
 };
