@@ -56,37 +56,6 @@ export interface RowResolution {
   collectionCounts: Map<string, number>;
 }
 
-export interface FloatlessOutcomeExterior {
-  exterior: Exterior;
-  probability: number | null;
-  buyerPrice: number | null;
-  netPrice: number | null;
-  marketHashName: string;
-}
-
-export interface FloatlessOutcomeSummary {
-  baseName: string;
-  probability: number;
-  projectedRange: { min: number; max: number };
-  exteriors: FloatlessOutcomeExterior[];
-  robustNet: number | null;
-  expectedNetContribution: number | null;
-  expectedProbabilityCovered: number;
-}
-
-export interface FloatlessAnalysisResult {
-  ready: boolean;
-  issues: string[];
-  inputRange: { min: number; max: number } | null;
-  wearCounts: Partial<Record<Exterior, number>>;
-  outcomes: FloatlessOutcomeSummary[];
-  robustOutcomeNet: number | null;
-  expectedOutcomeNet: number | null;
-  robustEV: number | null;
-  expectedEV: number | null;
-  expectedCoverage: number;
-}
-
 export interface TradeupBuilderState {
   steamCollections: Array<{ tag: string; name: string; collectionId: string | null }>;
   collectionOptions: CollectionSelectOption[];
@@ -122,7 +91,6 @@ export interface TradeupBuilderState {
   calculation: TradeupCalculationResponse | null;
   calculating: boolean;
   calculationError: string | null;
-  floatlessAnalysis: FloatlessAnalysisResult;
   availabilityState: TradeupAvailabilityState;
   checkAvailability: (
     outcome: TradeupCalculationResponse["outcomes"][number],

@@ -3,7 +3,6 @@ import TradeupSummary from "./components/TradeupSummary";
 import CollectionSelectorSection from "./components/CollectionSelectorSection";
 import TargetSelectionSection from "./components/TargetSelectionSection";
 import InputsTableSection from "./components/InputsTableSection";
-import FloatlessAnalysisSection from "./components/FloatlessAnalysisSection";
 import ResultsSection from "./components/ResultsSection";
 import useTradeupBuilder from "./hooks/useTradeupBuilder";
 import "./TradeupBuilder.css";
@@ -44,7 +43,6 @@ export default function TradeupBuilder() {
     calculation,
     calculating,
     calculationError,
-    floatlessAnalysis,
     availabilityState,
     checkAvailability,
   } = useTradeupBuilder();
@@ -107,8 +105,6 @@ export default function TradeupBuilder() {
         calculating={calculating}
         calculationError={calculationError}
       />
-
-      <FloatlessAnalysisSection floatlessAnalysis={floatlessAnalysis} />
 
       {calculation && (
         <ResultsSection

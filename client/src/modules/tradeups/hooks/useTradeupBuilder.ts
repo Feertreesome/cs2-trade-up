@@ -19,12 +19,10 @@ import {
   createInitialRows,
   readTagFromCollectionValue,
 } from "./helpers";
-import { evaluateFloatlessTradeup } from "./floatlessAnalysis";
 import { planRowsForCollection } from "./rowPlanning";
 import { resolveTradeupRows } from "./rowResolution";
 import type {
   CollectionSelectOption,
-  FloatlessAnalysisResult,
   ParsedTradeupRow,
   RowResolution,
   SelectedTarget,
@@ -36,9 +34,6 @@ export type {
   TradeupInputFormRow,
   CollectionSelectOption,
   SelectedTarget,
-  FloatlessOutcomeExterior,
-  FloatlessOutcomeSummary,
-  FloatlessAnalysisResult,
 } from "./types";
 
 /**
@@ -710,24 +705,6 @@ export default function useTradeupBuilder() {
    * Проводит расчёт «без float»: оценивает диапазон входов и возможные исходы по wear.
    * Возвращает как консервативные, так и ожидаемые метрики доходности.
    */
-  const floatlessAnalysis = React.useMemo<FloatlessAnalysisResult>(() => {
-    return evaluateFloatlessTradeup({
-      rowResolution,
-      activeTargets,
-      selectedTarget,
-      targetPriceOverrides,
-      buyerToNetRate,
-      totalNetCost,
-    });
-  }, [
-    activeTargets,
-    buyerToNetRate,
-    rowResolution,
-    selectedTarget,
-    targetPriceOverrides,
-    totalNetCost,
-  ]);
-
   const calculate = React.useCallback(async () => {
     if (parsedRows.length === 0) {
       setCalculationError("Нужно добавить хотя бы один вход");
@@ -906,7 +883,6 @@ export default function useTradeupBuilder() {
     calculation,
     calculating,
     calculationError,
-    floatlessAnalysis,
     availabilityState,
     checkAvailability,
   };
