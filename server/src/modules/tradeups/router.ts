@@ -8,6 +8,7 @@ import {
   getCollectionsCatalog,
   type TradeupAvailabilityRequest,
   type TradeupRequestPayload,
+  type TargetRarity,
 } from "./service";
 import type { Exterior } from "../skins/service";
 import {
@@ -23,6 +24,25 @@ const parseNumber = (value: any): number | undefined => {
   return Number.isFinite(parsed) ? parsed : undefined;
 };
 
+const normalizeRarityKey = (value: string) => value.toLowerCase().replace(/[^a-z]/g, "");
+
+const RARITY_KEY_MAP: Record<string, TargetRarity> = {
+  covert: "Covert",
+  classified: "Classified",
+  restricted: "Restricted",
+  milspec: "Mil-Spec",
+  milspecgrade: "Mil-Spec",
+  industrial: "Industrial",
+  industrialgrade: "Industrial",
+  consumer: "Consumer",
+  consumergrade: "Consumer",
+};
+
+const parseTargetRarity = (value: any): TargetRarity => {
+  const key = normalizeRarityKey(String(value ?? "Covert"));
+  return RARITY_KEY_MAP[key] ?? RARITY_KEY_MAP[key.replace(/grade$/, "")] ?? "Covert";
+};
+
 /**
  * Приводит тело запроса к валидной структуре TradeupRequestPayload, фильтруя лишние поля.
  */
@@ -31,9 +51,7 @@ const parseBody = (body: any): TradeupRequestPayload => {
   const targetCollectionIds = Array.isArray(body?.targetCollectionIds)
     ? body.targetCollectionIds
     : [];
-  const rarityParam = String(body?.targetRarity ?? "Covert").trim().toLowerCase();
-  const targetRarity: "Covert" | "Classified" =
-    rarityParam === "classified" ? "Classified" : "Covert";
+  const targetRarity = parseTargetRarity(body?.targetRarity);
   const options = body?.options && typeof body.options === "object" ? body.options : undefined;
   const targetOverridesRaw = Array.isArray(body?.targetOverrides) ? body.targetOverrides : [];
 
@@ -174,9 +192,7 @@ export const createTradeupsRouter = () => {
       return response.status(400).json({ error: "collectionTag is required" });
     }
     try {
-      const rarityParam = String(request.query?.rarity ?? "Covert").trim();
-      const normalized = rarityParam.toLowerCase();
-      const rarity = normalized === "classified" ? "Classified" : "Covert";
+      const rarity = parseTargetRarity(request.query?.rarity);
       const result = await fetchCollectionTargets(collectionTag, rarity);
       response.json(result);
     } catch (error) {
@@ -191,9 +207,7 @@ export const createTradeupsRouter = () => {
       return response.status(400).json({ error: "collectionTag is required" });
     }
     try {
-      const rarityParam = String(request.query?.rarity ?? "Covert").trim();
-      const normalized = rarityParam.toLowerCase();
-      const targetRarity = normalized === "classified" ? "Classified" : "Covert";
+      const targetRarity = parseTargetRarity(request.query?.rarity);
       const result = await fetchCollectionInputs(collectionTag, targetRarity);
       response.json(result);
     } catch (error) {

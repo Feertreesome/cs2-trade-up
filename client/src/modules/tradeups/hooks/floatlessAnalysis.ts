@@ -24,6 +24,16 @@ interface FloatlessAnalysisParams {
 
 type WearSlot = { exterior: Exterior; bucket: { min: number; max: number } };
 
+const getCatalogRangesForRarity = (
+  entry: TradeupCollection | null,
+  rarity: TargetRarity,
+) => {
+  if (!entry) return undefined;
+  if (rarity === "Covert") return entry.covert;
+  if (rarity === "Classified") return entry.classified;
+  return undefined;
+};
+
 export const evaluateFloatlessTradeup = ({
   rowResolution,
   activeTargets,
@@ -150,8 +160,7 @@ export const evaluateFloatlessTradeup = ({
     }
 
     if (minFloat == null || maxFloat == null) {
-      const fallbackList =
-        targetRarity === "Classified" ? catalogEntry?.classified : catalogEntry?.covert;
+      const fallbackList = getCatalogRangesForRarity(catalogEntry, targetRarity);
       const fallback = fallbackList?.find((entry) => entry.baseName === target.baseName);
       if (fallback) {
         minFloat = fallback.minFloat;

@@ -1,7 +1,13 @@
 import type { Exterior } from "../../skins/services/types";
 import { batchPriceOverview } from "../../skins/services/api";
 
-export type TargetRarity = "Covert" | "Classified";
+export type TargetRarity =
+  | "Consumer"
+  | "Industrial"
+  | "Mil-Spec"
+  | "Restricted"
+  | "Classified"
+  | "Covert";
 
 /**
  * Клиентский слой работы с trade-up API. Предоставляет функции для загрузки коллекций,
@@ -62,7 +68,7 @@ export interface CollectionInputSummary {
 export interface CollectionInputsResponse {
   collectionTag: string;
   collectionId: string | null;
-  rarity: "Classified" | "Restricted";
+  rarity: TargetRarity | null;
   inputs: CollectionInputSummary[];
 }
 

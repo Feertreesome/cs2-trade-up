@@ -37,6 +37,8 @@ import type {
   CollectionInputSummary,
   CollectionInputsResult,
   SteamCollectionSummary,
+  TargetRarity,
+  InputRarity,
 } from "./types";
 
 export type {
@@ -46,6 +48,8 @@ export type {
   CollectionInputSummary,
   CollectionInputsResult,
   SteamCollectionSummary,
+  TargetRarity,
+  InputRarity,
 } from "./types";
 
 const {
@@ -56,6 +60,59 @@ const {
   CLASSIFIED_FLOAT_BY_BASENAME,
   rebuildCollectionFloatCaches,
 } = collectionFloatData;
+
+const PREDEFINED_FLOATS_BY_RARITY: Record<TargetRarity, Map<string, CollectionFloatRange>> = {
+  Covert: COVERT_FLOAT_BY_BASENAME,
+  Classified: CLASSIFIED_FLOAT_BY_BASENAME,
+  Restricted: new Map(),
+  "Mil-Spec": new Map(),
+  Industrial: new Map(),
+  Consumer: new Map(),
+};
+
+const TARGET_INPUT_RARITY: Record<TargetRarity, InputRarity | null> = {
+  Covert: "Classified",
+  Classified: "Restricted",
+  Restricted: "Mil-Spec",
+  "Mil-Spec": "Industrial",
+  Industrial: "Consumer",
+  Consumer: null,
+};
+
+const getCatalogRangesForRarity = (
+  collection: CollectionFloatCatalogEntry,
+  rarity: TargetRarity,
+): CollectionFloatRange[] => {
+  if (rarity === "Covert") return collection.covert;
+  if (rarity === "Classified") return collection.classified;
+  return [];
+};
+
+const summarizeTargetsToRanges = (
+  targets: CollectionTargetSummary[],
+  rarity: TargetRarity,
+): CollectionFloatRange[] => {
+  const fallback = PREDEFINED_FLOATS_BY_RARITY[rarity] ?? new Map();
+  return targets
+    .map((target) => {
+      let minFloat: number | null = null;
+      let maxFloat: number | null = null;
+      for (const exterior of target.exteriors) {
+        if (typeof exterior.minFloat === "number") {
+          minFloat = minFloat == null ? exterior.minFloat : Math.min(minFloat, exterior.minFloat);
+        }
+        if (typeof exterior.maxFloat === "number") {
+          maxFloat = maxFloat == null ? exterior.maxFloat : Math.max(maxFloat, exterior.maxFloat);
+        }
+      }
+      if (minFloat == null || maxFloat == null) {
+        const predefined = fallback.get(target.baseName);
+        return predefined ?? null;
+      }
+      return { baseName: target.baseName, minFloat, maxFloat };
+    })
+    .filter((entry): entry is CollectionFloatRange => Boolean(entry));
+};
 
 const DEFAULT_BUYER_TO_NET = 1.15;
 
@@ -144,7 +201,7 @@ export interface TargetOverrideRequest {
 export interface TradeupRequestPayload {
   inputs: TradeupInputSlot[];
   targetCollectionIds: string[];
-  targetRarity?: "Covert" | "Classified";
+  targetRarity?: TargetRarity;
   options?: TradeupOptions;
   targetOverrides?: TargetOverrideRequest[];
 }
@@ -294,10 +351,12 @@ export const getCollectionsCatalog = (): CollectionFloatCatalogEntry[] => {
 };
 
 const STEAM_TAG_TO_COLLECTION_ID = new Map<string, string | null>();
+const COLLECTION_ID_TO_STEAM_TAG = new Map<string, string>();
 
 export const resetTradeupCaches = () => {
   collectionCachesReady = false;
   STEAM_TAG_TO_COLLECTION_ID.clear();
+  COLLECTION_ID_TO_STEAM_TAG.clear();
 };
 
 export const warmTradeupCatalog = () => {
@@ -307,12 +366,22 @@ export const warmTradeupCatalog = () => {
 
 const rememberCollectionId = (tag: string, collectionId: string | null) => {
   STEAM_TAG_TO_COLLECTION_ID.set(tag, collectionId);
+  if (collectionId) {
+    COLLECTION_ID_TO_STEAM_TAG.set(collectionId, tag);
+  }
   return collectionId;
 };
 
 const findCollectionIdByTag = (tag: string): string | null => {
   if (STEAM_TAG_TO_COLLECTION_ID.has(tag)) {
     return STEAM_TAG_TO_COLLECTION_ID.get(tag) ?? null;
+  }
+  return null;
+};
+
+const findSteamTagByCollectionId = (collectionId: string): string | null => {
+  if (COLLECTION_ID_TO_STEAM_TAG.has(collectionId)) {
+    return COLLECTION_ID_TO_STEAM_TAG.get(collectionId) ?? null;
   }
   return null;
 };
@@ -397,7 +466,7 @@ const fetchEntireCollection = async (options: {
  */
 export const fetchCollectionTargets = async (
   collectionTag: string,
-  rarity: "Covert" | "Classified" = "Covert",
+  rarity: TargetRarity = "Covert",
 ): Promise<CollectionTargetsResult> => {
   ensureCollectionCaches();
   let persisted: CollectionTargetsResult | null = null;
@@ -418,8 +487,7 @@ export const fetchCollectionTargets = async (
   const grouped = new Map<string, CollectionTargetSummary>();
   const baseNames: string[] = [];
   const floatCache = new Map<string, CollectionFloatRange | undefined>();
-  const predefinedFloats =
-    rarity === "Classified" ? CLASSIFIED_FLOAT_BY_BASENAME : COVERT_FLOAT_BY_BASENAME;
+  const predefinedFloats = PREDEFINED_FLOATS_BY_RARITY[rarity] ?? new Map();
 
   for (const item of items) {
     const exterior = parseMarketHashExterior(item.market_hash_name);
@@ -474,13 +542,12 @@ export const fetchCollectionTargets = async (
  */
 export const fetchCollectionInputs = async (
   collectionTag: string,
-  targetRarity: "Covert" | "Classified" = "Covert",
+  targetRarity: TargetRarity = "Covert",
 ): Promise<CollectionInputsResult> => {
   ensureCollectionCaches();
-  const inputRarity: "Classified" | "Restricted" =
-    targetRarity === "Classified" ? "Restricted" : "Classified";
+  const inputRarity = TARGET_INPUT_RARITY[targetRarity];
   let persisted: CollectionInputsResult | null = null;
-  if (await isCatalogReady()) {
+  if (inputRarity && (await isCatalogReady())) {
     try {
       persisted = await getCollectionInputsFromDb(collectionTag, inputRarity);
       if (persisted && persisted.inputs.length) {
@@ -493,6 +560,10 @@ export const fetchCollectionInputs = async (
       // Ignore and fall back to Steam
     }
   }
+  if (!inputRarity) {
+    return { collectionTag, collectionId: null, rarity: null, inputs: [] };
+  }
+
   const items = await fetchEntireCollection({
     collectionTag,
     rarity: inputRarity,
@@ -570,6 +641,7 @@ export const calculateTradeup = async (
   }
 
   const overridesByCollection = new Map<string, TargetOverrideRequest>();
+  const overrideCollectionTags = new Map<string, string>();
   for (const override of payload.targetOverrides ?? []) {
     if (!override?.baseName) continue;
     let collectionId = override.collectionId ?? null;
@@ -577,14 +649,17 @@ export const calculateTradeup = async (
       collectionId = findCollectionIdByTag(override.collectionTag);
     }
     if (!collectionId) continue;
+    if (override.collectionTag) {
+      overrideCollectionTags.set(collectionId, override.collectionTag);
+      rememberCollectionId(override.collectionTag, collectionId);
+    }
     const key = `${collectionId}:${override.baseName.toLowerCase()}`;
     if (!overridesByCollection.has(key)) {
       overridesByCollection.set(key, { ...override, collectionId });
     }
   }
 
-  const targetRarity: "Covert" | "Classified" =
-    payload.targetRarity === "Classified" ? "Classified" : "Covert";
+  const targetRarity: TargetRarity = payload.targetRarity ?? "Covert";
 
   const targetCollections = payload.targetCollectionIds
     .map((id) => COLLECTIONS_WITH_FLOAT_MAP.get(id))
@@ -594,11 +669,51 @@ export const calculateTradeup = async (
     throw new Error("No valid target collections specified");
   }
 
+  const rangeData = await Promise.all(
+    targetCollections.map(async (collection) => {
+      const explicitTag = overrideCollectionTags.get(collection.id);
+      const steamTag = explicitTag ?? findSteamTagByCollectionId(collection.id);
+      let candidates: CollectionFloatRange[] = [];
+      if (steamTag) {
+        try {
+          const result = await fetchCollectionTargets(steamTag, targetRarity);
+          if (result.collectionId) {
+            rememberCollectionId(steamTag, result.collectionId);
+          }
+          candidates = summarizeTargetsToRanges(result.targets, targetRarity);
+        } catch (error) {
+          // Ignore and fall back to catalog
+        }
+      }
+      if (!candidates.length) {
+        candidates = getCatalogRangesForRarity(collection, targetRarity);
+      }
+      if (!candidates.length) {
+        const overrideCandidates = Array.from(overridesByCollection.entries())
+          .filter(([key]) => key.startsWith(`${collection.id}:`))
+          .map(([, override]) => {
+            const min = typeof override.minFloat === "number" ? override.minFloat : null;
+            const max = typeof override.maxFloat === "number" ? override.maxFloat : null;
+            if (min != null && max != null) {
+              return { baseName: override.baseName, minFloat: min, maxFloat: max };
+            }
+            const fallback = (PREDEFINED_FLOATS_BY_RARITY[targetRarity] ?? new Map()).get(
+              override.baseName,
+            );
+            return fallback ?? null;
+          })
+          .filter((entry): entry is CollectionFloatRange => Boolean(entry));
+        if (overrideCandidates.length) {
+          candidates = overrideCandidates;
+        }
+      }
+      return { collection, candidates };
+    }),
+  );
+
   const outcomes = await Promise.all(
-    targetCollections.flatMap((collection) => {
+    rangeData.flatMap(({ collection, candidates }) => {
       const collectionProbability = (collectionCounts.get(collection.id) ?? 0) / totalInputs;
-      const candidates =
-        targetRarity === "Classified" ? collection.classified : collection.covert;
       const rangeCount = candidates.length;
       if (!rangeCount) {
         return [];
