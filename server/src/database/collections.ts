@@ -6,6 +6,8 @@ import type {
   CollectionInputsResult,
   CollectionInputSummary,
   SteamCollectionSummary,
+  TargetRarity,
+  InputRarity,
 } from "../modules/tradeups/types";
 import { baseFromMarketHash } from "../modules/skins/service";
 
@@ -94,7 +96,7 @@ const buildTargets = (
 
 export const getCollectionTargetsFromDb = async (
   collectionTag: string,
-  rarity: "Covert" | "Classified",
+  rarity: TargetRarity,
 ): Promise<CollectionTargetsResult | null> => {
   try {
     const collection = await prisma.collection.findUnique({
@@ -142,7 +144,7 @@ export const getCollectionTargetsFromDb = async (
 
 export const getCollectionInputsFromDb = async (
   collectionTag: string,
-  inputRarity: "Classified" | "Restricted",
+  inputRarity: InputRarity,
 ): Promise<CollectionInputsResult | null> => {
   try {
     const collection = await prisma.collection.findUnique({

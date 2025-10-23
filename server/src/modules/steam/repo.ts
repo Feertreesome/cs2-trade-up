@@ -332,6 +332,8 @@ export const getPriceUSD = async (
 
 /** Соответствие «редкость → Steam-тег». */
 export const RARITY_TO_TAG: Record<string, string> = {
+  Consumer: "tag_Rarity_Common_Weapon",
+  Industrial: "tag_Rarity_Uncommon_Weapon",
   "Mil-Spec": "tag_Rarity_Rare_Weapon",
   Restricted: "tag_Rarity_Mythical_Weapon",
   Classified: "tag_Rarity_Legendary_Weapon",

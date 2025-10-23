@@ -37,30 +37,39 @@ export default function TargetSelectionSection({
   inputsLoading,
   inputsError,
 }: TargetSelectionSectionProps) {
-  const rarityLabel = targetRarity === "Covert" ? "Covert" : "Classified";
+  const rarityOptions: Array<{ value: TargetRarity; label: string }> = React.useMemo(
+    () => [
+      { value: "Covert", label: "Covert" },
+      { value: "Classified", label: "Classified" },
+      { value: "Restricted", label: "Restricted" },
+      { value: "Mil-Spec", label: "Mil-Spec" },
+      { value: "Industrial", label: "Industrial" },
+      { value: "Consumer", label: "Consumer" },
+    ],
+    [],
+  );
+
+  const rarityLabel = React.useMemo(() => {
+    return rarityOptions.find((option) => option.value === targetRarity)?.label ?? targetRarity;
+  }, [rarityOptions, targetRarity]);
 
   return (
     <section>
       <h3 className="h5">2. Целевой скин</h3>
       <div className="d-flex flex-wrap align-items-center gap-2 mb-2">
         <span className="text-muted small">Качество результата:</span>
-        <div className="btn-group btn-group-sm" role="group">
-          <button
-            type="button"
-            className={`btn ${targetRarity === "Covert" ? "btn-primary" : "btn-outline-light"}`}
-            onClick={() => setTargetRarity("Covert")}
-            disabled={loadingTargets}
-          >
-            Covert
-          </button>
-          <button
-            type="button"
-            className={`btn ${targetRarity === "Classified" ? "btn-primary" : "btn-outline-light"}`}
-            onClick={() => setTargetRarity("Classified")}
-            disabled={loadingTargets}
-          >
-            Classified
-          </button>
+        <div className="btn-group btn-group-sm flex-wrap" role="group">
+          {rarityOptions.map((option) => (
+            <button
+              type="button"
+              key={option.value}
+              className={`btn ${targetRarity === option.value ? "btn-primary" : "btn-outline-light"}`}
+              onClick={() => setTargetRarity(option.value)}
+              disabled={loadingTargets}
+            >
+              {option.label}
+            </button>
+          ))}
         </div>
       </div>
       {!activeCollectionTag && <div className="text-muted">Сначала выберите коллекцию.</div>}

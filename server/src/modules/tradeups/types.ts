@@ -13,10 +13,23 @@ export interface CollectionTargetSummary {
   exteriors: CollectionTargetExterior[];
 }
 
+export const TARGET_RARITIES = [
+  "Consumer",
+  "Industrial",
+  "Mil-Spec",
+  "Restricted",
+  "Classified",
+  "Covert",
+] as const;
+
+export type TargetRarity = (typeof TARGET_RARITIES)[number];
+
+export type InputRarity = Exclude<TargetRarity, "Covert">;
+
 export interface CollectionTargetsResult {
   collectionTag: string;
   collectionId: string | null;
-  rarity: "Covert" | "Classified";
+  rarity: TargetRarity;
   targets: CollectionTargetSummary[];
 }
 
@@ -30,7 +43,7 @@ export interface CollectionInputSummary {
 export interface CollectionInputsResult {
   collectionTag: string;
   collectionId: string | null;
-  rarity: "Classified" | "Restricted";
+  rarity: InputRarity | null;
   inputs: CollectionInputSummary[];
 }
 
