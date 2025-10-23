@@ -37,6 +37,16 @@ interface CollectionAnalysisInputEntry {
   maxFloat: number | null;
 }
 
+interface CollectionAnalysisOutcomeEntry {
+  key: string;
+  targetBaseName: string;
+  marketHashName: string;
+  exterior: Exterior;
+  price: number | null;
+  ratioPercent: number | null;
+  profitPercent: number | null;
+}
+
 interface CollectionAnalysisEntry {
   key: string;
   targetRarity: TargetRarity;
@@ -48,6 +58,10 @@ interface CollectionAnalysisEntry {
   inputs: CollectionAnalysisInputEntry[];
   totalInputCost: number;
   ratioPercent: number;
+  outcomes: CollectionAnalysisOutcomeEntry[];
+  profitProbability: number | null;
+  knownOutcomeCount: number;
+  profitableOutcomeCount: number;
 }
 
 interface CollectionAnalysis {
@@ -82,6 +96,21 @@ const formatFloatRange = (min: number | null, max: number | null) => {
   }
   const value = min ?? max;
   return value == null ? "" : formatFloat(value);
+};
+
+const percentFormatter = new Intl.NumberFormat("ru-RU", {
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 1,
+});
+
+const formatSignedPercent = (value: number | null) => {
+  if (value == null || !Number.isFinite(value)) {
+    return "н/д";
+  }
+  const absolute = Math.abs(value);
+  const formatted = percentFormatter.format(absolute);
+  const sign = value > 0 ? "+" : value < 0 ? "−" : "";
+  return `${sign}${formatted}%`;
 };
 
 const buildTargetKey = (
@@ -240,6 +269,33 @@ const analyzeCollection = async (collectionTag: string): Promise<CollectionAnaly
         });
 
         const ratioPercent = (targetPrice / totalInputCost) * 100;
+        const allOutcomes = targets.flatMap((candidate) =>
+          candidate.exteriors.map<CollectionAnalysisOutcomeEntry>((candidateExterior) => {
+            const outcomeKey = buildTargetKey(targetRarity, candidate, candidateExterior);
+            const price = candidateExterior.price ?? null;
+            const outcomeRatio =
+              price != null && price > 0 ? (price / totalInputCost) * 100 : null;
+            const profitPercent = outcomeRatio != null ? outcomeRatio - 100 : null;
+            return {
+              key: outcomeKey,
+              targetBaseName: candidate.baseName,
+              marketHashName: candidateExterior.marketHashName,
+              exterior: candidateExterior.exterior,
+              price,
+              ratioPercent: outcomeRatio,
+              profitPercent,
+            };
+          }),
+        );
+
+        const pricedOutcomes = allOutcomes.filter((outcome) => outcome.ratioPercent != null);
+        const profitableOutcomeCount = pricedOutcomes.filter(
+          (outcome) => (outcome.ratioPercent ?? 0) >= 100,
+        ).length;
+        const knownOutcomeCount = pricedOutcomes.length;
+        const profitProbability =
+          knownOutcomeCount > 0 ? (profitableOutcomeCount / knownOutcomeCount) * 100 : null;
+
         const key = buildTargetKey(targetRarity, target, exterior);
         const current = bestByTarget.get(key);
         if (!current || ratioPercent > current.ratioPercent) {
@@ -254,6 +310,10 @@ const analyzeCollection = async (collectionTag: string): Promise<CollectionAnaly
             inputs: inputsPlan,
             totalInputCost,
             ratioPercent,
+            outcomes: allOutcomes,
+            profitProbability,
+            knownOutcomeCount,
+            profitableOutcomeCount,
           });
         }
       }
@@ -349,6 +409,39 @@ const CollectionAnalyzer: React.FC = () => {
     return analysis.entries.reduce((max, entry) => Math.max(max, entry.ratioPercent), 0);
   }, [analysis]);
 
+  const groupedEntries = React.useMemo(() => {
+    if (!analysis?.entries?.length) {
+      return [] as { label: string; sortValue: number; entries: CollectionAnalysisEntry[] }[];
+    }
+
+    const groups = new Map<
+      string,
+      { label: string; sortValue: number; entries: CollectionAnalysisEntry[] }
+    >();
+
+    analysis.entries.forEach((entry) => {
+      const probability = entry.profitProbability;
+      const normalized =
+        probability == null || !Number.isFinite(probability)
+          ? null
+          : Math.round(probability * 10) / 10;
+      const key = normalized == null ? "unknown" : normalized.toFixed(1);
+      const label =
+        normalized == null
+          ? "Шанс плюса: нет данных"
+          : `Шанс плюса ≈ ${normalized.toFixed(1)}%`;
+      const sortValue = normalized ?? -1;
+      const group = groups.get(key);
+      if (group) {
+        group.entries.push(entry);
+      } else {
+        groups.set(key, { label, sortValue, entries: [entry] });
+      }
+    });
+
+    return Array.from(groups.values()).sort((a, b) => b.sortValue - a.sortValue);
+  }, [analysis]);
+
   return (
     <div className="collection-analyzer">
       <div>
@@ -410,46 +503,94 @@ const CollectionAnalyzer: React.FC = () => {
               Не удалось подобрать контракты: нет данных о ценах.
             </div>
           )}
-          {!analysisLoading && !analysisError && analysis?.entries.length ? (
+          {!analysisLoading && !analysisError && groupedEntries.length ? (
             <div className="collection-chart">
-              {analysis.entries.map((entry) => {
-                const width = maxRatio > 0 ? Math.max((entry.ratioPercent / maxRatio) * 100, 2) : 0;
-                return (
-                  <div key={entry.key} className="collection-chart__row">
-                    <div className="collection-chart__label">
-                      <div className="fw-semibold">
-                        {entry.targetMarketHashName}
-                        <span className="text-secondary ms-2">
-                          {formatCurrency(entry.targetPrice)}
-                        </span>
+              {groupedEntries.map((group, groupIndex) => (
+                <div key={`${group.label}:${groupIndex}`} className="collection-chart__group">
+                  <div className="collection-chart__group-title">{group.label}</div>
+                  {group.entries.map((entry) => {
+                    const width =
+                      maxRatio > 0 ? Math.max((entry.ratioPercent / maxRatio) * 100, 2) : 0;
+                    const otherOutcomes = entry.outcomes.filter((outcome) => outcome.key !== entry.key);
+                    const sortedOtherOutcomes = otherOutcomes
+                      .slice()
+                      .sort((a, b) => {
+                        const aValue = a.profitPercent ?? Number.NEGATIVE_INFINITY;
+                        const bValue = b.profitPercent ?? Number.NEGATIVE_INFINITY;
+                        if (aValue === bValue) {
+                          return a.marketHashName.localeCompare(b.marketHashName, "ru");
+                        }
+                        return bValue - aValue;
+                      });
+                    const knownOutcomesMissing =
+                      entry.outcomes.length - entry.knownOutcomeCount;
+                    const profitProbabilityLabel = entry.profitProbability != null
+                      ? `${percentFormatter.format(entry.profitProbability)}% (${entry.profitableOutcomeCount} из ${entry.knownOutcomeCount})`
+                      : "нет данных";
+                    return (
+                      <div key={entry.key} className="collection-chart__row">
+                        <div className="collection-chart__label">
+                          <div className="fw-semibold">
+                            {entry.targetMarketHashName}
+                            <span className="text-secondary ms-2">
+                              {formatCurrency(entry.targetPrice)}
+                            </span>
+                          </div>
+                          <div className="collection-chart__meta">
+                            {TARGET_RARITY_TITLES[entry.targetRarity]}
+                            {entry.inputRarity ? ` • вход: ${entry.inputRarity}` : ""}
+                          </div>
+                          <div className="collection-chart__inputs">
+                            <div>
+                              <span className="fw-semibold">Лучший вход:</span>
+                              {entry.inputs.map((input, index) => {
+                                const floatLabel = formatFloatRange(input.minFloat, input.maxFloat);
+                                return (
+                                  <React.Fragment key={`${entry.key}:${input.marketHashName}:${index}`}>
+                                    {index > 0 ? ", " : " "}
+                                    {input.marketHashName} × {input.count} ({formatCurrency(input.unitPrice)} за слот
+                                    {floatLabel ? `, float ${floatLabel}` : ""})
+                                  </React.Fragment>
+                                );
+                              })}
+                              {" • Σ "}
+                              {formatCurrency(entry.totalInputCost)}
+                            </div>
+                            <div className="collection-chart__probability">
+                              Шанс уйти в плюс: {profitProbabilityLabel}
+                              {knownOutcomesMissing > 0
+                                ? ` • нет цен для ${knownOutcomesMissing} исходов`
+                                : ""}
+                            </div>
+                            <div className="collection-chart__outcomes">
+                              Что ещё может выпасть:
+                              {sortedOtherOutcomes.length ? (
+                                <ul className="collection-chart__outcomes-list">
+                                  {sortedOtherOutcomes.map((outcome) => (
+                                    <li key={outcome.key}>
+                                      {outcome.marketHashName}
+                                      {" "}
+                                      {outcome.profitPercent != null
+                                        ? formatSignedPercent(outcome.profitPercent)
+                                        : "(нет данных о цене)"}
+                                    </li>
+                                  ))}
+                                </ul>
+                              ) : (
+                                <span> нет данных</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="collection-chart__bar">
+                          <div className="collection-chart__bar-fill" style={{ width: `${width}%` }} />
+                          <div className="collection-chart__value">{entry.ratioPercent.toFixed(1)}%</div>
+                        </div>
                       </div>
-                      <div className="collection-chart__meta">
-                        {TARGET_RARITY_TITLES[entry.targetRarity]}
-                        {entry.inputRarity ? ` • вход: ${entry.inputRarity}` : ""}
-                      </div>
-                      <div className="collection-chart__inputs">
-                        Лучший вход:
-                        {entry.inputs.map((input, index) => {
-                          const floatLabel = formatFloatRange(input.minFloat, input.maxFloat);
-                          return (
-                            <React.Fragment key={`${entry.key}:${input.marketHashName}:${index}`}>
-                              {index > 0 ? ", " : " "}
-                              {input.marketHashName} × {input.count} ({formatCurrency(input.unitPrice)} за слот
-                              {floatLabel ? `, float ${floatLabel}` : ""})
-                            </React.Fragment>
-                          );
-                        })}
-                        {" • Σ "}
-                        {formatCurrency(entry.totalInputCost)}
-                      </div>
-                    </div>
-                    <div className="collection-chart__bar">
-                      <div className="collection-chart__bar-fill" style={{ width: `${width}%` }} />
-                      <div className="collection-chart__value">{entry.ratioPercent.toFixed(1)}%</div>
-                    </div>
-                  </div>
-                );
-              })}
+                    );
+                  })}
+                </div>
+              ))}
             </div>
           ) : null}
           {analysis?.warnings?.length ? (
