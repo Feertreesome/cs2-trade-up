@@ -3,7 +3,6 @@ import TradeupSummary from "./components/TradeupSummary";
 import CollectionSelectorSection from "./components/CollectionSelectorSection";
 import TargetSelectionSection from "./components/TargetSelectionSection";
 import InputsTableSection from "./components/InputsTableSection";
-import FloatlessAnalysisSection from "./components/FloatlessAnalysisSection";
 import ResultsSection from "./components/ResultsSection";
 import useTradeupBuilder from "./hooks/useTradeupBuilder";
 import "./TradeupBuilder.css";
@@ -32,20 +31,14 @@ export default function TradeupBuilder() {
     inputsError,
     rows,
     updateRow,
-    buyerFeePercent,
-    setBuyerFeePercent,
-    buyerToNetRate,
     averageFloat,
-    totalBuyerCost,
-    totalNetCost,
-    selectedCollectionDetails,
+    totalInputCost,
     autofillPrices,
     priceLoading,
     calculate,
     calculation,
     calculating,
     calculationError,
-    floatlessAnalysis,
     availabilityState,
     checkAvailability,
   } = useTradeupBuilder();
@@ -61,11 +54,7 @@ export default function TradeupBuilder() {
         </div>
         <TradeupSummary
           averageFloat={averageFloat}
-          totalBuyerCost={totalBuyerCost}
-          totalNetCost={totalNetCost}
-          buyerFeePercent={buyerFeePercent}
-          buyerToNetRate={buyerToNetRate}
-          onBuyerFeeChange={(value) => setBuyerFeePercent(value)}
+          totalInputCost={totalInputCost}
         />
       </div>
 
@@ -78,7 +67,6 @@ export default function TradeupBuilder() {
         steamCollectionError={steamCollectionError}
         activeCollectionTag={activeCollectionTag}
         selectCollection={selectCollection}
-        selectedCollectionDetails={selectedCollectionDetails}
       />
 
       <hr className="border-secondary" />
@@ -101,7 +89,6 @@ export default function TradeupBuilder() {
       <InputsTableSection
         rows={rows}
         collectionOptions={collectionOptions}
-        buyerToNetRate={buyerToNetRate}
         updateRow={updateRow}
         autofillPrices={autofillPrices}
         priceLoading={priceLoading}
@@ -110,12 +97,10 @@ export default function TradeupBuilder() {
         calculationError={calculationError}
       />
 
-      <FloatlessAnalysisSection floatlessAnalysis={floatlessAnalysis} />
-
       {calculation && (
         <ResultsSection
           calculation={calculation}
-          totalBuyerCost={totalBuyerCost}
+          totalInputCost={totalInputCost}
           availabilityState={availabilityState}
           onCheckAvailability={checkAvailability}
         />

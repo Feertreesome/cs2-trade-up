@@ -4,9 +4,13 @@ import type { TradeupAvailabilityState } from "../hooks/types";
 import AvailabilitySuggestionSection from "./AvailabilitySuggestionSection";
 import { formatNumber, formatPercent } from "../utils/format";
 
+/**
+ * Отображает результаты расчёта trade-up: ожидаемую стоимость, распределение исходов
+ * и позволяет запустить проверку наличия предметов на рынке.
+ */
 interface ResultsSectionProps {
   calculation: TradeupCalculationResponse;
-  totalBuyerCost: number;
+  totalInputCost: number;
   availabilityState: TradeupAvailabilityState;
   onCheckAvailability: (
     outcome: TradeupCalculationResponse["outcomes"][number],
@@ -15,7 +19,7 @@ interface ResultsSectionProps {
 
 export default function ResultsSection({
   calculation,
-  totalBuyerCost,
+  totalInputCost,
   availabilityState,
   onCheckAvailability,
 }: ResultsSectionProps) {
@@ -24,7 +28,7 @@ export default function ResultsSection({
       <h3 className="h5">4. Результаты</h3>
       <div className="tradeup-results card bg-secondary-subtle text-dark p-3">
         <div>
-          Ожидаемый возврат после комиссии (net): <strong>${formatNumber(calculation.totalOutcomeNet)}</strong>
+          Ожидаемый возврат: <strong>${formatNumber(calculation.totalOutcomeNet)}</strong>
         </div>
         <div>
           Ожидаемое значение (EV):{" "}
@@ -55,8 +59,7 @@ export default function ResultsSection({
               <th>Коллекция</th>
               <th>Float</th>
               <th>Wear</th>
-              <th>Buyer $</th>
-              <th>Net $ (после комиссии)</th>
+              <th>Цена $</th>
               <th>Прибыль</th>
               <th>Вероятность</th>
               <th>Доступность</th>
@@ -73,9 +76,8 @@ export default function ResultsSection({
                 <td>{outcome.collectionName}</td>
                 <td>{outcome.rollFloat.toFixed(5)}</td>
                 <td>{outcome.exterior}</td>
-                <td>{outcome.buyerPrice != null ? `$${formatNumber(outcome.buyerPrice)}` : "—"}</td>
                 <td>{outcome.netPrice != null ? `$${formatNumber(outcome.netPrice)}` : "—"}</td>
-                <td>{outcome.netPrice != null ? `$${formatNumber(outcome.netPrice - totalBuyerCost)}` : "—"}</td>
+                <td>{outcome.netPrice != null ? `$${formatNumber(outcome.netPrice - totalInputCost)}` : "—"}</td>
                 <td>{formatPercent(outcome.probability)}</td>
                   <td>
                     <button

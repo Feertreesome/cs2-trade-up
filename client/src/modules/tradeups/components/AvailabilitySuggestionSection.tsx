@@ -3,6 +3,9 @@ import type { TradeupCalculationResponse } from "../services/api";
 import type { TradeupAvailabilityState } from "../hooks/types";
 import { formatNumber } from "../utils/format";
 
+/**
+ * Показывает подсказки по найденным объявлениям на рынке для выбранного исхода trade-up.
+ */
 interface AvailabilitySuggestionSectionProps {
   availabilityState: TradeupAvailabilityState;
   inputs: TradeupCalculationResponse["inputs"];
@@ -56,7 +59,7 @@ export default function AvailabilitySuggestionSection({
                   <th>Запланированный market_hash_name</th>
                   <th>Подобранный listing</th>
                   <th>Float</th>
-                  <th>Buyer $</th>
+                  <th>Цена $</th>
                   <th>Inspect</th>
                 </tr>
               </thead>

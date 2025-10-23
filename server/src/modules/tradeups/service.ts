@@ -114,8 +114,6 @@ const summarizeTargetsToRanges = (
     .filter((entry): entry is CollectionFloatRange => Boolean(entry));
 };
 
-const DEFAULT_BUYER_TO_NET = 1.15;
-
 const WEAR_BUCKETS: Array<{ exterior: Exterior; min: number; max: number }> = [
   { exterior: "Factory New", min: 0, max: 0.06999999999999999 },
   { exterior: "Minimal Wear", min: 0.07, max: 0.14999999999999999 },
@@ -182,11 +180,6 @@ export interface TradeupInputSlot {
   priceOverrideNet?: number | null;
 }
 
-export interface TradeupOptions {
-  /** Коэффициент buyer -> net. По умолчанию 1.15 (15% комиссии Steam). */
-  buyerToNetRate?: number;
-}
-
 export interface TargetOverrideRequest {
   collectionId?: string | null;
   collectionTag?: string | null;
@@ -202,12 +195,10 @@ export interface TradeupRequestPayload {
   inputs: TradeupInputSlot[];
   targetCollectionIds: string[];
   targetRarity?: TargetRarity;
-  options?: TradeupOptions;
   targetOverrides?: TargetOverrideRequest[];
 }
 
 export interface TradeupInputSummary extends TradeupInputSlot {
-  priceMarket?: number | null;
   netPrice?: number | null;
   priceError?: unknown;
 }
@@ -222,7 +213,6 @@ export interface TradeupOutcome {
   exterior: Exterior;
   wearRange: { min: number; max: number };
   probability: number;
-  buyerPrice?: number | null;
   netPrice?: number | null;
   priceError?: unknown;
   marketHashName: string;
@@ -257,7 +247,6 @@ const buildOutcome = async (
     entry: CollectionFloatRange;
     collectionProbability: number;
     rangeCount: number;
-    buyerToNetRate: number;
     override?: TargetOverrideRequest;
   },
 ): Promise<TradeupOutcome> => {
@@ -267,7 +256,6 @@ const buildOutcome = async (
     entry,
     collectionProbability,
     rangeCount,
-    buyerToNetRate,
     override,
   } = options;
 
@@ -281,15 +269,15 @@ const buildOutcome = async (
   const wearRange = getWearRange(exterior);
   const marketHashName = override?.marketHashName ?? toMarketHashName(entry.baseName, exterior);
 
-  let buyerPrice = override?.price ?? null;
+  let price = override?.price ?? null;
   let priceError: unknown = undefined;
-  if (buyerPrice == null) {
-    const { price, error } = await getPriceUSD(marketHashName);
-    buyerPrice = price;
+  if (price == null) {
+    const { price: fetchedPrice, error } = await getPriceUSD(marketHashName);
+    price = fetchedPrice;
     priceError = error;
   }
 
-  const netPrice = buyerPrice == null ? null : buyerPrice / buyerToNetRate;
+  const netPrice = price == null ? null : price;
   const probability = rangeCount > 0 ? collectionProbability / rangeCount : 0;
 
   return {
@@ -302,7 +290,6 @@ const buildOutcome = async (
     exterior,
     wearRange: { min: wearRange.min, max: wearRange.max },
     probability,
-    buyerPrice,
     netPrice,
     priceError,
     marketHashName,
@@ -313,24 +300,18 @@ const buildOutcome = async (
 /**
  * Обогащает входные слоты ценой: либо из пользовательского ввода, либо из Steam через API.
  */
-const enrichInput = async (
-  input: TradeupInputSlot,
-  buyerToNetRate: number,
-): Promise<TradeupInputSummary> => {
+const enrichInput = async (input: TradeupInputSlot): Promise<TradeupInputSummary> => {
   if (input.priceOverrideNet != null) {
     return {
       ...input,
-      priceMarket: input.priceOverrideNet * buyerToNetRate,
       netPrice: input.priceOverrideNet,
     };
   }
 
   const { price, error } = await getPriceUSD(input.marketHashName);
-  const netPrice = price == null ? null : price / buyerToNetRate;
   return {
     ...input,
-    priceMarket: price,
-    netPrice,
+    netPrice: price,
     priceError: error,
   };
 };
@@ -342,12 +323,6 @@ const ensureCollectionCaches = () => {
     rebuildCollectionFloatCaches();
     collectionCachesReady = true;
   }
-};
-
-/** Возвращает локальный справочник коллекций и их float-диапазонов. */
-export const getCollectionsCatalog = (): CollectionFloatCatalogEntry[] => {
-  ensureCollectionCaches();
-  return COLLECTIONS_WITH_FLOAT.slice();
 };
 
 const STEAM_TAG_TO_COLLECTION_ID = new Map<string, string | null>();
@@ -597,9 +572,6 @@ export const calculateTradeup = async (
   if (!payload?.inputs?.length) {
     throw new Error("At least one input is required");
   }
-  const buyerToNetRate = payload.options?.buyerToNetRate && payload.options.buyerToNetRate > 1
-    ? payload.options.buyerToNetRate
-    : DEFAULT_BUYER_TO_NET;
 
   const inputs = payload.inputs.map((slot) => ({
     ...slot,
@@ -725,7 +697,6 @@ export const calculateTradeup = async (
           entry,
           collectionProbability,
           rangeCount,
-          buyerToNetRate,
           override: overridesByCollection.get(`${collection.id}:${entry.baseName.toLowerCase()}`),
         }),
       );
@@ -733,7 +704,7 @@ export const calculateTradeup = async (
   );
 
   const inputSummaries = await Promise.all(
-    inputs.map((slot) => enrichInput(slot, buyerToNetRate)),
+    inputs.map((slot) => enrichInput(slot)),
   );
 
   const totalInputNet = inputSummaries.reduce(

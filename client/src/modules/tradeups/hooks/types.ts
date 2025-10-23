@@ -6,33 +6,31 @@ import type {
   TargetRarity,
   TradeupAvailabilityResponse,
   TradeupCalculationResponse,
-  TradeupCollection,
 } from "../services/api";
+
+/**
+ * Основные типы, которые разделяют клиентские хуки и компоненты конструктора trade-up.
+ * Содержат представления строк ввода, целевых скинов и агрегированного состояния.
+ */
 
 export interface TradeupInputFormRow {
   marketHashName: string;
   collectionId: string;
   float: string;
-  buyerPrice: string;
+  price: string;
 }
 
 export interface ParsedTradeupRow {
   marketHashName: string;
   collectionId: string;
   float: number;
-  buyerPrice: number;
+  price: number;
 }
 
 export interface CollectionSelectOption {
   value: string;
   label: string;
   supported: boolean;
-}
-
-export interface CollectionValueMeta {
-  collectionId: string | null;
-  tag: string | null;
-  name: string;
 }
 
 export interface SelectedTarget {
@@ -49,7 +47,7 @@ export interface ResolvedTradeupRow {
   marketHashName: string;
   collectionId: string;
   float: number;
-  buyerPrice: number;
+  price: number;
   resolvedCollectionId: string | null;
   resolvedCollectionName: string | null;
   resolvedTag: string | null;
@@ -63,48 +61,7 @@ export interface RowResolution {
   collectionCounts: Map<string, number>;
 }
 
-export interface FloatlessOutcomeExterior {
-  exterior: Exterior;
-  probability: number | null;
-  buyerPrice: number | null;
-  netPrice: number | null;
-  marketHashName: string;
-}
-
-export interface FloatlessOutcomeSummary {
-  baseName: string;
-  probability: number;
-  projectedRange: { min: number; max: number };
-  exteriors: FloatlessOutcomeExterior[];
-  robustNet: number | null;
-  expectedNetContribution: number | null;
-  expectedProbabilityCovered: number;
-}
-
-export interface FloatlessAnalysisResult {
-  ready: boolean;
-  issues: string[];
-  inputRange: { min: number; max: number } | null;
-  wearCounts: Partial<Record<Exterior, number>>;
-  outcomes: FloatlessOutcomeSummary[];
-  robustOutcomeNet: number | null;
-  expectedOutcomeNet: number | null;
-  robustEV: number | null;
-  expectedEV: number | null;
-  expectedCoverage: number;
-}
-
-export interface CollectionLookupContext {
-  catalogCollections: TradeupCollection[];
-  catalogMap: Map<string, TradeupCollection>;
-  steamCollections: Array<{ tag: string; name: string; collectionId: string | null }>;
-  steamCollectionsByTag: Map<string, { tag: string; name: string; collectionId: string | null }>;
-  targetsByCollection: Record<string, Partial<Record<TargetRarity, CollectionTargetsResponse>>>;
-  inputsByCollection: Record<string, Partial<Record<TargetRarity, CollectionInputsResponse>>>;
-}
-
 export interface TradeupBuilderState {
-  catalogCollections: TradeupCollection[];
   steamCollections: Array<{ tag: string; name: string; collectionId: string | null }>;
   collectionOptions: CollectionSelectOption[];
   loadSteamCollections: () => void | Promise<void>;
@@ -127,20 +84,14 @@ export interface TradeupBuilderState {
   inputsError: string | null;
   rows: TradeupInputFormRow[];
   updateRow: (index: number, patch: Partial<TradeupInputFormRow>) => void;
-  buyerFeePercent: number;
-  setBuyerFeePercent: React.Dispatch<React.SetStateAction<number>>;
-  buyerToNetRate: number;
   averageFloat: number;
-  totalBuyerCost: number;
-  totalNetCost: number;
-  selectedCollectionDetails: TradeupCollection[];
+  totalInputCost: number;
   autofillPrices: (namesOverride?: string[]) => Promise<void> | void;
   priceLoading: boolean;
   calculate: () => Promise<void>;
   calculation: TradeupCalculationResponse | null;
   calculating: boolean;
   calculationError: string | null;
-  floatlessAnalysis: FloatlessAnalysisResult;
   availabilityState: TradeupAvailabilityState;
   checkAvailability: (
     outcome: TradeupCalculationResponse["outcomes"][number],

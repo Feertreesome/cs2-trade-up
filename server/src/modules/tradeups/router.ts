@@ -5,7 +5,6 @@ import {
   fetchCollectionInputs,
   fetchCollectionTargets,
   fetchSteamCollections,
-  getCollectionsCatalog,
   type TradeupAvailabilityRequest,
   type TradeupRequestPayload,
   type TargetRarity,
@@ -52,7 +51,6 @@ const parseBody = (body: any): TradeupRequestPayload => {
     ? body.targetCollectionIds
     : [];
   const targetRarity = parseTargetRarity(body?.targetRarity);
-  const options = body?.options && typeof body.options === "object" ? body.options : undefined;
   const targetOverridesRaw = Array.isArray(body?.targetOverrides) ? body.targetOverrides : [];
 
   return {
@@ -70,7 +68,6 @@ const parseBody = (body: any): TradeupRequestPayload => {
       .filter((slot: any) => slot.marketHashName && slot.collectionId),
     targetCollectionIds: targetCollectionIds.map((id: any) => String(id)).slice(0, 20),
     targetRarity,
-    options: options,
     targetOverrides: targetOverridesRaw
       .map((override: any) => ({
         collectionId:
@@ -134,12 +131,6 @@ const parseAvailabilityBody = (body: any): TradeupAvailabilityRequest => {
  */
 export const createTradeupsRouter = () => {
   const router = Router();
-
-  /** Локальный справочник коллекций с подготовленными float-диапазонами. */
-  router.get("/collections", (_request, response) => {
-    const collections = getCollectionsCatalog();
-    response.json({ collections });
-  });
 
   /** Живой список коллекций из Steam Community Market. */
   router.get("/collections/steam", async (_request, response) => {
