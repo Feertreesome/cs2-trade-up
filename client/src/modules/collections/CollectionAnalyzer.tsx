@@ -3,10 +3,10 @@ import {
   fetchCollectionTargets,
   fetchCollectionInputs,
   fetchCollectionRarities,
-  type CollectionInputSummary,
   type CollectionTargetsResponse,
   type TargetRarity,
 } from "../tradeups/services/api";
+import { planRowsForCollection } from "../tradeups/hooks/rowPlanning";
 import { useSteamCollections } from "../tradeups/hooks/builder/useSteamCollections";
 import type { Exterior } from "../skins/services/types";
 import "./CollectionAnalyzer.css";
@@ -28,6 +28,13 @@ const TARGET_RARITY_TITLES: Record<TargetRarity, string> = {
   Consumer: "Consumer",
 };
 
+interface CollectionAnalysisInputEntry {
+  marketHashName: string;
+  count: number;
+  unitPrice: number;
+  totalPrice: number;
+}
+
 interface CollectionAnalysisEntry {
   key: string;
   targetRarity: TargetRarity;
@@ -36,8 +43,7 @@ interface CollectionAnalysisEntry {
   targetMarketHashName: string;
   targetExterior: Exterior;
   targetPrice: number;
-  inputMarketHashName: string;
-  inputPrice: number;
+  inputs: CollectionAnalysisInputEntry[];
   totalInputCost: number;
   ratioPercent: number;
 }
@@ -88,16 +94,16 @@ const analyzeCollection = async (collectionTag: string): Promise<CollectionAnaly
 
   for (const targetRarity of raritiesToCheck) {
     let targets: CollectionTargetsResponse["targets"]; // undefined until fetched
-    let inputs: CollectionInputSummary[];
     let inputRarity: string | null = null;
 
+    let targetsResponse: CollectionTargetsResponse;
     try {
-      const response = await fetchCollectionTargets(collectionTag, targetRarity);
-      targets = response.targets ?? [];
+      targetsResponse = await fetchCollectionTargets(collectionTag, targetRarity);
+      targets = targetsResponse.targets ?? [];
       if (!targets.length) {
         continue;
       }
-      inputRarity = response.rarity ?? null;
+      inputRarity = targetsResponse.rarity ?? null;
     } catch (error: any) {
       warnings.push(
         `Не удалось загрузить результаты редкости ${TARGET_RARITY_TITLES[targetRarity]}: ${String(
@@ -107,7 +113,7 @@ const analyzeCollection = async (collectionTag: string): Promise<CollectionAnaly
       continue;
     }
 
-    let inputsResponse;
+    let inputsResponse: Awaited<ReturnType<typeof fetchCollectionInputs>>;
     try {
       inputsResponse = await fetchCollectionInputs(collectionTag, targetRarity);
     } catch (error: any) {
@@ -120,9 +126,9 @@ const analyzeCollection = async (collectionTag: string): Promise<CollectionAnaly
     }
 
     inputRarity = inputsResponse.rarity ?? inputRarity;
-    inputs = inputsResponse.inputs ?? [];
+    const inputsList = inputsResponse.inputs ?? [];
 
-    const pricedInputs = inputs.filter(
+    const pricedInputs = inputsList.filter(
       (input) => typeof input.price === "number" && (input.price ?? 0) > 0,
     );
     if (!pricedInputs.length) {
@@ -132,36 +138,87 @@ const analyzeCollection = async (collectionTag: string): Promise<CollectionAnaly
       continue;
     }
 
-    for (const input of pricedInputs) {
-      const price = input.price ?? null;
-      if (price == null || price <= 0) {
-        continue;
-      }
-      const totalInputCost = price * INPUTS_REQUIRED;
-      for (const target of targets) {
-        for (const exterior of target.exteriors) {
-          const targetPrice = exterior.price ?? null;
-          if (targetPrice == null || targetPrice <= 0) {
-            continue;
+    const effectiveCollectionId =
+      inputsResponse.collectionId ?? targetsResponse.collectionId ?? null;
+
+    for (const target of targets) {
+      for (const exterior of target.exteriors) {
+        const targetPrice = exterior.price ?? null;
+        if (targetPrice == null || targetPrice <= 0) {
+          continue;
+        }
+
+        const { rows } = planRowsForCollection({
+          collectionTag,
+          collectionId: effectiveCollectionId,
+          selectedCollectionId: null,
+          inputs: pricedInputs,
+          options: {
+            target: {
+              exterior: exterior.exterior,
+              minFloat: exterior.minFloat ?? null,
+              maxFloat: exterior.maxFloat ?? null,
+            },
+          },
+        });
+
+        const validRows = rows.filter((row) => row.marketHashName && row.price.trim());
+        if (validRows.length < INPUTS_REQUIRED) {
+          continue;
+        }
+
+        let invalidPlan = false;
+        const inputsByName = new Map<string, { count: number; total: number }>();
+        let totalInputCost = 0;
+
+        for (const row of validRows.slice(0, INPUTS_REQUIRED)) {
+          const price = Number.parseFloat(row.price);
+          if (!Number.isFinite(price) || price <= 0) {
+            invalidPlan = true;
+            break;
           }
-          const ratioPercent = (targetPrice / totalInputCost) * 100;
-          const key = buildTargetKey(targetRarity, target, exterior);
-          const current = bestByTarget.get(key);
-          if (!current || ratioPercent > current.ratioPercent) {
-            bestByTarget.set(key, {
-              key,
-              targetRarity,
-              inputRarity,
-              targetBaseName: target.baseName,
-              targetMarketHashName: exterior.marketHashName,
-              targetExterior: exterior.exterior,
-              targetPrice,
-              inputMarketHashName: input.marketHashName,
-              inputPrice: price,
-              totalInputCost,
-              ratioPercent,
-            });
-          }
+          totalInputCost += price;
+          const current = inputsByName.get(row.marketHashName) ?? { count: 0, total: 0 };
+          current.count += 1;
+          current.total += price;
+          inputsByName.set(row.marketHashName, current);
+        }
+
+        if (invalidPlan || totalInputCost <= 0) {
+          continue;
+        }
+
+        const inputsPlan = Array.from(inputsByName.entries()).map(
+          ([marketHashName, { count, total }]) => ({
+            marketHashName,
+            count,
+            totalPrice: total,
+            unitPrice: total / count,
+          }),
+        );
+
+        inputsPlan.sort((a, b) => {
+          if (b.count !== a.count) return b.count - a.count;
+          if (a.unitPrice !== b.unitPrice) return a.unitPrice - b.unitPrice;
+          return a.marketHashName.localeCompare(b.marketHashName, "ru");
+        });
+
+        const ratioPercent = (targetPrice / totalInputCost) * 100;
+        const key = buildTargetKey(targetRarity, target, exterior);
+        const current = bestByTarget.get(key);
+        if (!current || ratioPercent > current.ratioPercent) {
+          bestByTarget.set(key, {
+            key,
+            targetRarity,
+            inputRarity,
+            targetBaseName: target.baseName,
+            targetMarketHashName: exterior.marketHashName,
+            targetExterior: exterior.exterior,
+            targetPrice,
+            inputs: inputsPlan,
+            totalInputCost,
+            ratioPercent,
+          });
         }
       }
     }
@@ -330,7 +387,14 @@ const CollectionAnalyzer: React.FC = () => {
                         {entry.inputRarity ? ` • вход: ${entry.inputRarity}` : ""}
                       </div>
                       <div className="collection-chart__inputs">
-                        Лучший вход: {entry.inputMarketHashName} • {formatCurrency(entry.inputPrice)} × 10 ={" "}
+                        Лучший вход:
+                        {entry.inputs.map((input, index) => (
+                          <React.Fragment key={`${entry.key}:${input.marketHashName}:${index}`}>
+                            {index > 0 ? ", " : " "}
+                            {input.marketHashName} × {input.count} ({formatCurrency(input.unitPrice)} за слот)
+                          </React.Fragment>
+                        ))}
+                        {" • Σ "}
                         {formatCurrency(entry.totalInputCost)}
                       </div>
                     </div>
