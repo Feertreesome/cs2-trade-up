@@ -1,6 +1,7 @@
 import React from "react";
 import SkinsBrowser from "./modules/skins";
 import TradeupBuilder from "./modules/tradeups";
+import CollectionAnalyzer from "./modules/collections";
 import {
   fetchCollectionsSyncStatus,
   requestCollectionsSync,
@@ -8,7 +9,9 @@ import {
 } from "./modules/tradeups/services/api";
 
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = React.useState<"browser" | "tradeup">("browser");
+  const [activeTab, setActiveTab] = React.useState<"browser" | "tradeup" | "collections">(
+    "browser",
+  );
   const [syncOverview, setSyncOverview] = React.useState<{
     active: SyncJobStatus | null;
     jobs: SyncJobStatus[];
@@ -128,26 +131,29 @@ const App: React.FC = () => {
         </div>
       </div>
       <ul className="nav nav-tabs mb-3">
-        <li className="nav-item">
-          <button
-            className={`nav-link ${activeTab === "tradeup" ? "" : "active"}`}
-            type="button"
-            onClick={() => setActiveTab("browser")}
-          >
-            Market Browser
-          </button>
-        </li>
-        <li className="nav-item">
-          <button
-            className={`nav-link ${activeTab === "tradeup" ? "active" : ""}`}
-            type="button"
-            onClick={() => setActiveTab("tradeup")}
-          >
-            Trade-Up Calculator
-          </button>
-        </li>
+        {[
+          { id: "browser" as const, label: "Market Browser" },
+          { id: "tradeup" as const, label: "Trade-Up Calculator" },
+          { id: "collections" as const, label: "Анализ коллекций" },
+        ].map((tab) => (
+          <li key={tab.id} className="nav-item">
+            <button
+              className={`nav-link ${activeTab === tab.id ? "active" : ""}`}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+            >
+              {tab.label}
+            </button>
+          </li>
+        ))}
       </ul>
-      {activeTab === "tradeup" ? <TradeupBuilder /> : <SkinsBrowser />}
+      {activeTab === "tradeup" ? (
+        <TradeupBuilder />
+      ) : activeTab === "collections" ? (
+        <CollectionAnalyzer />
+      ) : (
+        <SkinsBrowser />
+      )}
     </div>
   );
 };
