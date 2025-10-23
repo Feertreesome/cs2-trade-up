@@ -1,6 +1,6 @@
 import type { Exterior } from "../../skins/services/types";
 import { parseExterior } from "../../skins/services/utils";
-import type { CollectionTargetSummary, TargetRarity, TradeupCollection } from "../services/api";
+import type { CollectionTargetSummary } from "../services/api";
 import { EXTERIOR_FLOAT_RANGES, WEAR_BUCKET_SEQUENCE } from "./constants";
 import { clampFloat, isFloatWithinExteriorRange } from "./helpers";
 import type {
@@ -14,35 +14,21 @@ import type {
 interface FloatlessAnalysisParams {
   rowResolution: RowResolution;
   activeTargets: CollectionTargetSummary[];
-  catalogMap: Map<string, TradeupCollection>;
   selectedTarget: SelectedTarget | null;
   targetPriceOverrides: Record<string, number>;
   buyerToNetRate: number;
   totalNetCost: number;
-  targetRarity: TargetRarity;
 }
 
 type WearSlot = { exterior: Exterior; bucket: { min: number; max: number } };
 
-const getCatalogRangesForRarity = (
-  entry: TradeupCollection | null,
-  rarity: TargetRarity,
-) => {
-  if (!entry) return undefined;
-  if (rarity === "Covert") return entry.covert;
-  if (rarity === "Classified") return entry.classified;
-  return undefined;
-};
-
 export const evaluateFloatlessTradeup = ({
   rowResolution,
   activeTargets,
-  catalogMap,
   selectedTarget,
   targetPriceOverrides,
   buyerToNetRate,
   totalNetCost,
-  targetRarity,
 }: FloatlessAnalysisParams): FloatlessAnalysisResult => {
   const issues: string[] = [];
   const wearCounts: Partial<Record<Exterior, number>> = {};
@@ -131,14 +117,10 @@ export const evaluateFloatlessTradeup = ({
   const baseCount = activeTargets.length;
   const baseProbability = baseCount > 0 ? collectionProbability / baseCount : 0;
 
-  const catalogEntry = catalogMap.get(resolvedCollectionId) ?? null;
-
   const outcomes: FloatlessOutcomeSummary[] = [];
   let robustOutcomeNet: number | null = 0;
   let expectedOutcomeNet: number | null = 0;
   let expectedCoverage = 0;
-  let hasRobustGap = false;
-  let hasExpectedData = false;
 
   let selectedTargetCoverage: {
     probability: number | null;
@@ -156,15 +138,6 @@ export const evaluateFloatlessTradeup = ({
       }
       if (exterior.maxFloat != null) {
         maxFloat = maxFloat == null ? exterior.maxFloat : Math.max(maxFloat, exterior.maxFloat);
-      }
-    }
-
-    if (minFloat == null || maxFloat == null) {
-      const fallbackList = getCatalogRangesForRarity(catalogEntry, targetRarity);
-      const fallback = fallbackList?.find((entry) => entry.baseName === target.baseName);
-      if (fallback) {
-        minFloat = fallback.minFloat;
-        maxFloat = fallback.maxFloat;
       }
     }
 
@@ -197,143 +170,95 @@ export const evaluateFloatlessTradeup = ({
       const containsPoint =
         rangeWidth === 0 && isFloatWithinExteriorRange(bucket.exterior, normalizedMin);
       if (width <= 0 && !containsPoint && !matchesSelected) return null;
-      const buyerPrice =
-        targetExterior.price ?? targetPriceOverrides[targetExterior.marketHashName] ?? null;
+      const buyerPrice = targetPriceOverrides[targetExterior.marketHashName] ?? targetExterior.price ?? null;
       const netPrice = buyerPrice == null ? null : buyerPrice / buyerToNetRate;
-      return {
+      const probability = baseProbability > 0 ? width / (maxFloat - minFloat || 1) : null;
+      const outcome: FloatlessOutcomeExterior = {
         exterior: bucket.exterior,
-        width,
-        containsPoint,
-        matchesSelected,
+        probability,
         buyerPrice,
         netPrice,
         marketHashName: targetExterior.marketHashName,
       };
-    }).filter((entry): entry is {
-      exterior: Exterior;
-      width: number;
-      containsPoint: boolean;
-      matchesSelected: boolean;
-      buyerPrice: number | null;
-      netPrice: number | null;
-      marketHashName: string;
-    } => entry != null);
-
-    let widthSum = 0;
-    for (const entry of potential) {
-      widthSum += entry.width;
-    }
-
-    const denominator = rangeWidth > 0 ? widthSum || rangeWidth : 1;
-    const exteriors: FloatlessOutcomeExterior[] = [];
-    let robustNet: number | null = null;
-    let expectedContribution: number | null = null;
-    let expectedProbabilityCovered = 0;
-    let selectedProbability: number | null = null;
-    let dominantExterior: { exterior: Exterior; probability: number } | null = null;
-
-    for (const entry of potential) {
-      let probability: number | null = null;
-      if (rangeWidth === 0) {
-        probability = entry.containsPoint ? 1 : 0;
-      } else if (denominator > 0) {
-        probability = entry.width / denominator;
+      if (matchesSelected) {
+        selectedTargetCoverage = {
+          probability,
+          projectedRange: { min: normalizedMin, max: normalizedMax },
+          dominantExterior: bucket.exterior,
+        };
       }
-
-      exteriors.push({
-        exterior: entry.exterior,
-        probability,
-        buyerPrice: entry.buyerPrice,
-        netPrice: entry.netPrice,
-        marketHashName: entry.marketHashName,
-      });
-
-      if (probability != null && entry.netPrice != null) {
-        if (robustNet == null || entry.netPrice < robustNet) {
-          robustNet = entry.netPrice;
-        }
-        expectedContribution = (expectedContribution ?? 0) + entry.netPrice * probability;
-        expectedProbabilityCovered += probability;
-      }
-
       if (probability != null) {
-        if (
-          dominantExterior == null ||
-          probability > dominantExterior.probability ||
-          (probability === dominantExterior.probability && entry.exterior === selectedTarget?.exterior)
-        ) {
-          dominantExterior = { exterior: entry.exterior, probability };
-        }
-
-        if (
-          entry.matchesSelected &&
-          target.baseName === selectedTarget?.baseName &&
-          (selectedProbability == null || probability > selectedProbability)
-        ) {
-          selectedProbability = probability;
-        }
+        expectedCoverage += probability;
       }
-    }
+      return outcome;
+    }).filter((entry): entry is FloatlessOutcomeExterior => Boolean(entry));
 
-    if (robustNet == null) {
-      hasRobustGap = true;
-    }
+    if (!potential.length) continue;
 
-    if (expectedContribution != null && expectedProbabilityCovered > 0) {
-      hasExpectedData = true;
-      expectedOutcomeNet = (expectedOutcomeNet ?? 0) + expectedContribution * baseProbability;
-      expectedCoverage += expectedProbabilityCovered * baseProbability;
-    }
+    const dominantExterior = potential.reduce<Exterior | null>((prev, current) => {
+      if (current.probability == null) return prev;
+      if (!prev) return current.exterior;
+      const prevProbability = potential.find((entry) => entry.exterior === prev)?.probability ?? 0;
+      return prevProbability >= current.probability! ? prev : current.exterior;
+    }, null);
 
-    if (robustNet != null) {
-      robustOutcomeNet = (robustOutcomeNet ?? 0) + robustNet * baseProbability;
-    }
+    const projectedRange = { min: normalizedMin, max: normalizedMax };
+    const expectedProbability = potential.reduce((sum, entry) => sum + (entry.probability ?? 0), 0);
+    const expectedNetContribution = potential.reduce((sum, entry) => {
+      if (entry.netPrice == null || entry.probability == null) return sum;
+      return sum + entry.netPrice * entry.probability;
+    }, 0);
+    const robustNet = potential.reduce((sum, entry) => {
+      if (entry.netPrice == null) {
+        return sum;
+      }
+      return Math.min(sum, entry.netPrice);
+    }, Number.POSITIVE_INFINITY);
 
-    outcomes.push({
+    const outcomeSummary: FloatlessOutcomeSummary = {
       baseName: target.baseName,
       probability: baseProbability,
-      projectedRange: { min: normalizedMin, max: normalizedMax },
-      exteriors,
-      robustNet,
-      expectedNetContribution: expectedContribution,
-      expectedProbabilityCovered,
-    });
+      projectedRange,
+      exteriors: potential,
+      robustNet: Number.isFinite(robustNet) ? robustNet : null,
+      expectedNetContribution: expectedNetContribution || null,
+      expectedProbabilityCovered: expectedProbability,
+    };
 
-    if (selectedTarget && target.baseName === selectedTarget.baseName) {
+    outcomes.push(outcomeSummary);
+
+    if (outcomeSummary.robustNet != null) {
+      if (robustOutcomeNet == null) {
+        robustOutcomeNet = outcomeSummary.robustNet;
+      } else {
+        robustOutcomeNet += outcomeSummary.robustNet;
+      }
+    }
+
+    if (outcomeSummary.expectedNetContribution != null) {
+      if (expectedOutcomeNet == null) {
+        expectedOutcomeNet = outcomeSummary.expectedNetContribution;
+      } else {
+        expectedOutcomeNet += outcomeSummary.expectedNetContribution;
+      }
+    }
+
+    if (selectedTarget && selectedTarget.baseName === target.baseName && selectedTargetCoverage) {
       selectedTargetCoverage = {
-        probability: selectedProbability,
-        projectedRange: { min: normalizedMin, max: normalizedMax },
-        dominantExterior: dominantExterior?.exterior ?? null,
+        ...selectedTargetCoverage,
+        dominantExterior,
       };
     }
   }
 
-  if (hasRobustGap) {
-    robustOutcomeNet = null;
-  }
-
-  if (!hasExpectedData) {
-    expectedOutcomeNet = null;
-    expectedCoverage = 0;
-  }
-
-  const robustEV = robustOutcomeNet == null ? null : robustOutcomeNet - totalNetCost;
-  const expectedEV = expectedOutcomeNet == null ? null : expectedOutcomeNet - totalNetCost;
-
-  if (
-    selectedTarget &&
-    selectedTargetCoverage &&
-    (selectedTargetCoverage.probability == null || selectedTargetCoverage.probability <= 0)
-  ) {
-    const fallbackExteriorLabel = selectedTargetCoverage.dominantExterior
-      ? `${selectedTargetCoverage.dominantExterior}`
-      : "другой экстерьер";
-    issues.push(
-      `Выбранный экстерьер ${selectedTarget.exterior} (${selectedTarget.baseName}) ` +
-        `не попадает в прогнозируемый диапазон (${selectedTargetCoverage.projectedRange.min.toFixed(5)}–${selectedTargetCoverage.projectedRange.max.toFixed(5)}). ` +
-        `Ожидаемый результат: ${fallbackExteriorLabel}.`,
-    );
-  }
+  const robustEV =
+    robustOutcomeNet == null || totalNetCost == null
+      ? null
+      : clampFloat(robustOutcomeNet - totalNetCost);
+  const expectedEV =
+    expectedOutcomeNet == null || totalNetCost == null
+      ? null
+      : clampFloat(expectedOutcomeNet - totalNetCost);
 
   return {
     ready: issues.length === 0,

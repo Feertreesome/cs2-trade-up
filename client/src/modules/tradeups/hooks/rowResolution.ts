@@ -1,4 +1,4 @@
-import type { SteamCollectionSummary, TradeupCollection } from "../services/api";
+import type { SteamCollectionSummary } from "../services/api";
 import { readTagFromCollectionValue } from "./helpers";
 import type {
   CollectionValueMeta,
@@ -12,7 +12,6 @@ interface ResolveRowsParams {
   selectedCollectionId: string | null;
   collectionValueMeta: Map<string, CollectionValueMeta>;
   steamCollectionsByTag: Map<string, SteamCollectionSummary>;
-  catalogMap: Map<string, TradeupCollection>;
   collectionIdByTag: Map<string, string>;
 }
 
@@ -21,7 +20,6 @@ export const resolveTradeupRows = ({
   selectedCollectionId,
   collectionValueMeta,
   steamCollectionsByTag,
-  catalogMap,
   collectionIdByTag,
 }: ResolveRowsParams): RowResolution => {
   if (!parsedRows.length) {
@@ -42,10 +40,6 @@ export const resolveTradeupRows = ({
     let resolvedId = meta?.collectionId ?? null;
     let resolvedName = meta?.name ?? steamEntry?.name ?? null;
 
-    if (!resolvedId && row.collectionId && catalogMap.has(row.collectionId)) {
-      resolvedId = row.collectionId;
-    }
-
     if (!resolvedId && fallbackTag) {
       const cachedByTag = collectionIdByTag.get(fallbackTag);
       if (cachedByTag) {
@@ -65,12 +59,12 @@ export const resolveTradeupRows = ({
       resolvedId = row.collectionId;
     }
 
-    if (!resolvedName && resolvedId) {
-      resolvedName = catalogMap.get(resolvedId)?.name ?? resolvedName;
-    }
-
     if (!resolvedName && steamEntry?.name) {
       resolvedName = steamEntry.name;
+    }
+
+    if (!resolvedName && resolvedId && meta?.name) {
+      resolvedName = meta.name;
     }
 
     return {

@@ -4,7 +4,6 @@ import {
   fetchCollectionInputs,
   fetchCollectionTargets,
   fetchSteamCollections,
-  fetchTradeupCollections,
   requestTradeupCalculation,
   requestTradeupAvailability,
   type CollectionInputSummary,
@@ -14,7 +13,6 @@ import {
   type SteamCollectionSummary,
   type TargetRarity,
   type TradeupCalculationResponse,
-  type TradeupCollection,
 } from "../services/api";
 import {
   buildCollectionSelectValue,
@@ -50,7 +48,6 @@ export type {
  */
 
 export default function useTradeupBuilder() {
-  const [catalogCollections, setCatalogCollections] = React.useState<TradeupCollection[]>([]);
   const [steamCollections, setSteamCollections] = React.useState<SteamCollectionSummary[]>([]);
   const [loadingSteamCollections, setLoadingSteamCollections] = React.useState(false);
   const [steamCollectionError, setSteamCollectionError] = React.useState<string | null>(null);
@@ -99,29 +96,20 @@ export default function useTradeupBuilder() {
     [targetsByCollection],
   );
 
-  // При первом рендере подтягиваем встроенный каталог коллекций для подсказок.
-  React.useEffect(() => {
-    async function loadCatalog() {
-      try {
-        const list = await fetchTradeupCollections();
-        setCatalogCollections(list);
-      } catch (error) {
-        console.error("Failed to load trade-up catalog", error);
-      }
-    }
-    void loadCatalog();
-  }, []);
-
-  /** Быстрый индекс каталога коллекций по внутреннему идентификатору. */
-  const catalogMap = React.useMemo(() => {
-    return new Map(catalogCollections.map((collection) => [collection.id, collection] as const));
-  }, [catalogCollections]);
-
   /** Отдельная карта steam-tag → информация о коллекции для быстрых lookup'ов. */
   const steamCollectionsByTag = React.useMemo(
     () => new Map(steamCollections.map((entry) => [entry.tag, entry] as const)),
     [steamCollections],
   );
+  const steamCollectionsById = React.useMemo(() => {
+    const map = new Map<string, SteamCollectionSummary>();
+    for (const entry of steamCollections) {
+      if (entry.collectionId) {
+        map.set(entry.collectionId, entry);
+      }
+    }
+    return map;
+  }, [steamCollections]);
 
   /**
    * Сводная информация о значениях селекта коллекций.
@@ -135,13 +123,15 @@ export default function useTradeupBuilder() {
 
       const existing = valueMetaMap.get(value);
       const fallbackName =
-        (details.collectionId ? catalogMap.get(details.collectionId)?.name : undefined) ??
+        details.name ??
+        (details.collectionId ? steamCollectionsById.get(details.collectionId)?.name : undefined) ??
         (details.tag ? steamCollectionsByTag.get(details.tag)?.name : undefined) ??
-        undefined;
+        existing?.name ??
+        "";
       const next: CollectionValueMeta = {
         collectionId: details.collectionId ?? null,
         tag: details.tag ?? null,
-        name: details.name ?? fallbackName ?? existing?.name ?? "",
+        name: fallbackName,
       };
 
       if (!existing) {
@@ -202,20 +192,13 @@ export default function useTradeupBuilder() {
       });
     });
 
-    for (const entry of catalogCollections) {
-      if (!valueMetaMap.has(entry.id)) {
-        register(entry.id, { collectionId: entry.id, tag: null, name: entry.name });
-      }
-    }
-
     return valueMetaMap;
   }, [
     steamCollections,
     steamCollectionsByTag,
     targetCacheResponses,
     inputsByCollection,
-    catalogCollections,
-    catalogMap,
+    steamCollectionsById,
   ]);
 
   /** Опции для выпадающего списка выбора коллекций в таблице входов. */
@@ -235,22 +218,23 @@ export default function useTradeupBuilder() {
 
     for (const entry of steamCollections) {
       const value = buildCollectionSelectValue(entry.collectionId, entry.tag);
-      addOption(value, entry.name, Boolean(entry.collectionId && catalogMap.has(entry.collectionId)));
+      addOption(value, entry.name, Boolean(entry.collectionId));
+      if (entry.collectionId) {
+        addOption(entry.collectionId, entry.name, true);
+      }
     }
 
-    for (const entry of catalogCollections) {
-      addOption(entry.id, entry.name, true);
-    }
+    collectionValueMeta.forEach((meta, value) => {
+      const label =
+        meta.name ||
+        (meta.collectionId ? steamCollectionsById.get(meta.collectionId)?.name : undefined) ||
+        (meta.tag ? steamCollectionsByTag.get(meta.tag)?.name : undefined) ||
+        value;
+      addOption(value, label, Boolean(meta.collectionId));
+    });
 
     return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label, "ru"));
-  }, [steamCollections, catalogCollections, catalogMap]);
-
-  /** Подробности по выбранной коллекции из локального каталога (для подсказок по float). */
-  const selectedCollectionDetails = React.useMemo(() => {
-    if (!selectedCollectionId) return [];
-    const entry = catalogMap.get(selectedCollectionId);
-    return entry ? [entry] : [];
-  }, [catalogMap, selectedCollectionId]);
+  }, [collectionValueMeta, steamCollections, steamCollectionsById, steamCollectionsByTag]);
 
   /** Быстрая таблица соответствий steam-tag → collectionId. */
   const collectionIdByTag = React.useMemo(() => {
@@ -599,10 +583,6 @@ export default function useTradeupBuilder() {
           response.collectionId ??
           cachedCollectionId ??
           steamCollections.find((entry) => entry.tag === collectionTag)?.collectionId ??
-          catalogCollections.find((collection) =>
-            collection.covert.some((covert) => covert.baseName === baseName) ||
-            collection.classified.some((classified) => classified.baseName === baseName),
-          )?.id ??
           selectedCollectionId ??
           null;
 
@@ -662,7 +642,6 @@ export default function useTradeupBuilder() {
     },
     [
       applyInputsToRows,
-      catalogCollections,
       loadInputsForCollection,
       rememberSteamCollectionId,
       selectedCollectionId,
@@ -701,7 +680,6 @@ export default function useTradeupBuilder() {
       selectedCollectionId,
       collectionValueMeta,
       steamCollectionsByTag,
-      catalogMap,
       collectionIdByTag,
     });
   }, [
@@ -710,7 +688,6 @@ export default function useTradeupBuilder() {
     collectionValueMeta,
     selectedCollectionId,
     steamCollectionsByTag,
-    catalogMap,
   ]);
 
   /** Средний float по заполненным слотам. */
@@ -738,22 +715,18 @@ export default function useTradeupBuilder() {
     return evaluateFloatlessTradeup({
       rowResolution,
       activeTargets,
-      catalogMap,
       selectedTarget,
       targetPriceOverrides,
       buyerToNetRate,
       totalNetCost,
-      targetRarity,
     });
   }, [
     activeTargets,
     buyerToNetRate,
-    catalogMap,
     rowResolution,
     selectedTarget,
     targetPriceOverrides,
     totalNetCost,
-    targetRarity,
   ]);
 
   const calculate = React.useCallback(async () => {
@@ -904,7 +877,6 @@ export default function useTradeupBuilder() {
   );
 
   return {
-    catalogCollections,
     steamCollections,
     collectionOptions,
     loadSteamCollections,
@@ -929,7 +901,6 @@ export default function useTradeupBuilder() {
     averageFloat,
     totalBuyerCost,
     totalNetCost,
-    selectedCollectionDetails,
     autofillPrices,
     priceLoading,
     calculate,

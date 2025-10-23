@@ -24,13 +24,6 @@ export type CovertFloatRange = CollectionFloatRange;
 
 export type ClassifiedFloatRange = CollectionFloatRange;
 
-export interface TradeupCollection {
-  id: string;
-  name: string;
-  covert: CovertFloatRange[];
-  classified: ClassifiedFloatRange[];
-}
-
 export interface SteamCollectionSummary {
   tag: string;
   name: string;
@@ -209,15 +202,6 @@ export interface TradeupAvailabilityResponse {
 }
 
 /** Загружает локальный справочник коллекций с float-диапазонами. */
-export async function fetchTradeupCollections() {
-  const response = await fetch("/api/tradeups/collections");
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`);
-  }
-  const payload = (await response.json()) as { collections: TradeupCollection[] };
-  return payload.collections;
-}
-
 /** Запрашивает живой список коллекций из Steam (возвращает теги и статистику). */
 export async function fetchSteamCollections() {
   const response = await fetch("/api/tradeups/collections/steam");

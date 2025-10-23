@@ -38,7 +38,6 @@ export default function TradeupBuilder() {
     averageFloat,
     totalBuyerCost,
     totalNetCost,
-    selectedCollectionDetails,
     autofillPrices,
     priceLoading,
     calculate,
@@ -78,7 +77,6 @@ export default function TradeupBuilder() {
         steamCollectionError={steamCollectionError}
         activeCollectionTag={activeCollectionTag}
         selectCollection={selectCollection}
-        selectedCollectionDetails={selectedCollectionDetails}
       />
 
       <hr className="border-secondary" />

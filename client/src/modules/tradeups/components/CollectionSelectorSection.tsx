@@ -1,5 +1,5 @@
 import React from "react";
-import type { SteamCollectionSummary, TradeupCollection } from "../services/api";
+import type { SteamCollectionSummary } from "../services/api";
 
 interface CollectionSelectorSectionProps {
   steamCollections: SteamCollectionSummary[];
@@ -8,7 +8,6 @@ interface CollectionSelectorSectionProps {
   steamCollectionError: string | null;
   activeCollectionTag: string | null;
   selectCollection: (tag: string) => void;
-  selectedCollectionDetails: TradeupCollection[];
 }
 
 export default function CollectionSelectorSection({
@@ -18,7 +17,6 @@ export default function CollectionSelectorSection({
   steamCollectionError,
   activeCollectionTag,
   selectCollection,
-  selectedCollectionDetails,
 }: CollectionSelectorSectionProps) {
   return (
     <section>
@@ -54,42 +52,6 @@ export default function CollectionSelectorSection({
               </button>
             );
           })}
-        </div>
-      )}
-      {selectedCollectionDetails.length > 0 && (
-        <div className="mt-3">
-          <div className="fw-semibold">Диапазоны float целей</div>
-          <div className="tradeup-hints">
-            {selectedCollectionDetails.map((collection) => (
-              <div key={collection.id} className="tradeup-hint card bg-secondary-subtle text-dark p-2">
-                <div className="fw-semibold">{collection.name}</div>
-                {collection.covert.length > 0 && (
-                  <div className="mb-2">
-                    <div className="small text-uppercase fw-semibold text-secondary">Covert</div>
-                    <ul className="mb-0 small">
-                      {collection.covert.map((skin) => (
-                        <li key={`covert-${skin.baseName}`}>
-                          {skin.baseName}: {skin.minFloat.toFixed(3)} – {skin.maxFloat.toFixed(3)}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {collection.classified.length > 0 && (
-                  <div>
-                    <div className="small text-uppercase fw-semibold text-secondary">Classified</div>
-                    <ul className="mb-0 small">
-                      {collection.classified.map((skin) => (
-                        <li key={`classified-${skin.baseName}`}>
-                          {skin.baseName}: {skin.minFloat.toFixed(3)} – {skin.maxFloat.toFixed(3)}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
         </div>
       )}
     </section>

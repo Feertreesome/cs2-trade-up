@@ -6,7 +6,6 @@ import type {
   TargetRarity,
   TradeupAvailabilityResponse,
   TradeupCalculationResponse,
-  TradeupCollection,
 } from "../services/api";
 
 export interface TradeupInputFormRow {
@@ -94,17 +93,7 @@ export interface FloatlessAnalysisResult {
   expectedCoverage: number;
 }
 
-export interface CollectionLookupContext {
-  catalogCollections: TradeupCollection[];
-  catalogMap: Map<string, TradeupCollection>;
-  steamCollections: Array<{ tag: string; name: string; collectionId: string | null }>;
-  steamCollectionsByTag: Map<string, { tag: string; name: string; collectionId: string | null }>;
-  targetsByCollection: Record<string, Partial<Record<TargetRarity, CollectionTargetsResponse>>>;
-  inputsByCollection: Record<string, Partial<Record<TargetRarity, CollectionInputsResponse>>>;
-}
-
 export interface TradeupBuilderState {
-  catalogCollections: TradeupCollection[];
   steamCollections: Array<{ tag: string; name: string; collectionId: string | null }>;
   collectionOptions: CollectionSelectOption[];
   loadSteamCollections: () => void | Promise<void>;
@@ -133,7 +122,6 @@ export interface TradeupBuilderState {
   averageFloat: number;
   totalBuyerCost: number;
   totalNetCost: number;
-  selectedCollectionDetails: TradeupCollection[];
   autofillPrices: (namesOverride?: string[]) => Promise<void> | void;
   priceLoading: boolean;
   calculate: () => Promise<void>;

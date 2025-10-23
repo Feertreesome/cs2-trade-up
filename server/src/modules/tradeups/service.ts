@@ -344,12 +344,6 @@ const ensureCollectionCaches = () => {
   }
 };
 
-/** Возвращает локальный справочник коллекций и их float-диапазонов. */
-export const getCollectionsCatalog = (): CollectionFloatCatalogEntry[] => {
-  ensureCollectionCaches();
-  return COLLECTIONS_WITH_FLOAT.slice();
-};
-
 const STEAM_TAG_TO_COLLECTION_ID = new Map<string, string | null>();
 const COLLECTION_ID_TO_STEAM_TAG = new Map<string, string>();
 

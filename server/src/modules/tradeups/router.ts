@@ -5,7 +5,6 @@ import {
   fetchCollectionInputs,
   fetchCollectionTargets,
   fetchSteamCollections,
-  getCollectionsCatalog,
   type TradeupAvailabilityRequest,
   type TradeupRequestPayload,
   type TargetRarity,
@@ -134,12 +133,6 @@ const parseAvailabilityBody = (body: any): TradeupAvailabilityRequest => {
  */
 export const createTradeupsRouter = () => {
   const router = Router();
-
-  /** Локальный справочник коллекций с подготовленными float-диапазонами. */
-  router.get("/collections", (_request, response) => {
-    const collections = getCollectionsCatalog();
-    response.json({ collections });
-  });
 
   /** Живой список коллекций из Steam Community Market. */
   router.get("/collections/steam", async (_request, response) => {
