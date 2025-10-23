@@ -9,6 +9,7 @@ import type {
   TargetRarity,
   InputRarity,
 } from "../modules/tradeups/types";
+import { TARGET_RARITIES } from "../modules/tradeups/types";
 import { baseFromMarketHash } from "../modules/skins/service";
 
 const normalizeRarity = (rarity: string) => rarity.trim();
@@ -139,6 +140,35 @@ export const getCollectionTargetsFromDb = async (
     };
   } catch (error) {
     return null;
+  }
+};
+
+export const getCollectionRaritiesFromDb = async (
+  collectionTag: string,
+): Promise<TargetRarity[]> => {
+  try {
+    const result = await prisma.skin.groupBy({
+      by: ["rarity"],
+      where: {
+        collection: { steamTag: collectionTag },
+        isSouvenir: false,
+        isStatTrak: false,
+      },
+    });
+    if (!result.length) return [];
+
+    const allowed = new Set(TARGET_RARITIES);
+    const rarities: TargetRarity[] = [];
+    for (const entry of result) {
+      const value = String(entry.rarity ?? "").trim();
+      if (!value) continue;
+      if (allowed.has(value as TargetRarity)) {
+        rarities.push(value as TargetRarity);
+      }
+    }
+    return rarities;
+  } catch (error) {
+    return [];
   }
 };
 

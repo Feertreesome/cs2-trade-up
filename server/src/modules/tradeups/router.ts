@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
   calculateTradeup,
   checkTradeupAvailability,
+  fetchCollectionAvailableRarities,
   fetchCollectionInputs,
   fetchCollectionTargets,
   fetchSteamCollections,
@@ -171,6 +172,20 @@ export const createTradeupsRouter = () => {
       return response.json({ job });
     } catch (error) {
       return response.status(500).json({ error: String(error) });
+    }
+  });
+
+  /** Список доступных редкостей коллекции для анализа trade-up. */
+  router.get("/collections/:collectionTag/rarities", async (request, response) => {
+    const collectionTag = String(request.params?.collectionTag ?? "").trim();
+    if (!collectionTag) {
+      return response.status(400).json({ error: "collectionTag is required" });
+    }
+    try {
+      const rarities = await fetchCollectionAvailableRarities(collectionTag);
+      response.json({ rarities });
+    } catch (error) {
+      response.status(503).json({ error: String(error) });
     }
   });
 
