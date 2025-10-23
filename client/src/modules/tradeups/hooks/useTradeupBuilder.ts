@@ -24,7 +24,6 @@ import { planRowsForCollection } from "./rowPlanning";
 import { resolveTradeupRows } from "./rowResolution";
 import type {
   CollectionSelectOption,
-  CollectionValueMeta,
   FloatlessAnalysisResult,
   ParsedTradeupRow,
   RowResolution,
@@ -111,105 +110,40 @@ export default function useTradeupBuilder() {
     return map;
   }, [steamCollections]);
 
-  /**
-   * Сводная информация о значениях селекта коллекций.
-   * Нужна для корректного отображения названия даже когда данные приходят из разных источников.
-   */
-  const collectionValueMeta = React.useMemo(() => {
-    const valueMetaMap = new Map<string, CollectionValueMeta>();
-
-    const register = (value: string, details: { collectionId: string | null; tag: string | null; name?: string | null }) => {
-      if (!value) return;
-
-      const existing = valueMetaMap.get(value);
-      const fallbackName =
-        details.name ??
-        (details.collectionId ? steamCollectionsById.get(details.collectionId)?.name : undefined) ??
-        (details.tag ? steamCollectionsByTag.get(details.tag)?.name : undefined) ??
-        existing?.name ??
-        "";
-      const next: CollectionValueMeta = {
-        collectionId: details.collectionId ?? null,
-        tag: details.tag ?? null,
-        name: fallbackName,
-      };
-
-      if (!existing) {
-        valueMetaMap.set(value, next);
-        return;
-      }
-
-      const hasBetterId = !existing.collectionId && next.collectionId;
-      const hasBetterName = !existing.name && next.name;
-      if (hasBetterId || hasBetterName) {
-        valueMetaMap.set(value, {
-          collectionId: hasBetterId ? next.collectionId : existing.collectionId,
-          tag: next.tag ?? existing.tag,
-          name: hasBetterName ? next.name : existing.name,
-        });
-      }
-    };
-
-    for (const entry of steamCollections) {
-      const value = buildCollectionSelectValue(entry.collectionId, entry.tag);
-      register(value, { collectionId: entry.collectionId ?? null, tag: entry.tag, name: entry.name });
-      if (entry.collectionId) {
-        register(entry.collectionId, {
-          collectionId: entry.collectionId,
-          tag: entry.tag,
-          name: entry.name,
-        });
-      }
-    }
-
-    for (const entry of targetCacheResponses) {
-      const value = buildCollectionSelectValue(entry.collectionId, entry.collectionTag);
-      register(value, {
-        collectionId: entry.collectionId ?? null,
-        tag: entry.collectionTag,
-      });
-      if (entry.collectionId) {
-        register(entry.collectionId, {
-          collectionId: entry.collectionId,
-          tag: entry.collectionTag,
-        });
-      }
-    }
-
-    Object.values(inputsByCollection).forEach((entryByRarity) => {
-      Object.values(entryByRarity ?? {}).forEach((entry) => {
-        const value = buildCollectionSelectValue(entry.collectionId, entry.collectionTag);
-        register(value, {
-          collectionId: entry.collectionId ?? null,
-          tag: entry.collectionTag,
-        });
-        if (entry.collectionId) {
-          register(entry.collectionId, {
-            collectionId: entry.collectionId,
-            tag: entry.collectionTag,
-          });
-        }
-      });
-    });
-
-    return valueMetaMap;
-  }, [
-    steamCollections,
-    steamCollectionsByTag,
-    targetCacheResponses,
-    inputsByCollection,
-    steamCollectionsById,
-  ]);
-
   /** Опции для выпадающего списка выбора коллекций в таблице входов. */
   const collectionOptions: CollectionSelectOption[] = React.useMemo(() => {
     const map = new Map<string, CollectionSelectOption>();
-    const addOption = (value: string, label: string, supported: boolean) => {
+    const isFallbackLabel = (value: string, label: string) => !label || label === value;
+    const resolveLabel = (
+      value: string,
+      details: { collectionId: string | null; tag: string | null; name?: string | null },
+    ) => {
+      return (
+        details.name ??
+        (details.collectionId ? steamCollectionsById.get(details.collectionId)?.name : undefined) ??
+        (details.tag ? steamCollectionsByTag.get(details.tag)?.name : undefined) ??
+        value
+      );
+    };
+    const addOption = (
+      value: string,
+      details: { collectionId: string | null; tag: string | null; name?: string | null },
+    ) => {
       if (!value) return;
+      const label = resolveLabel(value, details);
+      const supported = Boolean(details.collectionId);
       const existing = map.get(value);
       if (existing) {
-        if (!existing.supported && supported) {
-          map.set(value, { value, label, supported });
+        const shouldUpgradeLabel =
+          !isFallbackLabel(value, label) &&
+          (isFallbackLabel(existing.value, existing.label) || existing.label !== label);
+        const shouldUpgradeSupport = !existing.supported && supported;
+        if (shouldUpgradeLabel || shouldUpgradeSupport) {
+          map.set(value, {
+            value,
+            label: shouldUpgradeLabel ? label : existing.label,
+            supported: shouldUpgradeSupport ? supported : existing.supported,
+          });
         }
         return;
       }
@@ -218,23 +152,49 @@ export default function useTradeupBuilder() {
 
     for (const entry of steamCollections) {
       const value = buildCollectionSelectValue(entry.collectionId, entry.tag);
-      addOption(value, entry.name, Boolean(entry.collectionId));
-      if (entry.collectionId) {
-        addOption(entry.collectionId, entry.name, true);
-      }
+      addOption(value, {
+        collectionId: entry.collectionId ?? null,
+        tag: entry.tag,
+        name: entry.name,
+      });
     }
 
-    collectionValueMeta.forEach((meta, value) => {
-      const label =
-        meta.name ||
-        (meta.collectionId ? steamCollectionsById.get(meta.collectionId)?.name : undefined) ||
-        (meta.tag ? steamCollectionsByTag.get(meta.tag)?.name : undefined) ||
-        value;
-      addOption(value, label, Boolean(meta.collectionId));
+    for (const entry of targetCacheResponses) {
+      const value = buildCollectionSelectValue(entry.collectionId, entry.collectionTag);
+      addOption(value, {
+        collectionId: entry.collectionId ?? null,
+        tag: entry.collectionTag,
+      });
+    }
+
+    Object.values(inputsByCollection).forEach((entryByRarity) => {
+      Object.values(entryByRarity ?? {}).forEach((entry) => {
+        const value = buildCollectionSelectValue(entry.collectionId, entry.collectionTag);
+        addOption(value, {
+          collectionId: entry.collectionId ?? null,
+          tag: entry.collectionTag,
+        });
+      });
     });
 
+    if (selectedCollectionId || activeCollectionTag) {
+      const value = buildCollectionSelectValue(selectedCollectionId, activeCollectionTag);
+      addOption(value, {
+        collectionId: selectedCollectionId ?? null,
+        tag: activeCollectionTag,
+      });
+    }
+
     return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label, "ru"));
-  }, [collectionValueMeta, steamCollections, steamCollectionsById, steamCollectionsByTag]);
+  }, [
+    activeCollectionTag,
+    inputsByCollection,
+    selectedCollectionId,
+    steamCollections,
+    steamCollectionsById,
+    steamCollectionsByTag,
+    targetCacheResponses,
+  ]);
 
   /** Быстрая таблица соответствий steam-tag → collectionId. */
   const collectionIdByTag = React.useMemo(() => {
@@ -271,6 +231,43 @@ export default function useTradeupBuilder() {
     inputsByCollection,
     selectedCollectionId,
     activeCollectionTag,
+  ]);
+
+  /** Быстрая таблица соответствий collectionId → steam-tag. */
+  const collectionTagById = React.useMemo(() => {
+    const map = new Map<string, string>();
+
+    const register = (collectionId?: string | null, tag?: string | null) => {
+      if (!collectionId || !tag) return;
+      if (map.has(collectionId)) return;
+      map.set(collectionId, tag);
+    };
+
+    for (const entry of steamCollections) {
+      register(entry.collectionId, entry.tag);
+    }
+
+    for (const entry of targetCacheResponses) {
+      register(entry.collectionId, entry.collectionTag);
+    }
+
+    Object.values(inputsByCollection).forEach((entryByRarity) => {
+      Object.values(entryByRarity ?? {}).forEach((entry) => {
+        register(entry.collectionId, entry.collectionTag);
+      });
+    });
+
+    if (selectedCollectionId && activeCollectionTag) {
+      register(selectedCollectionId, activeCollectionTag);
+    }
+
+    return map;
+  }, [
+    activeCollectionTag,
+    inputsByCollection,
+    selectedCollectionId,
+    steamCollections,
+    targetCacheResponses,
   ]);
 
   /** Подтягивает живой список коллекций из Steam Community Market. */
@@ -678,15 +675,17 @@ export default function useTradeupBuilder() {
     return resolveTradeupRows({
       parsedRows,
       selectedCollectionId,
-      collectionValueMeta,
       steamCollectionsByTag,
       collectionIdByTag,
+      collectionTagById,
+      steamCollectionsById,
     });
   }, [
     parsedRows,
     collectionIdByTag,
-    collectionValueMeta,
+    collectionTagById,
     selectedCollectionId,
+    steamCollectionsById,
     steamCollectionsByTag,
   ]);
 

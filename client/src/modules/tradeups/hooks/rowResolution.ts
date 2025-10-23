@@ -1,26 +1,23 @@
 import type { SteamCollectionSummary } from "../services/api";
 import { readTagFromCollectionValue } from "./helpers";
-import type {
-  CollectionValueMeta,
-  ParsedTradeupRow,
-  ResolvedTradeupRow,
-  RowResolution,
-} from "./types";
+import type { ParsedTradeupRow, ResolvedTradeupRow, RowResolution } from "./types";
 
 interface ResolveRowsParams {
   parsedRows: ParsedTradeupRow[];
   selectedCollectionId: string | null;
-  collectionValueMeta: Map<string, CollectionValueMeta>;
   steamCollectionsByTag: Map<string, SteamCollectionSummary>;
   collectionIdByTag: Map<string, string>;
+  collectionTagById: Map<string, string>;
+  steamCollectionsById: Map<string, SteamCollectionSummary>;
 }
 
 export const resolveTradeupRows = ({
   parsedRows,
   selectedCollectionId,
-  collectionValueMeta,
   steamCollectionsByTag,
   collectionIdByTag,
+  collectionTagById,
+  steamCollectionsById,
 }: ResolveRowsParams): RowResolution => {
   if (!parsedRows.length) {
     return {
@@ -33,12 +30,16 @@ export const resolveTradeupRows = ({
   }
 
   const rowsWithResolved: ResolvedTradeupRow[] = parsedRows.map((row) => {
-    const meta = collectionValueMeta.get(row.collectionId);
-    const fallbackTag = meta?.tag ?? readTagFromCollectionValue(row.collectionId);
+    const tagFromValue = readTagFromCollectionValue(row.collectionId);
+    const fallbackTag =
+      tagFromValue ?? (row.collectionId ? collectionTagById.get(row.collectionId) ?? null : null);
     const steamEntry = fallbackTag ? steamCollectionsByTag.get(fallbackTag) : undefined;
 
-    let resolvedId = meta?.collectionId ?? null;
-    let resolvedName = meta?.name ?? steamEntry?.name ?? null;
+    let resolvedId: string | null = null;
+
+    if (row.collectionId && !tagFromValue) {
+      resolvedId = row.collectionId;
+    }
 
     if (!resolvedId && fallbackTag) {
       const cachedByTag = collectionIdByTag.get(fallbackTag);
@@ -55,16 +56,14 @@ export const resolveTradeupRows = ({
       resolvedId = selectedCollectionId;
     }
 
-    if (!resolvedId && row.collectionId) {
-      resolvedId = row.collectionId;
-    }
+    let resolvedName: string | null = steamEntry?.name ?? null;
 
-    if (!resolvedName && steamEntry?.name) {
-      resolvedName = steamEntry.name;
-    }
-
-    if (!resolvedName && resolvedId && meta?.name) {
-      resolvedName = meta.name;
+    if (!resolvedName && resolvedId) {
+      resolvedName = steamCollectionsById.get(resolvedId)?.name ?? null;
+      if (!resolvedName) {
+        const tag = collectionTagById.get(resolvedId);
+        resolvedName = tag ? steamCollectionsByTag.get(tag)?.name ?? null : null;
+      }
     }
 
     return {

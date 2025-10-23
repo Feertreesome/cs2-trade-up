@@ -28,12 +28,6 @@ export interface CollectionSelectOption {
   supported: boolean;
 }
 
-export interface CollectionValueMeta {
-  collectionId: string | null;
-  tag: string | null;
-  name: string;
-}
-
 export interface SelectedTarget {
   collectionTag: string;
   baseName: string;
