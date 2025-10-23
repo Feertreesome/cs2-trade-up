@@ -5,6 +5,10 @@ import {
   type TargetRarity,
 } from "../../services/api";
 
+/**
+ * Загружает список доступных входов для выбранной коллекции и следит за состоянием загрузки.
+ */
+
 export interface UseCollectionInputsResult {
   response: CollectionInputsResponse | null;
   loading: boolean;

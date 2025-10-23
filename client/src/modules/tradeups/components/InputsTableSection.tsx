@@ -1,10 +1,12 @@
 import React from "react";
 import type { CollectionSelectOption, TradeupInputFormRow } from "../hooks/useTradeupBuilder";
 
+/**
+ * Таблица ввода исходных предметов: даёт выбрать market_hash_name, коллекцию, float и цену.
+ */
 interface InputsTableSectionProps {
   rows: TradeupInputFormRow[];
   collectionOptions: CollectionSelectOption[];
-  buyerToNetRate: number;
   updateRow: (index: number, patch: Partial<TradeupInputFormRow>) => void;
   autofillPrices: () => void | Promise<void>;
   priceLoading: boolean;
@@ -16,7 +18,6 @@ interface InputsTableSectionProps {
 export default function InputsTableSection({
   rows,
   collectionOptions,
-  buyerToNetRate,
   updateRow,
   autofillPrices,
   priceLoading,
@@ -35,14 +36,12 @@ export default function InputsTableSection({
               <th>market_hash_name</th>
               <th>Коллекция</th>
               <th>Float</th>
-              <th>Buyer $</th>
-              <th>Net $ (после комиссии)</th>
+              <th>Цена $</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((row, index) => {
-              const buyerPrice = Number.parseFloat(row.buyerPrice);
-              const netPrice = Number.isFinite(buyerPrice) ? buyerPrice / buyerToNetRate : NaN;
+              const price = Number.parseFloat(row.price);
               return (
                 <tr key={index}>
                   <td>{index + 1}</td>
@@ -86,11 +85,13 @@ export default function InputsTableSection({
                       min="0"
                       step="0.01"
                       className="form-control form-control-sm"
-                      value={row.buyerPrice}
-                      onChange={(event) => updateRow(index, { buyerPrice: event.target.value })}
+                      value={row.price}
+                      onChange={(event) => updateRow(index, { price: event.target.value })}
                     />
+                    <div className="text-muted small">
+                      {Number.isFinite(price) ? `$${price.toFixed(2)}` : "—"}
+                    </div>
                   </td>
-                  <td>{Number.isFinite(netPrice) ? `$${netPrice.toFixed(2)}` : "—"}</td>
                 </tr>
               );
             })}
@@ -104,7 +105,7 @@ export default function InputsTableSection({
           onClick={() => autofillPrices()}
           disabled={priceLoading}
         >
-          {priceLoading ? "Загрузка цен…" : "Подтянуть buyer-цены"}
+          {priceLoading ? "Загрузка цен…" : "Подтянуть цены"}
         </button>
         <button
           type="button"

@@ -6,8 +6,11 @@ import {
 } from "../../services/api";
 import type { ParsedTradeupRow, RowResolution, SelectedTarget } from "../types";
 
+/**
+ * Управляет отправкой данных на сервер для расчёта EV.
+ * Валидирует строки ввода, формирует payload и обрабатывает ошибки/состояние загрузки.
+ */
 interface TradeupCalculationOptions {
-  buyerToNetRate: number;
   parsedRows: ParsedTradeupRow[];
   rowResolution: RowResolution;
   selectedTarget: SelectedTarget | null;
@@ -16,7 +19,6 @@ interface TradeupCalculationOptions {
 }
 
 export const useTradeupCalculation = ({
-  buyerToNetRate,
   parsedRows,
   rowResolution,
   selectedTarget,
@@ -88,13 +90,10 @@ export const useTradeupCalculation = ({
           marketHashName: row.marketHashName,
           float: row.float,
           collectionId: row.resolvedCollectionId ?? resolvedCollectionId,
-          priceOverrideNet: Number.isFinite(row.buyerPrice)
-            ? row.buyerPrice / buyerToNetRate
-            : undefined,
+          priceOverrideNet: Number.isFinite(row.price) ? row.price : undefined,
         })),
         targetCollectionIds: [resolvedCollectionId],
         targetRarity,
-        options: { buyerToNetRate },
         targetOverrides,
       };
       const result = await requestTradeupCalculation(payload);
@@ -106,7 +105,6 @@ export const useTradeupCalculation = ({
       setCalculating(false);
     }
   }, [
-    buyerToNetRate,
     parsedRows,
     rowResolution,
     selectedTarget,

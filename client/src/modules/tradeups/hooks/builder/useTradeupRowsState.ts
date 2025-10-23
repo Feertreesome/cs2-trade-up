@@ -2,6 +2,10 @@ import React from "react";
 import { createInitialRows } from "../helpers";
 import type { TradeupInputFormRow } from "../types";
 
+/**
+ * Управляет массивом строк ввода trade-up'а и предоставляет утилиты для сброса/обновления.
+ */
+
 interface TradeupRowsState {
   rows: TradeupInputFormRow[];
   setRows: React.Dispatch<React.SetStateAction<TradeupInputFormRow[]>>;

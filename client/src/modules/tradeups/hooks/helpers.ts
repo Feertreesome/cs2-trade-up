@@ -6,7 +6,7 @@ export const makeEmptyRow = (): TradeupInputFormRow => ({
   marketHashName: "",
   collectionId: "",
   float: "",
-  buyerPrice: "",
+  price: "",
 });
 
 export const createInitialRows = () => Array.from({ length: 10 }, makeEmptyRow);

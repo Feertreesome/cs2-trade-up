@@ -4,10 +4,14 @@ import type { CollectionInputSummary } from "../../services/api";
 import type { Exterior } from "../../skins/services/types";
 import type { TradeupInputFormRow } from "../types";
 
+/**
+ * Применяет подсказки коллекции к таблице входов: задаёт float/цены и при необходимости
+ * запускает автоподбор недостающих стоимостей из Steam.
+ */
 interface RowPlannerOptions {
   selectedCollectionId: string | null;
   setRows: React.Dispatch<React.SetStateAction<TradeupInputFormRow[]>>;
-  autofillPrices: (namesOverride?: string[]) => Promise<void>;
+  autofillPrices: (namesOverride?: string[]) => Promise<void> | void;
 }
 
 interface ApplyInputsOptions {

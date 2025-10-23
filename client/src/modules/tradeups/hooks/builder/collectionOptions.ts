@@ -12,6 +12,10 @@ import type {
   SteamCollectionSummary,
 } from "../../services/api";
 
+/**
+ * Строит список опций и вспомогательные отображения коллекций для выпадающего списка выбора.
+ * Смешивает данные из Steam, свежих ответов API и текущих строк ввода.
+ */
 interface CollectionOptionParams {
   steamCollections: SteamCollectionSummary[];
   targetsResponse: CollectionTargetsResponse | null;

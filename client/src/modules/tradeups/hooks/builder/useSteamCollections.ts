@@ -4,6 +4,10 @@ import {
   type SteamCollectionSummary,
 } from "../../services/api";
 
+/**
+ * Отвечает за загрузку списка коллекций из Steam и предоставляет быстрые словари по тегу/ID.
+ */
+
 interface SteamCollectionsState {
   collections: SteamCollectionSummary[];
   loading: boolean;

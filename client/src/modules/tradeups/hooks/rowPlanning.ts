@@ -324,7 +324,7 @@ export const planRowsForCollection = ({
       marketHashName: input.marketHashName,
       collectionId: effectiveCollectionValue,
       float: formatFloatValue(adjusted),
-      buyerPrice: input.price != null ? input.price.toFixed(2) : "",
+      price: input.price != null ? input.price.toFixed(2) : "",
     };
   });
 

@@ -31,12 +31,8 @@ export default function TradeupBuilder() {
     inputsError,
     rows,
     updateRow,
-    buyerFeePercent,
-    setBuyerFeePercent,
-    buyerToNetRate,
     averageFloat,
-    totalBuyerCost,
-    totalNetCost,
+    totalInputCost,
     autofillPrices,
     priceLoading,
     calculate,
@@ -58,11 +54,7 @@ export default function TradeupBuilder() {
         </div>
         <TradeupSummary
           averageFloat={averageFloat}
-          totalBuyerCost={totalBuyerCost}
-          totalNetCost={totalNetCost}
-          buyerFeePercent={buyerFeePercent}
-          buyerToNetRate={buyerToNetRate}
-          onBuyerFeeChange={(value) => setBuyerFeePercent(value)}
+          totalInputCost={totalInputCost}
         />
       </div>
 
@@ -97,7 +89,6 @@ export default function TradeupBuilder() {
       <InputsTableSection
         rows={rows}
         collectionOptions={collectionOptions}
-        buyerToNetRate={buyerToNetRate}
         updateRow={updateRow}
         autofillPrices={autofillPrices}
         priceLoading={priceLoading}
@@ -109,7 +100,7 @@ export default function TradeupBuilder() {
       {calculation && (
         <ResultsSection
           calculation={calculation}
-          totalBuyerCost={totalBuyerCost}
+          totalInputCost={totalInputCost}
           availabilityState={availabilityState}
           onCheckAvailability={checkAvailability}
         />

@@ -5,6 +5,10 @@ import {
   type TargetRarity,
 } from "../../services/api";
 
+/**
+ * Загружает цели trade-up'а для выбранного Steam-тэга и следит за перезагрузками при смене редкости.
+ */
+
 export interface UseCollectionTargetsResult {
   response: CollectionTargetsResponse | null;
   targets: CollectionTargetsResponse["targets"];

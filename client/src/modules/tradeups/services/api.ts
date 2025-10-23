@@ -91,10 +91,6 @@ export interface TradeupInputPayload {
   priceOverrideNet?: number | null;
 }
 
-export interface TradeupOptionsPayload {
-  buyerToNetRate?: number;
-}
-
 export interface TradeupTargetOverridePayload {
   collectionId?: string | null;
   collectionTag?: string | null;
@@ -110,7 +106,6 @@ export interface TradeupCalculationPayload {
   inputs: TradeupInputPayload[];
   targetCollectionIds: string[];
   targetRarity?: TargetRarity;
-  options?: TradeupOptionsPayload;
   targetOverrides?: TradeupTargetOverridePayload[];
 }
 
@@ -124,7 +119,6 @@ export interface TradeupOutcomeResponse {
   exterior: Exterior;
   wearRange: { min: number; max: number };
   probability: number;
-  buyerPrice?: number | null;
   netPrice?: number | null;
   priceError?: unknown;
   marketHashName: string;
@@ -132,7 +126,6 @@ export interface TradeupOutcomeResponse {
 }
 
 export interface TradeupInputSummaryResponse extends TradeupInputPayload {
-  priceMarket?: number | null;
   netPrice?: number | null;
   priceError?: unknown;
 }

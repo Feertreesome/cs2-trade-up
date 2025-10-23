@@ -8,18 +8,23 @@ import type {
   TradeupCalculationResponse,
 } from "../services/api";
 
+/**
+ * Основные типы, которые разделяют клиентские хуки и компоненты конструктора trade-up.
+ * Содержат представления строк ввода, целевых скинов и агрегированного состояния.
+ */
+
 export interface TradeupInputFormRow {
   marketHashName: string;
   collectionId: string;
   float: string;
-  buyerPrice: string;
+  price: string;
 }
 
 export interface ParsedTradeupRow {
   marketHashName: string;
   collectionId: string;
   float: number;
-  buyerPrice: number;
+  price: number;
 }
 
 export interface CollectionSelectOption {
@@ -42,7 +47,7 @@ export interface ResolvedTradeupRow {
   marketHashName: string;
   collectionId: string;
   float: number;
-  buyerPrice: number;
+  price: number;
   resolvedCollectionId: string | null;
   resolvedCollectionName: string | null;
   resolvedTag: string | null;
@@ -79,12 +84,8 @@ export interface TradeupBuilderState {
   inputsError: string | null;
   rows: TradeupInputFormRow[];
   updateRow: (index: number, patch: Partial<TradeupInputFormRow>) => void;
-  buyerFeePercent: number;
-  setBuyerFeePercent: React.Dispatch<React.SetStateAction<number>>;
-  buyerToNetRate: number;
   averageFloat: number;
-  totalBuyerCost: number;
-  totalNetCost: number;
+  totalInputCost: number;
   autofillPrices: (namesOverride?: string[]) => Promise<void> | void;
   priceLoading: boolean;
   calculate: () => Promise<void>;

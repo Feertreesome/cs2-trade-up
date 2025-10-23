@@ -7,6 +7,10 @@ import type {
 } from "../../services/api";
 import type { CollectionSelectOption, TradeupInputFormRow } from "../types";
 
+/**
+ * Формирует опции и словари коллекций на основе свежих API-ответов и текущего выбора пользователя.
+ */
+
 interface CollectionMetaParams {
   steamCollections: SteamCollectionSummary[];
   targetsResponse: CollectionTargetsResponse | null;

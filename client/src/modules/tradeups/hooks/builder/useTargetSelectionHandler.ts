@@ -10,6 +10,11 @@ import type { UseCollectionInputsResult } from "./useCollectionInputs";
 import type { UseCollectionTargetsResult } from "./useCollectionTargets";
 import type { SelectedTarget } from "../types";
 
+/**
+ * Возвращает обработчик выбора целевого скина: обновляет выделение коллекции
+ * и применяет подходящие входы к таблице.
+ */
+
 interface TargetSelectionHandlerOptions {
   inputsState: UseCollectionInputsResult;
   targetsState: UseCollectionTargetsResult;

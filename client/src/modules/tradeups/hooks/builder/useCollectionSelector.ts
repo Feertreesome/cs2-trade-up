@@ -2,6 +2,10 @@ import React from "react";
 import type { UseCollectionInputsResult } from "./useCollectionInputs";
 import type { UseCollectionTargetsResult } from "./useCollectionTargets";
 
+/**
+ * Возвращает обработчик смены коллекции: сбрасывает данные и инициирует перезагрузку целей/входов.
+ */
+
 interface CollectionSelectorOptions {
   setActiveCollectionTag: (tag: string) => void;
   setSelectedCollectionId: (collectionId: string | null) => void;

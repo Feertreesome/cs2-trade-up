@@ -3,6 +3,10 @@ import { resolveTradeupRows } from "../rowResolution";
 import type { ParsedTradeupRow, RowResolution } from "../types";
 import type { SteamCollectionSummary } from "../../services/api";
 
+/**
+ * Резолвит введённые строки в коллекции, используя кэшированные словари и свежие данные из API.
+ */
+
 interface RowResolutionOptions {
   parsedRows: ParsedTradeupRow[];
   selectedCollectionId: string | null;

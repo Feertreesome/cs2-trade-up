@@ -5,6 +5,11 @@ import {
 } from "../../services/api";
 import type { TradeupAvailabilityState } from "../types";
 
+/**
+ * Управляет запросом доступности входов для выбранного исхода trade-up'а
+ * и хранит локальное состояние выполнения/ошибок.
+ */
+
 interface AvailabilityCheckerOptions {
   calculation: TradeupCalculationResponse | null;
 }

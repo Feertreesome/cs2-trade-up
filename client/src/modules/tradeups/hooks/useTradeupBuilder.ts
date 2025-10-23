@@ -2,7 +2,6 @@ import React from "react";
 import { type TargetRarity } from "../services/api";
 import { useAggregateCosts } from "./builder/useAggregateCosts";
 import { useAvailabilityChecker } from "./builder/useAvailabilityChecker";
-import { useBuyerFee } from "./builder/useBuyerFee";
 import { useCollectionInputs } from "./builder/useCollectionInputs";
 import { useCollectionTargets } from "./builder/useCollectionTargets";
 import { useCollectionMeta } from "./builder/useCollectionMeta";
@@ -23,6 +22,10 @@ import type {
 
 export type { TradeupInputFormRow, CollectionSelectOption, SelectedTarget } from "./types";
 
+/**
+ * Главный оркестратор конструктора trade-up. Собирает специализированные хуки
+ * загрузки данных, выбора коллекций, планирования строк и расчёта EV в единое состояние.
+ */
 export default function useTradeupBuilder() {
   const {
     collections: steamCollections,
@@ -39,8 +42,6 @@ export default function useTradeupBuilder() {
   const inputsState = useCollectionInputs();
   const { rows, setRows, resetRows, updateRow } = useTradeupRowsState();
   const [selectedTarget, setSelectedTarget] = React.useState<SelectedTarget | null>(null);
-  const { buyerFeePercent, setBuyerFeePercent, buyerToNetRate } = useBuyerFee();
-
   React.useEffect(() => {
     if (!targetsState.response) return;
     setSelectedCollectionId(targetsState.response.collectionId ?? null);
@@ -74,7 +75,6 @@ export default function useTradeupBuilder() {
     resetCalculation,
     calculate,
   } = useTradeupCalculation({
-    buyerToNetRate,
     parsedRows,
     rowResolution,
     selectedTarget,
@@ -145,10 +145,7 @@ export default function useTradeupBuilder() {
     setSelectedTarget,
   });
 
-  const { averageFloat, totalBuyerCost, totalNetCost } = useAggregateCosts(
-    parsedRows,
-    buyerToNetRate,
-  );
+  const { averageFloat, totalInputCost } = useAggregateCosts(parsedRows);
 
   return {
     steamCollections,
@@ -169,12 +166,8 @@ export default function useTradeupBuilder() {
     inputsError: inputsState.error,
     rows,
     updateRow,
-    buyerFeePercent,
-    setBuyerFeePercent,
-    buyerToNetRate,
     averageFloat,
-    totalBuyerCost,
-    totalNetCost,
+    totalInputCost,
     autofillPrices,
     priceLoading,
     calculate,

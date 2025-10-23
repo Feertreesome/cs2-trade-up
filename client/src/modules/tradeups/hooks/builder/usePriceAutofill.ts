@@ -2,6 +2,10 @@ import React from "react";
 import { batchPriceOverview } from "../../services/api";
 import type { TradeupInputFormRow } from "../types";
 
+/**
+ * Автоматически подтягивает цены из Steam для указанного списка market_hash_name
+ * и обновляет строки ввода. Ошибки прокидываются наружу через reportError.
+ */
 interface PriceAutofillOptions {
   rows: TradeupInputFormRow[];
   setRows: React.Dispatch<React.SetStateAction<TradeupInputFormRow[]>>;
@@ -28,7 +32,7 @@ export const usePriceAutofill = ({
           prev.map((row) => {
             const price = prices[row.marketHashName];
             if (typeof price === "number") {
-              return { ...row, buyerPrice: price.toFixed(2) };
+              return { ...row, price: price.toFixed(2) };
             }
             return row;
           }),
