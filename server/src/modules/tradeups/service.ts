@@ -28,6 +28,7 @@ import {
   getCollectionSummariesFromDb,
   getCollectionTargetsFromDb,
   getCollectionInputsFromDb,
+  getCollectionRaritiesFromDb,
 } from "../../database/collections";
 import { isCatalogReady } from "../../database/status";
 import type {
@@ -69,6 +70,15 @@ const PREDEFINED_FLOATS_BY_RARITY: Record<TargetRarity, Map<string, CollectionFl
   Industrial: new Map(),
   Consumer: new Map(),
 };
+
+const ANALYZER_RARITY_ORDER: TargetRarity[] = [
+  "Covert",
+  "Classified",
+  "Restricted",
+  "Mil-Spec",
+  "Industrial",
+  "Consumer",
+];
 
 const TARGET_INPUT_RARITY: Record<TargetRarity, InputRarity | null> = {
   Covert: "Classified",
@@ -510,6 +520,45 @@ export const fetchCollectionTargets = async (
     rarity,
     targets: Array.from(grouped.values()),
   };
+};
+
+export const fetchCollectionAvailableRarities = async (
+  collectionTag: string,
+): Promise<TargetRarity[]> => {
+  ensureCollectionCaches();
+  const available = new Set<TargetRarity>();
+
+  if (await isCatalogReady()) {
+    try {
+      const stored = await getCollectionRaritiesFromDb(collectionTag);
+      for (const rarity of stored) {
+        available.add(rarity);
+      }
+    } catch (error) {
+      // Ignore and fall back to Steam queries
+    }
+  }
+
+  if (!available.size) {
+    for (const rarity of ANALYZER_RARITY_ORDER) {
+      try {
+        const { items } = await searchByCollection({
+          collectionTag,
+          rarity,
+          start: 0,
+          count: 1,
+          normalOnly: true,
+        });
+        if (items.length) {
+          available.add(rarity);
+        }
+      } catch (error) {
+        // Ignore individual rarity errors
+      }
+    }
+  }
+
+  return ANALYZER_RARITY_ORDER.filter((rarity) => available.has(rarity));
 };
 
 /**

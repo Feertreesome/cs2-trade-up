@@ -2,6 +2,7 @@ import React from "react";
 import {
   fetchCollectionTargets,
   fetchCollectionInputs,
+  fetchCollectionRarities,
   type CollectionInputSummary,
   type CollectionTargetsResponse,
   type TargetRarity,
@@ -65,7 +66,27 @@ const analyzeCollection = async (collectionTag: string): Promise<CollectionAnaly
   const bestByTarget = new Map<string, CollectionAnalysisEntry>();
   const warnings: string[] = [];
 
-  for (const targetRarity of TRADEUP_RARITIES) {
+  let raritiesToCheck: TargetRarity[] = [];
+  try {
+    const availableRarities = await fetchCollectionRarities(collectionTag);
+    const filtered = TRADEUP_RARITIES.filter((rarity) => availableRarities.includes(rarity));
+    if (filtered.length) {
+      raritiesToCheck = filtered;
+    } else {
+      warnings.push("В коллекции нет подходящих редкостей для анализа trade-up.");
+    }
+  } catch (error: any) {
+    warnings.push(
+      `Не удалось загрузить список редкостей коллекции: ${String(error?.message || error)}`,
+    );
+    raritiesToCheck = TRADEUP_RARITIES;
+  }
+
+  if (!raritiesToCheck.length) {
+    return { entries: [], warnings };
+  }
+
+  for (const targetRarity of raritiesToCheck) {
     let targets: CollectionTargetsResponse["targets"]; // undefined until fetched
     let inputs: CollectionInputSummary[];
     let inputRarity: string | null = null;
