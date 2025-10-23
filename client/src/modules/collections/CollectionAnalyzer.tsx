@@ -146,9 +146,23 @@ const analyzeCollection = async (collectionTag: string): Promise<CollectionAnaly
     }
   }
 
-  const entries = Array.from(bestByTarget.values()).sort(
-    (a, b) => b.ratioPercent - a.ratioPercent,
-  );
+  let entries = Array.from(bestByTarget.values());
+
+  if (entries.length) {
+    const raritiesPresent = new Set(entries.map((entry) => entry.targetRarity));
+    const rarityToExclude = [...TRADEUP_RARITIES]
+      .reverse()
+      .find((rarity) => raritiesPresent.has(rarity));
+
+    if (rarityToExclude) {
+      const filtered = entries.filter((entry) => entry.targetRarity !== rarityToExclude);
+      if (filtered.length) {
+        entries = filtered;
+      }
+    }
+  }
+
+  entries.sort((a, b) => b.ratioPercent - a.ratioPercent);
   return { entries, warnings };
 };
 
