@@ -1,9 +1,8 @@
 import { Router } from "express";
-import type { AxiosError } from "axios";
 import { LRUCache } from "lru-cache";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { fetchListingTotalCount } from "../steam/repo";
+import { fetchListingTotalCount, RateLimitError } from "../steam/repo";
 import { STEAM_PAGE_SIZE } from "../../config";
 import { parseBoolean } from "./validators";
 import { ALL_RARITIES, getTotals, getSkinsPage, getPersistedNames } from "./service";
@@ -31,7 +30,13 @@ const getTotalsCached = async (
 };
 
 const handleError = (res: any, error: unknown) => {
-  const status = (error as AxiosError)?.response?.status;
+  if (error instanceof RateLimitError) {
+    return res.status(503).json({
+      error: "Steam rate limit, retry later",
+      retryAfterMs: error.retryAfterMs,
+    });
+  }
+  const status = (error as any)?.response?.status;
   if (status === 429) {
     return res.status(503).json({ error: "Steam rate limit, retry later" });
   }
@@ -116,7 +121,12 @@ export const createSkinsRouter = (): Router => {
             start += items.length;
             if (start >= total) break;
           } catch (err) {
-            const status = (err as AxiosError)?.response?.status;
+            if (err instanceof RateLimitError) {
+              const waitFor = Math.min(err.retryAfterMs ?? 16_000, 60_000);
+              await sleep(waitFor);
+              continue;
+            }
+            const status = (err as any)?.response?.status;
             if (status === 429) {
               await sleep(16_000);
               continue;

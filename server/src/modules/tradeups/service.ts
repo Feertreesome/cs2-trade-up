@@ -4,7 +4,6 @@
  * Здесь же реализованы вспомогательные структуры и кеши для сопоставления
  * коллекций Steam с нашим справочником float-диапазонов.
  */
-import axios from "axios";
 import * as collectionFloatData from "../../../../data/CollectionsWithFloat";
 import type {
   CollectionFloatCatalogEntry,
@@ -878,7 +877,7 @@ const fetchFloatForListing = async (
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
       const response = await enqueueFloatRequest(() =>
-        axios.get<CsgoFloatResponse>(FLOAT_API_ENDPOINT, {
+        steamGet<CsgoFloatResponse>(FLOAT_API_ENDPOINT, {
           params: { url: listing.inspectLink },
           timeout: 20_000,
         }),
