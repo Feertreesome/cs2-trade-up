@@ -33,6 +33,8 @@ interface CollectionAnalysisInputEntry {
   count: number;
   unitPrice: number;
   totalPrice: number;
+  minFloat: number | null;
+  maxFloat: number | null;
 }
 
 interface CollectionAnalysisEntry {
@@ -61,6 +63,26 @@ const formatCurrency = (value: number) =>
     currency: "USD",
     maximumFractionDigits: 2,
   }).format(value);
+
+const formatFloat = (value: number) =>
+  new Intl.NumberFormat("ru-RU", {
+    minimumFractionDigits: 5,
+    maximumFractionDigits: 5,
+  }).format(value);
+
+const formatFloatRange = (min: number | null, max: number | null) => {
+  if (min == null && max == null) {
+    return "";
+  }
+  if (min != null && max != null) {
+    if (Math.abs(min - max) <= 0.00001) {
+      return formatFloat(min);
+    }
+    return `${formatFloat(min)}–${formatFloat(max)}`;
+  }
+  const value = min ?? max;
+  return value == null ? "" : formatFloat(value);
+};
 
 const buildTargetKey = (
   rarity: TargetRarity,
@@ -168,19 +190,31 @@ const analyzeCollection = async (collectionTag: string): Promise<CollectionAnaly
         }
 
         let invalidPlan = false;
-        const inputsByName = new Map<string, { count: number; total: number }>();
+        const inputsByName = new Map<
+          string,
+          { count: number; total: number; minFloat: number | null; maxFloat: number | null }
+        >();
         let totalInputCost = 0;
 
         for (const row of validRows.slice(0, INPUTS_REQUIRED)) {
           const price = Number.parseFloat(row.price);
+          const floatValue = Number.parseFloat(row.float);
           if (!Number.isFinite(price) || price <= 0) {
             invalidPlan = true;
             break;
           }
           totalInputCost += price;
-          const current = inputsByName.get(row.marketHashName) ?? { count: 0, total: 0 };
+          const current =
+            inputsByName.get(row.marketHashName) ??
+            { count: 0, total: 0, minFloat: null, maxFloat: null };
           current.count += 1;
           current.total += price;
+          if (Number.isFinite(floatValue)) {
+            current.minFloat =
+              current.minFloat == null ? floatValue : Math.min(current.minFloat, floatValue);
+            current.maxFloat =
+              current.maxFloat == null ? floatValue : Math.max(current.maxFloat, floatValue);
+          }
           inputsByName.set(row.marketHashName, current);
         }
 
@@ -189,11 +223,13 @@ const analyzeCollection = async (collectionTag: string): Promise<CollectionAnaly
         }
 
         const inputsPlan = Array.from(inputsByName.entries()).map(
-          ([marketHashName, { count, total }]) => ({
+          ([marketHashName, { count, total, minFloat, maxFloat }]) => ({
             marketHashName,
             count,
             totalPrice: total,
             unitPrice: total / count,
+            minFloat,
+            maxFloat,
           }),
         );
 
@@ -381,19 +417,28 @@ const CollectionAnalyzer: React.FC = () => {
                 return (
                   <div key={entry.key} className="collection-chart__row">
                     <div className="collection-chart__label">
-                      <div className="fw-semibold">{entry.targetMarketHashName}</div>
+                      <div className="fw-semibold">
+                        {entry.targetMarketHashName}
+                        <span className="text-secondary ms-2">
+                          {formatCurrency(entry.targetPrice)}
+                        </span>
+                      </div>
                       <div className="collection-chart__meta">
                         {TARGET_RARITY_TITLES[entry.targetRarity]}
                         {entry.inputRarity ? ` • вход: ${entry.inputRarity}` : ""}
                       </div>
                       <div className="collection-chart__inputs">
                         Лучший вход:
-                        {entry.inputs.map((input, index) => (
-                          <React.Fragment key={`${entry.key}:${input.marketHashName}:${index}`}>
-                            {index > 0 ? ", " : " "}
-                            {input.marketHashName} × {input.count} ({formatCurrency(input.unitPrice)} за слот)
-                          </React.Fragment>
-                        ))}
+                        {entry.inputs.map((input, index) => {
+                          const floatLabel = formatFloatRange(input.minFloat, input.maxFloat);
+                          return (
+                            <React.Fragment key={`${entry.key}:${input.marketHashName}:${index}`}>
+                              {index > 0 ? ", " : " "}
+                              {input.marketHashName} × {input.count} ({formatCurrency(input.unitPrice)} за слот
+                              {floatLabel ? `, float ${floatLabel}` : ""})
+                            </React.Fragment>
+                          );
+                        })}
                         {" • Σ "}
                         {formatCurrency(entry.totalInputCost)}
                       </div>
