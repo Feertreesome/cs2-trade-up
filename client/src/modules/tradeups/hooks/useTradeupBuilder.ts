@@ -47,16 +47,15 @@ export default function useTradeupBuilder() {
   const [steamCollectionError, setSteamCollectionError] = React.useState<string | null>(null);
 
   const [activeCollectionTag, setActiveCollectionTag] = React.useState<string | null>(null);
+  const [targetsReloadToken, setTargetsReloadToken] = React.useState(0);
   const [targetRarity, setTargetRarityState] = React.useState<TargetRarity>("Covert");
-  const [targetsByCollection, setTargetsByCollection] = React.useState<
-    Record<string, Partial<Record<TargetRarity, CollectionTargetsResponse>>>
-  >({});
+  const [activeTargetsResponse, setActiveTargetsResponse] =
+    React.useState<CollectionTargetsResponse | null>(null);
   const [loadingTargets, setLoadingTargets] = React.useState(false);
   const [targetsError, setTargetsError] = React.useState<string | null>(null);
 
-  const [inputsByCollection, setInputsByCollection] = React.useState<
-    Record<string, Partial<Record<TargetRarity, CollectionInputsResponse>>>
-  >({});
+  const [activeInputsResponse, setActiveInputsResponse] =
+    React.useState<CollectionInputsResponse | null>(null);
   const [inputsLoading, setInputsLoading] = React.useState(false);
   const [inputsError, setInputsError] = React.useState<string | null>(null);
 
@@ -81,14 +80,6 @@ export default function useTradeupBuilder() {
   });
 
   const buyerToNetRate = 1 + Math.max(0, buyerFeePercent) / 100;
-
-  const targetCacheResponses = React.useMemo(
-    () =>
-      Object.values(targetsByCollection).flatMap((entry) =>
-        Object.values(entry ?? {}).filter(Boolean) as CollectionTargetsResponse[],
-      ),
-    [targetsByCollection],
-  );
 
   /** Отдельная карта steam-tag → информация о коллекции для быстрых lookup'ов. */
   const steamCollectionsByTag = React.useMemo(
@@ -154,23 +145,39 @@ export default function useTradeupBuilder() {
       });
     }
 
-    for (const entry of targetCacheResponses) {
-      const value = buildCollectionSelectValue(entry.collectionId, entry.collectionTag);
+    if (activeTargetsResponse) {
+      const value = buildCollectionSelectValue(
+        activeTargetsResponse.collectionId,
+        activeTargetsResponse.collectionTag,
+      );
       addOption(value, {
-        collectionId: entry.collectionId ?? null,
-        tag: entry.collectionTag,
+        collectionId: activeTargetsResponse.collectionId ?? null,
+        tag: activeTargetsResponse.collectionTag,
       });
     }
 
-    Object.values(inputsByCollection).forEach((entryByRarity) => {
-      Object.values(entryByRarity ?? {}).forEach((entry) => {
-        const value = buildCollectionSelectValue(entry.collectionId, entry.collectionTag);
-        addOption(value, {
-          collectionId: entry.collectionId ?? null,
-          tag: entry.collectionTag,
-        });
+    if (activeInputsResponse) {
+      const value = buildCollectionSelectValue(
+        activeInputsResponse.collectionId,
+        activeInputsResponse.collectionTag,
+      );
+      addOption(value, {
+        collectionId: activeInputsResponse.collectionId ?? null,
+        tag: activeInputsResponse.collectionTag,
       });
-    });
+    }
+
+    for (const row of rows) {
+      if (!row.collectionId) continue;
+      const tag = readTagFromCollectionValue(row.collectionId);
+      const value = tag
+        ? buildCollectionSelectValue(null, tag)
+        : buildCollectionSelectValue(row.collectionId, null);
+      addOption(value, {
+        collectionId: tag ? null : row.collectionId,
+        tag,
+      });
+    }
 
     if (selectedCollectionId || activeCollectionTag) {
       const value = buildCollectionSelectValue(selectedCollectionId, activeCollectionTag);
@@ -183,12 +190,13 @@ export default function useTradeupBuilder() {
     return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label, "ru"));
   }, [
     activeCollectionTag,
-    inputsByCollection,
+    activeInputsResponse,
+    activeTargetsResponse,
+    rows,
     selectedCollectionId,
     steamCollections,
     steamCollectionsById,
     steamCollectionsByTag,
-    targetCacheResponses,
   ]);
 
   /** Быстрая таблица соответствий steam-tag → collectionId. */
@@ -201,19 +209,13 @@ export default function useTradeupBuilder() {
       }
     }
 
-    for (const entry of targetCacheResponses) {
-      if (entry.collectionId) {
-        map.set(entry.collectionTag, entry.collectionId);
-      }
+    if (activeTargetsResponse?.collectionId && activeTargetsResponse.collectionTag) {
+      map.set(activeTargetsResponse.collectionTag, activeTargetsResponse.collectionId);
     }
 
-    Object.values(inputsByCollection).forEach((entryByRarity) => {
-      Object.values(entryByRarity ?? {}).forEach((entry) => {
-        if (entry.collectionId) {
-          map.set(entry.collectionTag, entry.collectionId);
-        }
-      });
-    });
+    if (activeInputsResponse?.collectionId && activeInputsResponse.collectionTag) {
+      map.set(activeInputsResponse.collectionTag, activeInputsResponse.collectionId);
+    }
 
     if (selectedCollectionId && activeCollectionTag) {
       map.set(activeCollectionTag, selectedCollectionId);
@@ -221,11 +223,11 @@ export default function useTradeupBuilder() {
 
     return map;
   }, [
-    steamCollections,
-    targetCacheResponses,
-    inputsByCollection,
-    selectedCollectionId,
     activeCollectionTag,
+    activeInputsResponse,
+    activeTargetsResponse,
+    steamCollections,
+    selectedCollectionId,
   ]);
 
   /** Быстрая таблица соответствий collectionId → steam-tag. */
@@ -242,15 +244,13 @@ export default function useTradeupBuilder() {
       register(entry.collectionId, entry.tag);
     }
 
-    for (const entry of targetCacheResponses) {
-      register(entry.collectionId, entry.collectionTag);
+    if (activeTargetsResponse) {
+      register(activeTargetsResponse.collectionId, activeTargetsResponse.collectionTag);
     }
 
-    Object.values(inputsByCollection).forEach((entryByRarity) => {
-      Object.values(entryByRarity ?? {}).forEach((entry) => {
-        register(entry.collectionId, entry.collectionTag);
-      });
-    });
+    if (activeInputsResponse) {
+      register(activeInputsResponse.collectionId, activeInputsResponse.collectionTag);
+    }
 
     if (selectedCollectionId && activeCollectionTag) {
       register(selectedCollectionId, activeCollectionTag);
@@ -259,10 +259,10 @@ export default function useTradeupBuilder() {
     return map;
   }, [
     activeCollectionTag,
-    inputsByCollection,
+    activeInputsResponse,
+    activeTargetsResponse,
     selectedCollectionId,
     steamCollections,
-    targetCacheResponses,
   ]);
 
   /** Подтягивает живой список коллекций из Steam Community Market. */
@@ -271,17 +271,7 @@ export default function useTradeupBuilder() {
       setSteamCollectionError(null);
       setLoadingSteamCollections(true);
       const steamCollectionList = await fetchSteamCollections();
-      setSteamCollections((prev) => {
-        if (!prev.length) return steamCollectionList;
-        const previousByTag = new Map(prev.map((entry) => [entry.tag, entry] as const));
-        return steamCollectionList.map((entry) => {
-          const existing = previousByTag.get(entry.tag);
-          if (existing?.collectionId && !entry.collectionId) {
-            return { ...entry, collectionId: existing.collectionId };
-          }
-          return entry;
-        });
-      });
+      setSteamCollections(steamCollectionList);
     } catch (error: any) {
       setSteamCollectionError(String(error?.message || error));
     } finally {
@@ -289,31 +279,9 @@ export default function useTradeupBuilder() {
     }
   }, []);
 
-  /**
-   * Если для steam-tag выяснился конкретный collectionId — сохраняем его,
-   * чтобы переиспользовать в дальнейшем и показывать поддержку float.
-   */
-  const rememberSteamCollectionId = React.useCallback((collectionTag: string, collectionId: string | null) => {
-    if (!collectionTag || !collectionId) return;
-    setSteamCollections((prev) => {
-      let updated = false;
-      const next = prev.map((entry) => {
-        if (entry.tag !== collectionTag) return entry;
-        if (entry.collectionId === collectionId) {
-          updated = true;
-          return entry;
-        }
-        updated = true;
-        return { ...entry, collectionId };
-      });
-      return updated ? next : prev;
-    });
-  }, []);
-
   const activeTargets = React.useMemo(() => {
-    if (!activeCollectionTag) return [];
-    return targetsByCollection[activeCollectionTag]?.[targetRarity]?.targets ?? [];
-  }, [activeCollectionTag, targetRarity, targetsByCollection]);
+    return activeTargetsResponse?.targets ?? [];
+  }, [activeTargetsResponse]);
 
   React.useEffect(() => {
     if (!activeTargets.length) return;
@@ -358,128 +326,86 @@ export default function useTradeupBuilder() {
       if (rarity === targetRarity) return;
       setTargetRarityState(rarity);
       setTargetsError(null);
+      setInputsError(null);
       setSelectedTarget(null);
       setCalculation(null);
-      if (!activeCollectionTag) return;
-      const cached = targetsByCollection[activeCollectionTag]?.[rarity];
-      if (cached) {
-        if (cached.collectionId) {
-          setSelectedCollectionId(cached.collectionId);
-          rememberSteamCollectionId(activeCollectionTag, cached.collectionId);
-        }
-        return;
-      }
-      setLoadingTargets(true);
-      (async () => {
-        try {
-          const result = await fetchCollectionTargets(activeCollectionTag, rarity);
-          setTargetsByCollection((prev) => ({
-            ...prev,
-            [activeCollectionTag]: { ...(prev[activeCollectionTag] ?? {}), [rarity]: result },
-          }));
-          if (result.collectionId) {
-            setSelectedCollectionId(result.collectionId);
-            rememberSteamCollectionId(activeCollectionTag, result.collectionId);
-          }
-        } catch (error: any) {
-          setTargetsError(String(error?.message || error));
-        } finally {
-          setLoadingTargets(false);
-        }
-      })();
+      setCalculationError(null);
+      setActiveTargetsResponse(null);
+      setActiveInputsResponse(null);
+      setSelectedCollectionId(null);
     },
-    [
-      activeCollectionTag,
-      rememberSteamCollectionId,
-      targetRarity,
-      targetsByCollection,
-    ],
+    [targetRarity],
   );
 
   /**
    * Выбор коллекции: сбрасывает форму, подгружает цели и при наличии — collectionId из справочника.
    */
-  const selectCollection = React.useCallback(
-    async (collectionTag: string) => {
-      setActiveCollectionTag(collectionTag);
-      setTargetsError(null);
-      setInputsError(null);
-      setSelectedTarget(null);
-      setCalculation(null);
-      setRows(createInitialRows());
-      setCalculationError(null);
+  const selectCollection = React.useCallback((collectionTag: string) => {
+    setActiveCollectionTag(collectionTag);
+    setTargetsError(null);
+    setInputsError(null);
+    setSelectedTarget(null);
+    setCalculation(null);
+    setCalculationError(null);
+    setRows(createInitialRows());
+    setActiveTargetsResponse(null);
+    setActiveInputsResponse(null);
+    setSelectedCollectionId(null);
+    setTargetsReloadToken((prev) => prev + 1);
+  }, []);
 
-      const steamEntry = steamCollections.find((entry) => entry.tag === collectionTag);
-      const cachedByRarity = targetsByCollection[collectionTag];
-      const cachedForSelectedRarity = cachedByRarity?.[targetRarity];
-      const fallbackCached = cachedByRarity
-        ? (Object.values(cachedByRarity).find((entry) => entry?.collectionId) as
-            | CollectionTargetsResponse
-            | undefined)
-        : undefined;
-      const initialCollectionId =
-        cachedForSelectedRarity?.collectionId ??
-        fallbackCached?.collectionId ??
-        steamEntry?.collectionId ??
-        null;
-      setSelectedCollectionId(initialCollectionId ?? null);
-      if (initialCollectionId) {
-        rememberSteamCollectionId(collectionTag, initialCollectionId);
-      }
+  React.useEffect(() => {
+    if (!activeCollectionTag) {
+      setActiveTargetsResponse(null);
+      setSelectedCollectionId(null);
+      setLoadingTargets(false);
+      return;
+    }
 
-      if (cachedForSelectedRarity) {
-        if (cachedForSelectedRarity.collectionId) {
-          setSelectedCollectionId(cachedForSelectedRarity.collectionId);
-          rememberSteamCollectionId(collectionTag, cachedForSelectedRarity.collectionId);
-        }
-        return;
-      }
+    let cancelled = false;
+    setLoadingTargets(true);
+    setTargetsError(null);
+    setActiveTargetsResponse(null);
+    setSelectedCollectionId(null);
 
+    (async () => {
       try {
-        setLoadingTargets(true);
-        const result = await fetchCollectionTargets(collectionTag, targetRarity);
-        setTargetsByCollection((prev) => ({
-          ...prev,
-          [collectionTag]: { ...(prev[collectionTag] ?? {}), [targetRarity]: result },
-        }));
-        if (result.collectionId) {
-          setSelectedCollectionId(result.collectionId);
-          rememberSteamCollectionId(collectionTag, result.collectionId);
-        }
+        const result = await fetchCollectionTargets(activeCollectionTag, targetRarity);
+        if (cancelled) return;
+        setActiveTargetsResponse(result);
+        setSelectedCollectionId(result.collectionId ?? null);
       } catch (error: any) {
+        if (cancelled) return;
         setTargetsError(String(error?.message || error));
       } finally {
+        if (cancelled) return;
         setLoadingTargets(false);
       }
-    },
-    [rememberSteamCollectionId, steamCollections, targetRarity, targetsByCollection],
-  );
+    })();
 
-  /** Загружает список входов и кеширует его по collectionTag и редкости цели. */
+    return () => {
+      cancelled = true;
+    };
+  }, [activeCollectionTag, targetRarity, targetsReloadToken]);
+
+  /** Загружает список входов для указанной коллекции. */
   const loadInputsForCollection = React.useCallback(
     async (collectionTag: string, rarity: TargetRarity) => {
-      const cached = inputsByCollection[collectionTag]?.[rarity];
-      if (cached) {
-        setInputsError(null);
-        return cached;
-      }
       try {
         setInputsLoading(true);
         setInputsError(null);
         const result = await fetchCollectionInputs(collectionTag, rarity);
-        setInputsByCollection((prev) => ({
-          ...prev,
-          [collectionTag]: { ...(prev[collectionTag] ?? {}), [rarity]: result },
-        }));
+        setActiveInputsResponse(result);
         return result;
       } catch (error: any) {
+        setActiveInputsResponse(null);
         setInputsError(String(error?.message || error));
         throw error;
       } finally {
         setInputsLoading(false);
       }
     },
-    [inputsByCollection],
+    [],
   );
 
   /** Подтягивает buyer-цены для выбранных market_hash_name и обновляет таблицу. */
@@ -563,62 +489,17 @@ export default function useTradeupBuilder() {
       setCalculationError(null);
       try {
         const response = await loadInputsForCollection(collectionTag, targetRarity);
-        const cachedTargets = targetsByCollection[collectionTag];
-        const cachedCollectionId = cachedTargets
-          ? cachedTargets[targetRarity]?.collectionId ??
-            ((Object.values(cachedTargets).find((entry) => entry?.collectionId) as
-              | CollectionTargetsResponse
-              | undefined)
-              ?.collectionId ?? null)
-          : null;
         const resolvedCollectionId =
           response.collectionId ??
-          cachedCollectionId ??
+          (activeTargetsResponse?.collectionTag === collectionTag
+            ? activeTargetsResponse.collectionId ?? null
+            : null) ??
           steamCollections.find((entry) => entry.tag === collectionTag)?.collectionId ??
           selectedCollectionId ??
           null;
 
         if (resolvedCollectionId) {
           setSelectedCollectionId(resolvedCollectionId);
-          rememberSteamCollectionId(collectionTag, resolvedCollectionId);
-          setTargetsByCollection((prev) => {
-            const current = prev[collectionTag];
-            if (!current) return prev;
-            let changed = false;
-            const updated: Partial<Record<TargetRarity, CollectionTargetsResponse>> = {};
-            (Object.entries(current) as [TargetRarity, CollectionTargetsResponse | undefined][]).forEach(
-              ([rarityKey, entry]) => {
-                if (!entry) return;
-                if (entry.collectionId === resolvedCollectionId) {
-                  updated[rarityKey] = entry;
-                  return;
-                }
-                updated[rarityKey] = { ...entry, collectionId: resolvedCollectionId };
-                changed = true;
-              },
-            );
-            if (!changed) return prev;
-            return { ...prev, [collectionTag]: { ...current, ...updated } };
-          });
-          setInputsByCollection((prev) => {
-            const current = prev[collectionTag];
-            if (!current) return prev;
-            let changed = false;
-            const updated: Partial<Record<TargetRarity, CollectionInputsResponse>> = {};
-            (Object.entries(current) as [TargetRarity, CollectionInputsResponse | undefined][]).forEach(
-              ([rarityKey, entry]) => {
-                if (!entry) return;
-                if (entry.collectionId === resolvedCollectionId) {
-                  updated[rarityKey] = entry;
-                  return;
-                }
-                updated[rarityKey] = { ...entry, collectionId: resolvedCollectionId };
-                changed = true;
-              },
-            );
-            if (!changed) return prev;
-            return { ...prev, [collectionTag]: { ...current, ...updated } };
-          });
         }
 
         await applyInputsToRows(collectionTag, resolvedCollectionId, response.inputs, {
@@ -634,12 +515,11 @@ export default function useTradeupBuilder() {
     },
     [
       applyInputsToRows,
+      activeTargetsResponse,
       loadInputsForCollection,
-      rememberSteamCollectionId,
       selectedCollectionId,
       steamCollections,
       targetRarity,
-      targetsByCollection,
     ],
   );
 
@@ -737,9 +617,6 @@ export default function useTradeupBuilder() {
     }
 
     setSelectedCollectionId(resolvedCollectionId);
-    if (activeCollectionTag) {
-      rememberSteamCollectionId(activeCollectionTag, resolvedCollectionId);
-    }
 
     setCalculating(true);
     setCalculationError(null);
@@ -782,9 +659,7 @@ export default function useTradeupBuilder() {
       setCalculating(false);
     }
   }, [
-    activeCollectionTag,
     buyerToNetRate,
-    rememberSteamCollectionId,
     rowResolution,
     selectedTarget,
     targetRarity,
