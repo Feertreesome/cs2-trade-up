@@ -124,6 +124,11 @@
   color: rgba(255, 255, 255, 0.6);
 }
 
+.collection-chart__profit {
+  font-size: 0.85rem;
+  margin-top: 0.15rem;
+}
+
 .collection-analyzer__empty {
   color: rgba(255, 255, 255, 0.65);
 }

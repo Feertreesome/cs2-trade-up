@@ -58,6 +58,7 @@ interface CollectionAnalysisEntry {
   inputs: CollectionAnalysisInputEntry[];
   totalInputCost: number;
   ratioPercent: number;
+  profitProbability: number | null;
 }
 
 interface CollectionAnalysis {
@@ -78,6 +79,13 @@ const formatFloat = (value: number) =>
   new Intl.NumberFormat("ru-RU", {
     minimumFractionDigits: 5,
     maximumFractionDigits: 5,
+  }).format(value);
+
+const formatProbabilityPercent = (value: number) =>
+  new Intl.NumberFormat("ru-RU", {
+    style: "percent",
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
   }).format(value);
 
 const formatFloatRange = (min: number | null, max: number | null) => {
@@ -313,6 +321,7 @@ const analyzeCollection = async (collectionTag: string): Promise<CollectionAnaly
 
         const key = buildTargetKey(targetRarity, target, exterior);
         let resolvedPossibleTargets: CollectionAnalysisTargetOption[] = [];
+        let profitProbability: number | null = null;
         if (effectiveCollectionId) {
           const tradeupInputs: TradeupInputPayload[] = [];
           let hasInvalidTradeupInput = false;
@@ -345,6 +354,24 @@ const analyzeCollection = async (collectionTag: string): Promise<CollectionAnaly
                 effectiveCollectionId,
                 targetPriceLookup,
               );
+              if (resolvedPossibleTargets.length) {
+                const priceByOutcome = new Map(
+                  resolvedPossibleTargets.map((option) => [option.marketHashName, option.price] as const),
+                );
+                const totalProfitProbability = calculation.outcomes.reduce((sum, outcome) => {
+                  if (outcome.collectionId !== effectiveCollectionId) return sum;
+                  if (outcome.probability <= 0) return sum;
+                  const outcomePrice =
+                    priceByOutcome.get(outcome.marketHashName) ??
+                    targetPriceLookup.get(outcome.marketHashName) ??
+                    0;
+                  if (outcomePrice <= totalInputCost) {
+                    return sum;
+                  }
+                  return sum + outcome.probability;
+                }, 0);
+                profitProbability = Math.min(Math.max(totalProfitProbability, 0), 1);
+              }
             } catch (error) {
               // ignore calculation errors for analysis view
             }
@@ -363,8 +390,17 @@ const analyzeCollection = async (collectionTag: string): Promise<CollectionAnaly
         const ratioPercent = (primaryTargetPrice / totalInputCost) * 100;
 
         const current = bestByTarget.get(key);
-        if (current && ratioPercent <= current.ratioPercent) {
-          continue;
+        if (current) {
+          if (ratioPercent < current.ratioPercent) {
+            continue;
+          }
+          if (Math.abs(ratioPercent - current.ratioPercent) <= 0.0001) {
+            const currentProfitProbability = current.profitProbability ?? 0;
+            const nextProfitProbability = profitProbability ?? 0;
+            if (nextProfitProbability <= currentProfitProbability) {
+              continue;
+            }
+          }
         }
 
         bestByTarget.set(key, {
@@ -379,6 +415,7 @@ const analyzeCollection = async (collectionTag: string): Promise<CollectionAnaly
           inputs: inputsPlan,
           totalInputCost,
           ratioPercent,
+          profitProbability,
         });
       }
     }
@@ -400,7 +437,17 @@ const analyzeCollection = async (collectionTag: string): Promise<CollectionAnaly
     }
   }
 
-  entries.sort((a, b) => b.ratioPercent - a.ratioPercent);
+  entries.sort((a, b) => {
+    if (b.ratioPercent !== a.ratioPercent) {
+      return b.ratioPercent - a.ratioPercent;
+    }
+    const profitA = a.profitProbability ?? 0;
+    const profitB = b.profitProbability ?? 0;
+    if (profitB !== profitA) {
+      return profitB - profitA;
+    }
+    return a.targetMarketHashName.localeCompare(b.targetMarketHashName, "ru");
+  });
   return { entries, warnings };
 };
 
@@ -591,6 +638,15 @@ const CollectionAnalyzer: React.FC = () => {
                         {" • Σ "}
                         {formatCurrency(entry.totalInputCost)}
                       </div>
+                      {entry.profitProbability != null ? (
+                        <div
+                          className={`collection-chart__profit ${
+                            entry.profitProbability > 0 ? "text-success" : "text-secondary"
+                          }`}
+                        >
+                          Вероятность прибыли: {formatProbabilityPercent(entry.profitProbability)}
+                        </div>
+                      ) : null}
                     </div>
                     <div className="collection-chart__bar">
                       <div className="collection-chart__bar-fill" style={{ width: `${width}%` }} />
