@@ -47,6 +47,9 @@ interface CollectionAnalysisOutcomeEntry {
   profitPercent: number | null;
   minFloat: number | null;
   maxFloat: number | null;
+  probability: number | null;
+  projectedFloat: number | null;
+  profitValue: number | null;
 }
 
 interface CollectionAnalysisEntry {
@@ -65,6 +68,7 @@ interface CollectionAnalysisEntry {
   knownOutcomeCount: number;
   profitableOutcomeCount: number;
   averageInputFloat: number | null;
+  collectionTag: string;
 }
 
 interface CollectionAnalysis {
@@ -106,6 +110,20 @@ const percentFormatter = new Intl.NumberFormat("ru-RU", {
   maximumFractionDigits: 1,
 });
 
+const formatPercentValue = (value: number | null) => {
+  if (value == null || !Number.isFinite(value)) {
+    return "нет данных";
+  }
+  return `${percentFormatter.format(value)}%`;
+};
+
+const formatProbabilityPercent = (value: number | null) => {
+  if (value == null || !Number.isFinite(value)) {
+    return "нет данных";
+  }
+  return `${percentFormatter.format(value * 100)}%`;
+};
+
 const formatSignedPercent = (value: number | null) => {
   if (value == null || !Number.isFinite(value)) {
     return "н/д";
@@ -123,6 +141,17 @@ const buildTargetKey = (
 ) => `${rarity}:${target.baseName}:${exterior.marketHashName}`;
 
 const FLOAT_TOLERANCE = 0.00001;
+
+const clamp = (value: number, min: number | null, max: number | null) => {
+  let result = value;
+  if (min != null) {
+    result = Math.max(result, min);
+  }
+  if (max != null) {
+    result = Math.min(result, max);
+  }
+  return result;
+};
 
 const filterOutcomesByFloat = (
   outcomes: CollectionAnalysisOutcomeEntry[],
@@ -331,6 +360,9 @@ const analyzeCollection = async (collectionTag: string): Promise<CollectionAnaly
               profitPercent,
               minFloat,
               maxFloat,
+              probability: null,
+              projectedFloat: null,
+              profitValue: price != null ? price - totalInputCost : null,
             };
           }),
         );
@@ -348,7 +380,24 @@ const analyzeCollection = async (collectionTag: string): Promise<CollectionAnaly
             possibleOutcomes = allOutcomes;
           }
         }
-        const pricedOutcomes = possibleOutcomes.filter((outcome) => outcome.ratioPercent != null);
+        const totalPossible = possibleOutcomes.length;
+        const probabilityPerOutcome =
+          totalPossible > 0 ? Number.parseFloat((1 / totalPossible).toFixed(6)) : null;
+        const enrichedOutcomes = possibleOutcomes.map((outcome) => {
+          const projectedFloat =
+            averageInputFloat != null
+              ? clamp(averageInputFloat, outcome.minFloat, outcome.maxFloat)
+              : outcome.minFloat != null && outcome.maxFloat != null
+                ? (outcome.minFloat + outcome.maxFloat) / 2
+                : averageInputFloat;
+          return {
+            ...outcome,
+            probability: probabilityPerOutcome,
+            projectedFloat,
+            profitValue: outcome.price != null ? outcome.price - totalInputCost : null,
+          };
+        });
+        const pricedOutcomes = enrichedOutcomes.filter((outcome) => outcome.ratioPercent != null);
         const profitableOutcomeCount = pricedOutcomes.filter(
           (outcome) => (outcome.ratioPercent ?? 0) >= 100,
         ).length;
@@ -369,11 +418,12 @@ const analyzeCollection = async (collectionTag: string): Promise<CollectionAnaly
             inputs: inputsPlan,
             totalInputCost,
             ratioPercent,
-            outcomes: possibleOutcomes,
+            outcomes: enrichedOutcomes,
             profitProbability,
             knownOutcomeCount,
             profitableOutcomeCount,
             averageInputFloat,
+            collectionTag,
           });
         }
       }
@@ -584,10 +634,12 @@ const CollectionAnalyzer: React.FC = () => {
                       });
                     const knownOutcomesMissing =
                       entry.outcomes.length - entry.knownOutcomeCount;
-                    const profitProbabilityLabel = entry.profitProbability != null
-                      ? `${percentFormatter.format(entry.profitProbability)}% (` +
-                        `${entry.profitableOutcomeCount} из ${entry.knownOutcomeCount})`
-                      : "нет данных";
+                    const profitProbabilityLabel =
+                      entry.profitProbability != null
+                        ? `${formatPercentValue(entry.profitProbability)} (` +
+                          `${entry.profitableOutcomeCount} из ${entry.knownOutcomeCount})`
+                        : "нет данных";
+                    const collectionLabel = activeCollection?.name ?? entry.collectionTag;
                     return (
                       <div key={entry.key} className="collection-chart__row">
                         <div className="collection-chart__label">
@@ -628,12 +680,45 @@ const CollectionAnalyzer: React.FC = () => {
                               {sortedOtherOutcomes.length ? (
                                 <ul className="collection-chart__outcomes-list">
                                   {sortedOtherOutcomes.map((outcome) => (
-                                    <li key={outcome.key}>
-                                      {outcome.marketHashName}
-                                      {" "}
-                                      {outcome.profitPercent != null
-                                        ? formatSignedPercent(outcome.profitPercent)
-                                        : "(нет данных о цене)"}
+                                    <li key={outcome.key} className="collection-chart__outcome">
+                                      <div className="collection-chart__outcome-header">
+                                        <span className="collection-chart__outcome-name">
+                                          {`${outcome.targetBaseName} (${outcome.exterior})`}
+                                        </span>
+                                        <span className="collection-chart__outcome-profit">
+                                          {outcome.profitPercent != null
+                                            ? formatSignedPercent(outcome.profitPercent)
+                                            : "(нет данных о цене)"}
+                                        </span>
+                                      </div>
+                                      <div className="collection-chart__outcome-meta">
+                                        <span>
+                                          Коллекция: {collectionLabel ?? "—"}
+                                        </span>
+                                        <span>
+                                          Float:{" "}
+                                          {outcome.projectedFloat != null
+                                            ? formatFloat(outcome.projectedFloat)
+                                            : formatFloatRange(outcome.minFloat, outcome.maxFloat) || "—"}
+                                        </span>
+                                        <span>Wear: {outcome.exterior}</span>
+                                        <span>
+                                          Цена:{" "}
+                                          {outcome.price != null
+                                            ? formatCurrency(outcome.price)
+                                            : "нет данных"}
+                                        </span>
+                                        <span>
+                                          Прибыль:{" "}
+                                          {outcome.profitValue != null
+                                            ? formatCurrency(outcome.profitValue)
+                                            : "нет данных"}
+                                        </span>
+                                        <span>
+                                          Вероятность:{" "}
+                                          {formatProbabilityPercent(outcome.probability)}
+                                        </span>
+                                      </div>
                                     </li>
                                   ))}
                                 </ul>
