@@ -3,8 +3,11 @@ import {
   fetchCollectionTargets,
   fetchCollectionInputs,
   fetchCollectionRarities,
+  requestTradeupCalculation,
   type CollectionTargetsResponse,
   type TargetRarity,
+  type TradeupInputPayload,
+  type TradeupOutcomeResponse,
 } from "../tradeups/services/api";
 import { planRowsForCollection } from "../tradeups/hooks/rowPlanning";
 import { useSteamCollections } from "../tradeups/hooks/builder/useSteamCollections";
@@ -37,6 +40,12 @@ interface CollectionAnalysisInputEntry {
   maxFloat: number | null;
 }
 
+interface CollectionAnalysisTargetOption {
+  marketHashName: string;
+  price: number;
+  exterior: Exterior;
+}
+
 interface CollectionAnalysisEntry {
   key: string;
   targetRarity: TargetRarity;
@@ -45,9 +54,11 @@ interface CollectionAnalysisEntry {
   targetMarketHashName: string;
   targetExterior: Exterior;
   targetPrice: number;
+  possibleTargets: CollectionAnalysisTargetOption[];
   inputs: CollectionAnalysisInputEntry[];
   totalInputCost: number;
   ratioPercent: number;
+  profitProbability: number | null;
 }
 
 interface CollectionAnalysis {
@@ -70,6 +81,13 @@ const formatFloat = (value: number) =>
     maximumFractionDigits: 5,
   }).format(value);
 
+const formatProbabilityPercent = (value: number) =>
+  new Intl.NumberFormat("ru-RU", {
+    style: "percent",
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(value);
+
 const formatFloatRange = (min: number | null, max: number | null) => {
   if (min == null && max == null) {
     return "";
@@ -89,6 +107,62 @@ const buildTargetKey = (
   target: CollectionTargetsResponse["targets"][number],
   exterior: CollectionTargetsResponse["targets"][number]["exteriors"][number],
 ) => `${rarity}:${target.baseName}:${exterior.marketHashName}`;
+
+const buildTargetOptions = (
+  targets: CollectionTargetsResponse["targets"],
+): CollectionAnalysisTargetOption[] => {
+  const options = new Map<string, CollectionAnalysisTargetOption>();
+  targets.forEach((target) => {
+    target.exteriors.forEach((exterior) => {
+      const price = exterior.price ?? null;
+      if (price == null || price <= 0) return;
+      const entry: CollectionAnalysisTargetOption = {
+        marketHashName: exterior.marketHashName,
+        price,
+        exterior: exterior.exterior,
+      };
+      options.set(exterior.marketHashName, entry);
+    });
+  });
+
+  return Array.from(options.values()).sort((a, b) => {
+    if (b.price !== a.price) return b.price - a.price;
+    return a.marketHashName.localeCompare(b.marketHashName, "ru");
+  });
+};
+
+const prioritizeTargetOptions = (
+  options: CollectionAnalysisTargetOption[],
+  primaryMarketHashName: string,
+): CollectionAnalysisTargetOption[] => {
+  const primary = options.filter((option) => option.marketHashName === primaryMarketHashName);
+  const rest = options.filter((option) => option.marketHashName !== primaryMarketHashName);
+  return [...primary, ...rest];
+};
+
+const buildTargetOptionsFromOutcomes = (
+  outcomes: TradeupOutcomeResponse[],
+  targetCollectionId: string,
+  priceLookup: Map<string, number>,
+): CollectionAnalysisTargetOption[] => {
+  const options = new Map<string, CollectionAnalysisTargetOption>();
+  outcomes.forEach((outcome) => {
+    if (outcome.collectionId !== targetCollectionId) return;
+    if (outcome.probability <= 0) return;
+    const fallbackPrice = priceLookup.get(outcome.marketHashName) ?? 0;
+    const price = outcome.netPrice ?? fallbackPrice;
+    options.set(outcome.marketHashName, {
+      marketHashName: outcome.marketHashName,
+      price,
+      exterior: outcome.exterior,
+    });
+  });
+
+  return Array.from(options.values()).sort((a, b) => {
+    if (b.price !== a.price) return b.price - a.price;
+    return a.marketHashName.localeCompare(b.marketHashName, "ru");
+  });
+};
 
 const analyzeCollection = async (collectionTag: string): Promise<CollectionAnalysis> => {
   const bestByTarget = new Map<string, CollectionAnalysisEntry>();
@@ -163,6 +237,11 @@ const analyzeCollection = async (collectionTag: string): Promise<CollectionAnaly
     const effectiveCollectionId =
       inputsResponse.collectionId ?? targetsResponse.collectionId ?? null;
 
+    const targetOptions = buildTargetOptions(targets);
+    const targetPriceLookup = new Map(
+      targetOptions.map((option) => [option.marketHashName, option.price] as const),
+    );
+
     for (const target of targets) {
       for (const exterior of target.exteriors) {
         const targetPrice = exterior.price ?? null;
@@ -189,6 +268,7 @@ const analyzeCollection = async (collectionTag: string): Promise<CollectionAnaly
           continue;
         }
 
+        const planRows = validRows.slice(0, INPUTS_REQUIRED);
         let invalidPlan = false;
         const inputsByName = new Map<
           string,
@@ -196,7 +276,7 @@ const analyzeCollection = async (collectionTag: string): Promise<CollectionAnaly
         >();
         let totalInputCost = 0;
 
-        for (const row of validRows.slice(0, INPUTS_REQUIRED)) {
+        for (const row of planRows) {
           const price = Number.parseFloat(row.price);
           const floatValue = Number.parseFloat(row.float);
           if (!Number.isFinite(price) || price <= 0) {
@@ -239,23 +319,104 @@ const analyzeCollection = async (collectionTag: string): Promise<CollectionAnaly
           return a.marketHashName.localeCompare(b.marketHashName, "ru");
         });
 
-        const ratioPercent = (targetPrice / totalInputCost) * 100;
         const key = buildTargetKey(targetRarity, target, exterior);
-        const current = bestByTarget.get(key);
-        if (!current || ratioPercent > current.ratioPercent) {
-          bestByTarget.set(key, {
-            key,
-            targetRarity,
-            inputRarity,
-            targetBaseName: target.baseName,
-            targetMarketHashName: exterior.marketHashName,
-            targetExterior: exterior.exterior,
-            targetPrice,
-            inputs: inputsPlan,
-            totalInputCost,
-            ratioPercent,
-          });
+        let resolvedPossibleTargets: CollectionAnalysisTargetOption[] = [];
+        let profitProbability: number | null = null;
+        if (effectiveCollectionId) {
+          const tradeupInputs: TradeupInputPayload[] = [];
+          let hasInvalidTradeupInput = false;
+
+          for (const row of planRows) {
+            const floatValue = Number.parseFloat(row.float);
+            if (!Number.isFinite(floatValue)) {
+              hasInvalidTradeupInput = true;
+              break;
+            }
+
+            tradeupInputs.push({
+              marketHashName: row.marketHashName,
+              float: floatValue,
+              collectionId: effectiveCollectionId,
+              minFloat: floatValue,
+              maxFloat: floatValue,
+            });
+          }
+
+          if (!hasInvalidTradeupInput && tradeupInputs.length === INPUTS_REQUIRED) {
+            try {
+              const calculation = await requestTradeupCalculation({
+                inputs: tradeupInputs,
+                targetCollectionIds: [effectiveCollectionId],
+                targetRarity,
+              });
+              resolvedPossibleTargets = buildTargetOptionsFromOutcomes(
+                calculation.outcomes,
+                effectiveCollectionId,
+                targetPriceLookup,
+              );
+              if (resolvedPossibleTargets.length) {
+                const priceByOutcome = new Map(
+                  resolvedPossibleTargets.map((option) => [option.marketHashName, option.price] as const),
+                );
+                const totalProfitProbability = calculation.outcomes.reduce((sum, outcome) => {
+                  if (outcome.collectionId !== effectiveCollectionId) return sum;
+                  if (outcome.probability <= 0) return sum;
+                  const outcomePrice =
+                    priceByOutcome.get(outcome.marketHashName) ??
+                    targetPriceLookup.get(outcome.marketHashName) ??
+                    0;
+                  if (outcomePrice <= totalInputCost) {
+                    return sum;
+                  }
+                  return sum + outcome.probability;
+                }, 0);
+                profitProbability = Math.min(Math.max(totalProfitProbability, 0), 1);
+              }
+            } catch (error) {
+              // ignore calculation errors for analysis view
+            }
+          }
         }
+
+        const prioritizedTargets = resolvedPossibleTargets.length
+          ? prioritizeTargetOptions(resolvedPossibleTargets, exterior.marketHashName)
+          : [];
+
+        const primaryTargetPrice = prioritizedTargets.find(
+          (option) => option.marketHashName === exterior.marketHashName,
+        )?.price
+          ?? prioritizedTargets[0]?.price
+          ?? targetPrice;
+        const ratioPercent = (primaryTargetPrice / totalInputCost) * 100;
+
+        const current = bestByTarget.get(key);
+        if (current) {
+          if (ratioPercent < current.ratioPercent) {
+            continue;
+          }
+          if (Math.abs(ratioPercent - current.ratioPercent) <= 0.0001) {
+            const currentProfitProbability = current.profitProbability ?? 0;
+            const nextProfitProbability = profitProbability ?? 0;
+            if (nextProfitProbability <= currentProfitProbability) {
+              continue;
+            }
+          }
+        }
+
+        bestByTarget.set(key, {
+          key,
+          targetRarity,
+          inputRarity,
+          targetBaseName: target.baseName,
+          targetMarketHashName: exterior.marketHashName,
+          targetExterior: exterior.exterior,
+          targetPrice,
+          possibleTargets: prioritizedTargets,
+          inputs: inputsPlan,
+          totalInputCost,
+          ratioPercent,
+          profitProbability,
+        });
       }
     }
   }
@@ -276,7 +437,17 @@ const analyzeCollection = async (collectionTag: string): Promise<CollectionAnaly
     }
   }
 
-  entries.sort((a, b) => b.ratioPercent - a.ratioPercent);
+  entries.sort((a, b) => {
+    if (b.ratioPercent !== a.ratioPercent) {
+      return b.ratioPercent - a.ratioPercent;
+    }
+    const profitA = a.profitProbability ?? 0;
+    const profitB = b.profitProbability ?? 0;
+    if (profitB !== profitA) {
+      return profitB - profitA;
+    }
+    return a.targetMarketHashName.localeCompare(b.targetMarketHashName, "ru");
+  });
   return { entries, warnings };
 };
 
@@ -414,14 +585,39 @@ const CollectionAnalyzer: React.FC = () => {
             <div className="collection-chart">
               {analysis.entries.map((entry) => {
                 const width = maxRatio > 0 ? Math.max((entry.ratioPercent / maxRatio) * 100, 2) : 0;
+                const targetsToDisplay = entry.possibleTargets.length
+                  ? entry.possibleTargets
+                  : ([
+                      {
+                        marketHashName: entry.targetMarketHashName,
+                        price: entry.targetPrice,
+                        exterior: entry.targetExterior,
+                      },
+                    ] as CollectionAnalysisTargetOption[]);
                 return (
                   <div key={entry.key} className="collection-chart__row">
                     <div className="collection-chart__label">
-                      <div className="fw-semibold">
-                        {entry.targetMarketHashName}
-                        <span className="text-secondary ms-2">
-                          {formatCurrency(entry.targetPrice)}
-                        </span>
+                      <div className="collection-chart__targets">
+                        <div className="fw-semibold">Возможные результаты:</div>
+                        <div className="collection-chart__targets-list">
+                          {targetsToDisplay.map((target, index) => (
+                            <React.Fragment key={`${entry.key}:${target.marketHashName}`}>
+                              {index > 0 ? ", " : " "}
+                              <span
+                                className={`collection-chart__target${
+                                  target.marketHashName === entry.targetMarketHashName
+                                    ? " collection-chart__target--primary"
+                                    : ""
+                                }`}
+                              >
+                                {target.marketHashName}
+                                <span className="text-secondary ms-1">
+                                  ({formatCurrency(target.price)})
+                                </span>
+                              </span>
+                            </React.Fragment>
+                          ))}
+                        </div>
                       </div>
                       <div className="collection-chart__meta">
                         {TARGET_RARITY_TITLES[entry.targetRarity]}
@@ -442,6 +638,15 @@ const CollectionAnalyzer: React.FC = () => {
                         {" • Σ "}
                         {formatCurrency(entry.totalInputCost)}
                       </div>
+                      {entry.profitProbability != null ? (
+                        <div
+                          className={`collection-chart__profit ${
+                            entry.profitProbability > 0 ? "text-success" : "text-secondary"
+                          }`}
+                        >
+                          Вероятность прибыли: {formatProbabilityPercent(entry.profitProbability)}
+                        </div>
+                      ) : null}
                     </div>
                     <div className="collection-chart__bar">
                       <div className="collection-chart__bar-fill" style={{ width: `${width}%` }} />

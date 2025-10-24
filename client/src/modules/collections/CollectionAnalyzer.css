@@ -98,9 +98,35 @@
   color: rgba(255, 255, 255, 0.65);
 }
 
+.collection-chart__targets {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.collection-chart__targets-list {
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.collection-chart__target {
+  display: inline-flex;
+  gap: 0.3rem;
+  align-items: baseline;
+}
+
+.collection-chart__target--primary {
+  font-weight: 600;
+}
+
 .collection-chart__inputs {
   font-size: 0.8rem;
   color: rgba(255, 255, 255, 0.6);
+}
+
+.collection-chart__profit {
+  font-size: 0.85rem;
+  margin-top: 0.15rem;
 }
 
 .collection-analyzer__empty {
