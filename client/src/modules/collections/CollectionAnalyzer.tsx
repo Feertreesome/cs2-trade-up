@@ -3,8 +3,11 @@ import {
   fetchCollectionTargets,
   fetchCollectionInputs,
   fetchCollectionRarities,
+  requestTradeupCalculation,
   type CollectionTargetsResponse,
   type TargetRarity,
+  type TradeupInputPayload,
+  type TradeupOutcomeResponse,
 } from "../tradeups/services/api";
 import { planRowsForCollection } from "../tradeups/hooks/rowPlanning";
 import { useSteamCollections } from "../tradeups/hooks/builder/useSteamCollections";
@@ -129,6 +132,30 @@ const prioritizeTargetOptions = (
   return [...primary, ...rest];
 };
 
+const buildTargetOptionsFromOutcomes = (
+  outcomes: TradeupOutcomeResponse[],
+  targetCollectionId: string,
+  priceLookup: Map<string, number>,
+): CollectionAnalysisTargetOption[] => {
+  const options = new Map<string, CollectionAnalysisTargetOption>();
+  outcomes.forEach((outcome) => {
+    if (outcome.collectionId !== targetCollectionId) return;
+    if (outcome.probability <= 0) return;
+    const fallbackPrice = priceLookup.get(outcome.marketHashName) ?? 0;
+    const price = outcome.netPrice ?? fallbackPrice;
+    options.set(outcome.marketHashName, {
+      marketHashName: outcome.marketHashName,
+      price,
+      exterior: outcome.exterior,
+    });
+  });
+
+  return Array.from(options.values()).sort((a, b) => {
+    if (b.price !== a.price) return b.price - a.price;
+    return a.marketHashName.localeCompare(b.marketHashName, "ru");
+  });
+};
+
 const analyzeCollection = async (collectionTag: string): Promise<CollectionAnalysis> => {
   const bestByTarget = new Map<string, CollectionAnalysisEntry>();
   const warnings: string[] = [];
@@ -203,6 +230,9 @@ const analyzeCollection = async (collectionTag: string): Promise<CollectionAnaly
       inputsResponse.collectionId ?? targetsResponse.collectionId ?? null;
 
     const targetOptions = buildTargetOptions(targets);
+    const targetPriceLookup = new Map(
+      targetOptions.map((option) => [option.marketHashName, option.price] as const),
+    );
 
     for (const target of targets) {
       for (const exterior of target.exteriors) {
@@ -230,6 +260,7 @@ const analyzeCollection = async (collectionTag: string): Promise<CollectionAnaly
           continue;
         }
 
+        const planRows = validRows.slice(0, INPUTS_REQUIRED);
         let invalidPlan = false;
         const inputsByName = new Map<
           string,
@@ -237,7 +268,7 @@ const analyzeCollection = async (collectionTag: string): Promise<CollectionAnaly
         >();
         let totalInputCost = 0;
 
-        for (const row of validRows.slice(0, INPUTS_REQUIRED)) {
+        for (const row of planRows) {
           const price = Number.parseFloat(row.price);
           const floatValue = Number.parseFloat(row.float);
           if (!Number.isFinite(price) || price <= 0) {
@@ -284,6 +315,49 @@ const analyzeCollection = async (collectionTag: string): Promise<CollectionAnaly
         const key = buildTargetKey(targetRarity, target, exterior);
         const current = bestByTarget.get(key);
         if (!current || ratioPercent > current.ratioPercent) {
+          let resolvedPossibleTargets: CollectionAnalysisTargetOption[] = [];
+          if (effectiveCollectionId) {
+            const tradeupInputs: TradeupInputPayload[] = [];
+            let hasInvalidTradeupInput = false;
+
+            for (const row of planRows) {
+              const floatValue = Number.parseFloat(row.float);
+              if (!Number.isFinite(floatValue)) {
+                hasInvalidTradeupInput = true;
+                break;
+              }
+
+              tradeupInputs.push({
+                marketHashName: row.marketHashName,
+                float: floatValue,
+                collectionId: effectiveCollectionId,
+                minFloat: floatValue,
+                maxFloat: floatValue,
+              });
+            }
+
+            if (!hasInvalidTradeupInput && tradeupInputs.length === INPUTS_REQUIRED) {
+              try {
+                const calculation = await requestTradeupCalculation({
+                  inputs: tradeupInputs,
+                  targetCollectionIds: [effectiveCollectionId],
+                  targetRarity,
+                });
+                resolvedPossibleTargets = buildTargetOptionsFromOutcomes(
+                  calculation.outcomes,
+                  effectiveCollectionId,
+                  targetPriceLookup,
+                );
+              } catch (error) {
+                // ignore calculation errors for analysis view
+              }
+            }
+          }
+
+          const prioritizedTargets = resolvedPossibleTargets.length
+            ? prioritizeTargetOptions(resolvedPossibleTargets, exterior.marketHashName)
+            : [];
+
           bestByTarget.set(key, {
             key,
             targetRarity,
@@ -292,7 +366,7 @@ const analyzeCollection = async (collectionTag: string): Promise<CollectionAnaly
             targetMarketHashName: exterior.marketHashName,
             targetExterior: exterior.exterior,
             targetPrice,
-            possibleTargets: prioritizeTargetOptions(targetOptions, exterior.marketHashName),
+            possibleTargets: prioritizedTargets,
             inputs: inputsPlan,
             totalInputCost,
             ratioPercent,
