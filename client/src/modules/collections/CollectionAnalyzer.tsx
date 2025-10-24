@@ -45,6 +45,8 @@ interface CollectionAnalysisOutcomeEntry {
   price: number | null;
   ratioPercent: number | null;
   profitPercent: number | null;
+  minFloat: number | null;
+  maxFloat: number | null;
 }
 
 interface CollectionAnalysisEntry {
@@ -62,6 +64,7 @@ interface CollectionAnalysisEntry {
   profitProbability: number | null;
   knownOutcomeCount: number;
   profitableOutcomeCount: number;
+  averageInputFloat: number | null;
 }
 
 interface CollectionAnalysis {
@@ -118,6 +121,30 @@ const buildTargetKey = (
   target: CollectionTargetsResponse["targets"][number],
   exterior: CollectionTargetsResponse["targets"][number]["exteriors"][number],
 ) => `${rarity}:${target.baseName}:${exterior.marketHashName}`;
+
+const FLOAT_TOLERANCE = 0.00001;
+
+const filterOutcomesByFloat = (
+  outcomes: CollectionAnalysisOutcomeEntry[],
+  averageFloat: number | null,
+) => {
+  if (averageFloat == null) {
+    return outcomes;
+  }
+  return outcomes.filter((outcome) => {
+    const { minFloat, maxFloat } = outcome;
+    if (minFloat == null && maxFloat == null) {
+      return true;
+    }
+    if (minFloat != null && averageFloat < minFloat - FLOAT_TOLERANCE) {
+      return false;
+    }
+    if (maxFloat != null && averageFloat > maxFloat + FLOAT_TOLERANCE) {
+      return false;
+    }
+    return true;
+  });
+};
 
 const analyzeCollection = async (collectionTag: string): Promise<CollectionAnalysis> => {
   const bestByTarget = new Map<string, CollectionAnalysisEntry>();
@@ -224,6 +251,8 @@ const analyzeCollection = async (collectionTag: string): Promise<CollectionAnaly
           { count: number; total: number; minFloat: number | null; maxFloat: number | null }
         >();
         let totalInputCost = 0;
+        let totalFloat = 0;
+        let floatCount = 0;
 
         for (const row of validRows.slice(0, INPUTS_REQUIRED)) {
           const price = Number.parseFloat(row.price);
@@ -233,6 +262,10 @@ const analyzeCollection = async (collectionTag: string): Promise<CollectionAnaly
             break;
           }
           totalInputCost += price;
+          if (Number.isFinite(floatValue)) {
+            totalFloat += floatValue;
+            floatCount += 1;
+          }
           const current =
             inputsByName.get(row.marketHashName) ??
             { count: 0, total: 0, minFloat: null, maxFloat: null };
@@ -251,6 +284,9 @@ const analyzeCollection = async (collectionTag: string): Promise<CollectionAnaly
           continue;
         }
 
+        const averageInputFloat =
+          floatCount === INPUTS_REQUIRED ? totalFloat / floatCount : null;
+
         const inputsPlan = Array.from(inputsByName.entries()).map(
           ([marketHashName, { count, total, minFloat, maxFloat }]) => ({
             marketHashName,
@@ -268,6 +304,7 @@ const analyzeCollection = async (collectionTag: string): Promise<CollectionAnaly
           return a.marketHashName.localeCompare(b.marketHashName, "ru");
         });
 
+        const entryKey = buildTargetKey(targetRarity, target, exterior);
         const ratioPercent = (targetPrice / totalInputCost) * 100;
         const allOutcomes = targets.flatMap((candidate) =>
           candidate.exteriors.map<CollectionAnalysisOutcomeEntry>((candidateExterior) => {
@@ -276,6 +313,14 @@ const analyzeCollection = async (collectionTag: string): Promise<CollectionAnaly
             const outcomeRatio =
               price != null && price > 0 ? (price / totalInputCost) * 100 : null;
             const profitPercent = outcomeRatio != null ? outcomeRatio - 100 : null;
+            const minFloat =
+              typeof candidateExterior.minFloat === "number"
+                ? candidateExterior.minFloat
+                : null;
+            const maxFloat =
+              typeof candidateExterior.maxFloat === "number"
+                ? candidateExterior.maxFloat
+                : null;
             return {
               key: outcomeKey,
               targetBaseName: candidate.baseName,
@@ -284,11 +329,26 @@ const analyzeCollection = async (collectionTag: string): Promise<CollectionAnaly
               price,
               ratioPercent: outcomeRatio,
               profitPercent,
+              minFloat,
+              maxFloat,
             };
           }),
         );
 
-        const pricedOutcomes = allOutcomes.filter((outcome) => outcome.ratioPercent != null);
+        let possibleOutcomes = filterOutcomesByFloat(allOutcomes, averageInputFloat);
+        if (
+          (!possibleOutcomes.length ||
+            !possibleOutcomes.some((outcome) => outcome.key === entryKey)) &&
+          averageInputFloat != null
+        ) {
+          const guaranteedOutcome = allOutcomes.find((outcome) => outcome.key === entryKey);
+          if (guaranteedOutcome) {
+            possibleOutcomes = [guaranteedOutcome];
+          } else if (!possibleOutcomes.length) {
+            possibleOutcomes = allOutcomes;
+          }
+        }
+        const pricedOutcomes = possibleOutcomes.filter((outcome) => outcome.ratioPercent != null);
         const profitableOutcomeCount = pricedOutcomes.filter(
           (outcome) => (outcome.ratioPercent ?? 0) >= 100,
         ).length;
@@ -296,11 +356,10 @@ const analyzeCollection = async (collectionTag: string): Promise<CollectionAnaly
         const profitProbability =
           knownOutcomeCount > 0 ? (profitableOutcomeCount / knownOutcomeCount) * 100 : null;
 
-        const key = buildTargetKey(targetRarity, target, exterior);
-        const current = bestByTarget.get(key);
+        const current = bestByTarget.get(entryKey);
         if (!current || ratioPercent > current.ratioPercent) {
-          bestByTarget.set(key, {
-            key,
+          bestByTarget.set(entryKey, {
+            key: entryKey,
             targetRarity,
             inputRarity,
             targetBaseName: target.baseName,
@@ -310,10 +369,11 @@ const analyzeCollection = async (collectionTag: string): Promise<CollectionAnaly
             inputs: inputsPlan,
             totalInputCost,
             ratioPercent,
-            outcomes: allOutcomes,
+            outcomes: possibleOutcomes,
             profitProbability,
             knownOutcomeCount,
             profitableOutcomeCount,
+            averageInputFloat,
           });
         }
       }
@@ -525,7 +585,8 @@ const CollectionAnalyzer: React.FC = () => {
                     const knownOutcomesMissing =
                       entry.outcomes.length - entry.knownOutcomeCount;
                     const profitProbabilityLabel = entry.profitProbability != null
-                      ? `${percentFormatter.format(entry.profitProbability)}% (${entry.profitableOutcomeCount} из ${entry.knownOutcomeCount})`
+                      ? `${percentFormatter.format(entry.profitProbability)}% (` +
+                        `${entry.profitableOutcomeCount} из ${entry.knownOutcomeCount})`
                       : "нет данных";
                     return (
                       <div key={entry.key} className="collection-chart__row">
