@@ -37,6 +37,12 @@ interface CollectionAnalysisInputEntry {
   maxFloat: number | null;
 }
 
+interface CollectionAnalysisTargetOption {
+  marketHashName: string;
+  price: number;
+  exterior: Exterior;
+}
+
 interface CollectionAnalysisEntry {
   key: string;
   targetRarity: TargetRarity;
@@ -45,6 +51,7 @@ interface CollectionAnalysisEntry {
   targetMarketHashName: string;
   targetExterior: Exterior;
   targetPrice: number;
+  possibleTargets: CollectionAnalysisTargetOption[];
   inputs: CollectionAnalysisInputEntry[];
   totalInputCost: number;
   ratioPercent: number;
@@ -89,6 +96,38 @@ const buildTargetKey = (
   target: CollectionTargetsResponse["targets"][number],
   exterior: CollectionTargetsResponse["targets"][number]["exteriors"][number],
 ) => `${rarity}:${target.baseName}:${exterior.marketHashName}`;
+
+const buildTargetOptions = (
+  targets: CollectionTargetsResponse["targets"],
+): CollectionAnalysisTargetOption[] => {
+  const options = new Map<string, CollectionAnalysisTargetOption>();
+  targets.forEach((target) => {
+    target.exteriors.forEach((exterior) => {
+      const price = exterior.price ?? null;
+      if (price == null || price <= 0) return;
+      const entry: CollectionAnalysisTargetOption = {
+        marketHashName: exterior.marketHashName,
+        price,
+        exterior: exterior.exterior,
+      };
+      options.set(exterior.marketHashName, entry);
+    });
+  });
+
+  return Array.from(options.values()).sort((a, b) => {
+    if (b.price !== a.price) return b.price - a.price;
+    return a.marketHashName.localeCompare(b.marketHashName, "ru");
+  });
+};
+
+const prioritizeTargetOptions = (
+  options: CollectionAnalysisTargetOption[],
+  primaryMarketHashName: string,
+): CollectionAnalysisTargetOption[] => {
+  const primary = options.filter((option) => option.marketHashName === primaryMarketHashName);
+  const rest = options.filter((option) => option.marketHashName !== primaryMarketHashName);
+  return [...primary, ...rest];
+};
 
 const analyzeCollection = async (collectionTag: string): Promise<CollectionAnalysis> => {
   const bestByTarget = new Map<string, CollectionAnalysisEntry>();
@@ -162,6 +201,8 @@ const analyzeCollection = async (collectionTag: string): Promise<CollectionAnaly
 
     const effectiveCollectionId =
       inputsResponse.collectionId ?? targetsResponse.collectionId ?? null;
+
+    const targetOptions = buildTargetOptions(targets);
 
     for (const target of targets) {
       for (const exterior of target.exteriors) {
@@ -251,6 +292,7 @@ const analyzeCollection = async (collectionTag: string): Promise<CollectionAnaly
             targetMarketHashName: exterior.marketHashName,
             targetExterior: exterior.exterior,
             targetPrice,
+            possibleTargets: prioritizeTargetOptions(targetOptions, exterior.marketHashName),
             inputs: inputsPlan,
             totalInputCost,
             ratioPercent,
@@ -414,14 +456,39 @@ const CollectionAnalyzer: React.FC = () => {
             <div className="collection-chart">
               {analysis.entries.map((entry) => {
                 const width = maxRatio > 0 ? Math.max((entry.ratioPercent / maxRatio) * 100, 2) : 0;
+                const targetsToDisplay = entry.possibleTargets.length
+                  ? entry.possibleTargets
+                  : ([
+                      {
+                        marketHashName: entry.targetMarketHashName,
+                        price: entry.targetPrice,
+                        exterior: entry.targetExterior,
+                      },
+                    ] as CollectionAnalysisTargetOption[]);
                 return (
                   <div key={entry.key} className="collection-chart__row">
                     <div className="collection-chart__label">
-                      <div className="fw-semibold">
-                        {entry.targetMarketHashName}
-                        <span className="text-secondary ms-2">
-                          {formatCurrency(entry.targetPrice)}
-                        </span>
+                      <div className="collection-chart__targets">
+                        <div className="fw-semibold">Возможные результаты:</div>
+                        <div className="collection-chart__targets-list">
+                          {targetsToDisplay.map((target, index) => (
+                            <React.Fragment key={`${entry.key}:${target.marketHashName}`}>
+                              {index > 0 ? ", " : " "}
+                              <span
+                                className={`collection-chart__target${
+                                  target.marketHashName === entry.targetMarketHashName
+                                    ? " collection-chart__target--primary"
+                                    : ""
+                                }`}
+                              >
+                                {target.marketHashName}
+                                <span className="text-secondary ms-1">
+                                  ({formatCurrency(target.price)})
+                                </span>
+                              </span>
+                            </React.Fragment>
+                          ))}
+                        </div>
                       </div>
                       <div className="collection-chart__meta">
                         {TARGET_RARITY_TITLES[entry.targetRarity]}
