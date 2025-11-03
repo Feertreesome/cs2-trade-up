@@ -67,5 +67,5 @@ npm --workspace=cs2-tradeup-ev-server run prisma:generate
 - `npm run sync:floats` — загружает актуальный список Covert‑скинов из
   [ByMykel/CSGO-API](https://github.com/ByMykel/CSGO-API), пересобирает `data/CollectionsWithFloat.ts` и обновляет
   локальные кэши trade-up каталога.
-- После успешной синхронизации каталога данные эндпоинтов `/api/tradeups/collections/*` и `/api/skins/*` берутся из
-  базы. Из Steam в онлайне запрашиваются только актуальные цены через `/api/priceoverview/batch`.
+- После успешной синхронизации каталога данные эндпоинтов `/api/tradeups/collections/*` берутся из базы.
+  Из Steam в онлайне запрашиваются только актуальные цены через `/api/priceoverview/batch`.

@@ -1,1 +1,0 @@
-export { createSkinsRouter } from "./router";

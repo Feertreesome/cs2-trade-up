@@ -1,4 +1,3 @@
-import type { Exterior } from "../../skins/services/types";
 import type { CollectionInputSummary } from "../services/api";
 import { EXTERIOR_FLOAT_RANGES, WEAR_BUCKET_SEQUENCE } from "./constants";
 import {
@@ -9,7 +8,7 @@ import {
   isFloatWithinExteriorRange,
   makeEmptyRow,
 } from "./helpers";
-import type { TradeupInputFormRow } from "./types";
+import type { Exterior, TradeupInputFormRow } from "../types";
 
 interface PlanRowsOptions {
   target?: {

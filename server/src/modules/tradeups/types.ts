@@ -1,4 +1,4 @@
-import type { Exterior } from "../skins/service";
+import type { Exterior } from "../shared/itemNames";
 
 export interface CollectionTargetExterior {
   exterior: Exterior;

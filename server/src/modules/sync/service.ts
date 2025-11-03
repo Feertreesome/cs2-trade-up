@@ -8,7 +8,7 @@ import {
   RARITY_TO_TAG,
 } from "../steam/repo";
 import { STEAM_MAX_AUTO_LIMIT, STEAM_PAGE_SIZE } from "../../config";
-import { baseFromMarketHash, parseMarketHashExterior } from "../skins/service";
+import { baseFromMarketHash, parseMarketHashExterior } from "../shared/itemNames";
 import { getSkinFloatRange, type SkinFloatRange } from "../tradeups/floatRanges";
 import { prisma } from "../../database/client";
 import { markCatalogReady } from "../../database/status";

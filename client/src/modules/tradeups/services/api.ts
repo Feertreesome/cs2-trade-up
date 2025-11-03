@@ -1,5 +1,4 @@
-import type { Exterior } from "../../skins/services/types";
-import { batchPriceOverview } from "../../skins/services/api";
+import type { Exterior } from "../types";
 
 export type TargetRarity =
   | "Consumer"
@@ -298,4 +297,3 @@ export async function fetchCollectionsSyncStatus() {
   };
 }
 
-export { batchPriceOverview };

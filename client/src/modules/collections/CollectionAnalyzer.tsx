@@ -11,9 +11,8 @@ import {
   type TradeupOutcomeResponse,
 } from "../tradeups/services/api";
 import { planRowsForCollection } from "../tradeups/hooks/rowPlanning";
-import type { TradeupInputFormRow } from "../tradeups/hooks/types";
-import { useSteamCollections } from "../tradeups/hooks/builder/useSteamCollections";
-import type { Exterior } from "../skins/services/types";
+import { useSteamCollections } from "../tradeups/hooks/useSteamCollections";
+import type { Exterior, TradeupInputFormRow } from "../tradeups/types";
 import "./CollectionAnalyzer.css";
 
 const TRADEUP_RARITIES: TargetRarity[] = [

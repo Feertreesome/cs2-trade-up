@@ -1,6 +1,5 @@
-import type { Exterior } from "../../skins/services/types";
+import type { Exterior, TradeupInputFormRow } from "../types";
 import { EXTERIOR_FLOAT_RANGES, STEAM_TAG_VALUE_PREFIX } from "./constants";
-import type { TradeupInputFormRow } from "./types";
 
 export const makeEmptyRow = (): TradeupInputFormRow => ({
   marketHashName: "",
