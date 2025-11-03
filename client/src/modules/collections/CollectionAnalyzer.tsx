@@ -9,6 +9,7 @@ import {
   type TargetRarity,
   type TradeupInputPayload,
   type TradeupOutcomeResponse,
+  type SteamCollectionSummary,
 } from "../tradeups/services/api";
 import { planRowsForCollection } from "../tradeups/hooks/rowPlanning";
 import { useSteamCollections } from "../tradeups/hooks/useSteamCollections";
@@ -65,6 +66,25 @@ interface CollectionAnalysisEntry {
 interface CollectionAnalysis {
   entries: CollectionAnalysisEntry[];
   warnings: string[];
+}
+
+interface BulkCollectionAnalysisResult {
+  collection: SteamCollectionSummary;
+  analysis: CollectionAnalysis | null;
+  error: string | null;
+}
+
+interface BulkAnalysisProgress {
+  total: number;
+  completed: number;
+  currentTag: string | null;
+  currentName: string | null;
+}
+
+interface BulkAnalysisTopEntry {
+  collectionTag: string;
+  collectionName: string;
+  entry: CollectionAnalysisEntry;
 }
 
 interface RarityPreparation {
@@ -678,6 +698,9 @@ const CollectionAnalyzer: React.FC = () => {
   const [filter, setFilter] = React.useState("");
   const [selectedTag, setSelectedTag] = React.useState<string | null>(null);
   const { analysis, analysisError, analysisLoading } = useCollectionAnalysis(selectedTag);
+  const [bulkResults, setBulkResults] = React.useState<BulkCollectionAnalysisResult[]>([]);
+  const [bulkRunning, setBulkRunning] = React.useState(false);
+  const [bulkProgress, setBulkProgress] = React.useState<BulkAnalysisProgress | null>(null);
 
   React.useEffect(() => {
     load().catch(() => undefined);
@@ -698,6 +721,94 @@ const CollectionAnalyzer: React.FC = () => {
       collection.name.toLowerCase().includes(needle) || collection.tag.toLowerCase().includes(needle),
     );
   }, [collections, filter]);
+
+  const handleAnalyzeAll = React.useCallback(async () => {
+    if (!collections.length || bulkRunning) {
+      return;
+    }
+
+    setBulkRunning(true);
+    setBulkResults([]);
+    setBulkProgress({ total: collections.length, completed: 0, currentTag: null, currentName: null });
+
+    const results: BulkCollectionAnalysisResult[] = [];
+
+    try {
+      for (const collection of collections) {
+        setBulkProgress((previous) =>
+          previous
+            ? {
+                ...previous,
+                currentTag: collection.tag,
+                currentName: collection.name,
+              }
+            : previous,
+        );
+
+        try {
+          const result = await analyzeCollection(collection.tag);
+          results.push({ collection, analysis: result, error: null });
+        } catch (error: any) {
+          results.push({
+            collection,
+            analysis: null,
+            error: String(error?.message || error),
+          });
+        }
+
+        setBulkResults([...results]);
+        setBulkProgress((previous) =>
+          previous
+            ? {
+                ...previous,
+                completed: previous.completed + 1,
+              }
+            : previous,
+        );
+      }
+    } finally {
+      setBulkProgress((previous) =>
+        previous
+          ? {
+              ...previous,
+              currentTag: null,
+              currentName: null,
+            }
+          : previous,
+      );
+      setBulkRunning(false);
+    }
+  }, [collections, bulkRunning]);
+
+  const bulkErrors = React.useMemo(() => bulkResults.filter((entry) => entry.error), [bulkResults]);
+
+  const bulkTopEntries = React.useMemo(() => {
+    const aggregated: BulkAnalysisTopEntry[] = [];
+    for (const result of bulkResults) {
+      if (!result.analysis?.entries?.length) continue;
+      for (const entry of result.analysis.entries) {
+        aggregated.push({
+          collectionTag: result.collection.tag,
+          collectionName: result.collection.name,
+          entry,
+        });
+      }
+    }
+
+    aggregated.sort((a, b) => {
+      if (b.entry.ratioPercent !== a.entry.ratioPercent) {
+        return b.entry.ratioPercent - a.entry.ratioPercent;
+      }
+      const profitA = a.entry.profitProbability ?? 0;
+      const profitB = b.entry.profitProbability ?? 0;
+      if (profitB !== profitA) {
+        return profitB - profitA;
+      }
+      return a.entry.targetMarketHashName.localeCompare(b.entry.targetMarketHashName, "ru");
+    });
+
+    return aggregated.slice(0, 15);
+  }, [bulkResults]);
 
   const activeCollection = React.useMemo(
     () => collections.find((collection) => collection.tag === selectedTag) ?? null,
@@ -729,6 +840,28 @@ const CollectionAnalyzer: React.FC = () => {
                 value={filter}
                 onChange={(event) => setFilter(event.target.value)}
               />
+            </div>
+            <div className="collection-analyzer__collections-actions">
+              <button
+                type="button"
+                className="btn btn-outline-light btn-sm"
+                onClick={handleAnalyzeAll}
+                disabled={bulkRunning || !collections.length}
+              >
+                Анализировать все
+              </button>
+              {bulkRunning && bulkProgress ? (
+                <div className="collection-analyzer__bulk-status">
+                  Анализ {Math.min(bulkProgress.completed + 1, bulkProgress.total)} из {bulkProgress.total}
+                  {bulkProgress.currentName ? ` • ${bulkProgress.currentName}` : ""}
+                </div>
+              ) : null}
+              {!bulkRunning && bulkProgress?.total ? (
+                <div className="collection-analyzer__bulk-status">
+                  Проанализировано: {bulkProgress.completed} из {bulkProgress.total}
+                  {bulkErrors.length ? ` • Ошибок: ${bulkErrors.length}` : ""}
+                </div>
+              ) : null}
             </div>
             <div className="collection-analyzer__collections-list">
               {loading && <div className="text-secondary small">Загрузка…</div>}
@@ -856,6 +989,60 @@ const CollectionAnalyzer: React.FC = () => {
             ) : null}
           </div>
         </div>
+        {bulkResults.length ? (
+          <div className="collection-analyzer__bulk-results">
+            <div>
+              <h3 className="h5 mb-1">Результаты массового анализа</h3>
+              <div className="text-secondary small">
+                Коллекций: {bulkResults.length} • Успешно: {bulkResults.length - bulkErrors.length}
+                {bulkErrors.length ? ` • Ошибок: ${bulkErrors.length}` : ""}
+              </div>
+            </div>
+            {bulkTopEntries.length ? (
+              <ul className="collection-analyzer__bulk-list">
+                {bulkTopEntries.map((item) => (
+                  <li key={`${item.collectionTag}:${item.entry.key}`}>
+                    <div className="collection-analyzer__bulk-entry">
+                      <div className="collection-analyzer__bulk-entry-info">
+                        <div className="fw-semibold">{item.collectionName}</div>
+                        <div className="text-secondary small">
+                          {item.entry.targetMarketHashName} • {TARGET_RARITY_TITLES[item.entry.targetRarity]}
+                        </div>
+                      </div>
+                      <div className="collection-analyzer__bulk-metrics">
+                        <span className="collection-analyzer__bulk-metric">
+                          {formatCurrency(item.entry.targetPrice)}
+                        </span>
+                        <span className="collection-analyzer__bulk-metric">
+                          ROI {item.entry.ratioPercent.toFixed(1)}%
+                        </span>
+                        {item.entry.profitProbability != null ? (
+                          <span className="collection-analyzer__bulk-metric">
+                            Профит {formatProbabilityPercent(item.entry.profitProbability)}
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div className="text-secondary small">
+                Не удалось подобрать выгодные контракты для выбранных коллекций.
+              </div>
+            )}
+            {bulkErrors.length ? (
+              <div className="text-warning small">
+                Ошибки при обработке: {" "}
+                {bulkErrors
+                  .slice(0, 5)
+                  .map((entry) => entry.collection.name)
+                  .join(", ")}
+                {bulkErrors.length > 5 ? " и другие." : "."}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </div>
   );

@@ -29,6 +29,21 @@
   width: 100%;
 }
 
+.collection-analyzer__collections-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.collection-analyzer__collections-actions .btn {
+  width: 100%;
+}
+
+.collection-analyzer__bulk-status {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.65);
+}
+
 .collection-analyzer__collections-list {
   display: flex;
   flex-direction: column;
@@ -135,5 +150,50 @@
 
 .collection-analyzer__error {
   color: #ffb3b3;
+}
+
+.collection-analyzer__bulk-results {
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.collection-analyzer__bulk-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.collection-analyzer__bulk-entry {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.collection-analyzer__bulk-entry-info {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.collection-analyzer__bulk-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.collection-analyzer__bulk-metric {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  padding: 0.25rem 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
 }
 
