@@ -65,6 +65,10 @@ export interface CollectionInputsResponse {
   inputs: CollectionInputSummary[];
 }
 
+export interface CollectionRaritiesResponse {
+  rarities: TargetRarity[];
+}
+
 export interface SyncJobProgress {
   totalCollections: number;
   syncedCollections: number;
@@ -230,6 +234,18 @@ export async function fetchCollectionInputs(
     throw new Error(`HTTP ${response.status}`);
   }
   return (await response.json()) as CollectionInputsResponse;
+}
+
+/** Возвращает список редкостей, доступных для выбранной коллекции. */
+export async function fetchCollectionRarities(collectionTag: string) {
+  const response = await fetch(
+    `/api/tradeups/collections/${encodeURIComponent(collectionTag)}/rarities`,
+  );
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+  const payload = (await response.json()) as CollectionRaritiesResponse;
+  return payload.rarities ?? [];
 }
 
 /** Отправляет состав trade-up'а на сервер для расчёта EV и вероятностей. */
