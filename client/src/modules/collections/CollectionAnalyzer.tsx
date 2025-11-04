@@ -9,6 +9,8 @@ import {
   type TargetRarity,
   type TradeupInputPayload,
   type TradeupOutcomeResponse,
+  type SteamCollectionSummary,
+  type TradeupTargetOverridePayload,
 } from "../tradeups/services/api";
 import { planRowsForCollection } from "../tradeups/hooks/rowPlanning";
 import { useSteamCollections } from "../tradeups/hooks/useSteamCollections";
@@ -41,6 +43,13 @@ interface CollectionAnalysisInputEntry {
   maxFloat: number | null;
 }
 
+interface CollectionAnalysisInputSlot {
+  slot: number;
+  marketHashName: string;
+  price: number;
+  float: number | null;
+}
+
 interface CollectionAnalysisTargetOption {
   marketHashName: string;
   price: number;
@@ -57,6 +66,7 @@ interface CollectionAnalysisEntry {
   targetPrice: number;
   possibleTargets: CollectionAnalysisTargetOption[];
   inputs: CollectionAnalysisInputEntry[];
+  inputSlots: CollectionAnalysisInputSlot[];
   totalInputCost: number;
   ratioPercent: number;
   profitProbability: number | null;
@@ -67,12 +77,39 @@ interface CollectionAnalysis {
   warnings: string[];
 }
 
+interface BulkCollectionAnalysisResult {
+  collection: SteamCollectionSummary;
+  analysis: CollectionAnalysis | null;
+  error: string | null;
+}
+
+interface BulkAnalysisProgress {
+  total: number;
+  completed: number;
+  currentTag: string | null;
+  currentName: string | null;
+}
+
+interface BulkAnalysisTopEntry {
+  collectionTag: string;
+  collectionName: string;
+  entry: CollectionAnalysisEntry;
+}
+
+interface BulkFilterState {
+  search: string;
+  minRoi: string;
+  minPrice: string;
+  minProfit: string;
+}
+
 interface RarityPreparation {
   targets: CollectionTargetsResponse["targets"];
   inputRarity: string | null;
   pricedInputs: CollectionInputSummary[];
   collectionId: string | null;
   targetPriceLookup: Map<string, number>;
+  targetOverrides: TradeupTargetOverridePayload[];
 }
 
 interface TradeupEvaluationResult {
@@ -163,6 +200,37 @@ const prioritizeTargetOptions = (
   const primary = options.filter((option) => option.marketHashName === primaryMarketHashName);
   const rest = options.filter((option) => option.marketHashName !== primaryMarketHashName);
   return [...primary, ...rest];
+};
+
+const buildTargetOverrides = (
+  collectionId: string | null,
+  collectionTag: string,
+  targets: CollectionTargetsResponse["targets"],
+): TradeupTargetOverridePayload[] => {
+  const overrides: TradeupTargetOverridePayload[] = [];
+
+  targets.forEach((target) => {
+    target.exteriors.forEach((exterior) => {
+      const minFloat =
+        typeof exterior.minFloat === "number" ? exterior.minFloat : null;
+      const maxFloat =
+        typeof exterior.maxFloat === "number" ? exterior.maxFloat : null;
+      const price = typeof exterior.price === "number" ? exterior.price : null;
+
+      overrides.push({
+        collectionId,
+        collectionTag,
+        baseName: target.baseName,
+        exterior: exterior.exterior,
+        marketHashName: exterior.marketHashName,
+        minFloat,
+        maxFloat,
+        price,
+      });
+    });
+  });
+
+  return overrides;
 };
 
 const buildTargetOptionsFromOutcomes = (
@@ -261,6 +329,11 @@ const prepareRarityData = async (
   const targetPriceLookup = new Map(
     targetOptions.map((option) => [option.marketHashName, option.price] as const),
   );
+  const targetOverrides = buildTargetOverrides(
+    effectiveCollectionId,
+    collectionTag,
+    targets,
+  );
 
   return {
     targets,
@@ -268,6 +341,7 @@ const prepareRarityData = async (
     pricedInputs,
     collectionId: effectiveCollectionId,
     targetPriceLookup,
+    targetOverrides,
   };
 };
 
@@ -311,14 +385,21 @@ const buildPlanRowsForTarget = ({
 
 const summarizePlanRows = (
   planRows: TradeupInputFormRow[],
-): { inputs: CollectionAnalysisInputEntry[]; totalInputCost: number } | null => {
+):
+  | {
+      inputs: CollectionAnalysisInputEntry[];
+      slots: CollectionAnalysisInputSlot[];
+      totalInputCost: number;
+    }
+  | null => {
   const inputsByName = new Map<
     string,
     { count: number; total: number; minFloat: number | null; maxFloat: number | null }
   >();
   let totalInputCost = 0;
+  const slots: CollectionAnalysisInputSlot[] = [];
 
-  for (const row of planRows) {
+  for (const [index, row] of planRows.entries()) {
     const price = Number.parseFloat(row.price);
     if (!Number.isFinite(price) || price <= 0) {
       return null;
@@ -327,6 +408,12 @@ const summarizePlanRows = (
     totalInputCost += price;
 
     const floatValue = Number.parseFloat(row.float);
+    slots.push({
+      slot: index + 1,
+      marketHashName: row.marketHashName,
+      price,
+      float: Number.isFinite(floatValue) ? floatValue : null,
+    });
     const current =
       inputsByName.get(row.marketHashName) ??
       { count: 0, total: 0, minFloat: null, maxFloat: null };
@@ -365,7 +452,9 @@ const summarizePlanRows = (
     return a.marketHashName.localeCompare(b.marketHashName, "ru");
   });
 
-  return { inputs, totalInputCost };
+  slots.sort((a, b) => a.slot - b.slot);
+
+  return { inputs, totalInputCost, slots };
 };
 
 const buildTradeupPayload = (
@@ -384,12 +473,18 @@ const buildTradeupPayload = (
       return null;
     }
 
+    const priceText = row.price.replace(/\s+/g, "");
+    const normalizedPriceText = priceText.replace(/[^0-9.,-]/g, "");
+    const priceValue = Number.parseFloat(normalizedPriceText.replace(",", "."));
+    const priceOverrideNet = Number.isFinite(priceValue) ? priceValue : null;
+
     payload.push({
       marketHashName: row.marketHashName,
       float: floatValue,
       collectionId,
       minFloat: floatValue,
       maxFloat: floatValue,
+      priceOverrideNet,
     });
   }
 
@@ -430,6 +525,7 @@ const evaluateTradeupOutcomes = async (
   targetRarity: TargetRarity,
   targetPriceLookup: Map<string, number>,
   totalInputCost: number,
+  targetOverrides: TradeupTargetOverridePayload[],
 ): Promise<TradeupEvaluationResult> => {
   if (!payload || !targetCollectionId) {
     return { targets: [], profitProbability: null };
@@ -440,6 +536,7 @@ const evaluateTradeupOutcomes = async (
       inputs: payload,
       targetCollectionIds: [targetCollectionId],
       targetRarity,
+      targetOverrides,
     });
 
     const resolvedTargets = buildTargetOptionsFromOutcomes(
@@ -502,6 +599,7 @@ const buildEntryForTarget = async ({
     targetRarity,
     rarityData.targetPriceLookup,
     summary.totalInputCost,
+    rarityData.targetOverrides,
   );
 
   const prioritizedTargets = resolvedTargets.length
@@ -525,6 +623,7 @@ const buildEntryForTarget = async ({
     targetPrice,
     possibleTargets: prioritizedTargets,
     inputs: summary.inputs,
+    inputSlots: summary.slots,
     totalInputCost: summary.totalInputCost,
     ratioPercent,
     profitProbability,
@@ -678,6 +777,15 @@ const CollectionAnalyzer: React.FC = () => {
   const [filter, setFilter] = React.useState("");
   const [selectedTag, setSelectedTag] = React.useState<string | null>(null);
   const { analysis, analysisError, analysisLoading } = useCollectionAnalysis(selectedTag);
+  const [bulkResults, setBulkResults] = React.useState<BulkCollectionAnalysisResult[]>([]);
+  const [bulkRunning, setBulkRunning] = React.useState(false);
+  const [bulkProgress, setBulkProgress] = React.useState<BulkAnalysisProgress | null>(null);
+  const [bulkFilter, setBulkFilter] = React.useState<BulkFilterState>({
+    search: "",
+    minRoi: "",
+    minPrice: "",
+    minProfit: "",
+  });
 
   React.useEffect(() => {
     load().catch(() => undefined);
@@ -698,6 +806,144 @@ const CollectionAnalyzer: React.FC = () => {
       collection.name.toLowerCase().includes(needle) || collection.tag.toLowerCase().includes(needle),
     );
   }, [collections, filter]);
+
+  const handleAnalyzeAll = React.useCallback(async () => {
+    if (!collections.length || bulkRunning) {
+      return;
+    }
+
+    setBulkRunning(true);
+    setBulkResults([]);
+    setBulkProgress({ total: collections.length, completed: 0, currentTag: null, currentName: null });
+
+    const results: BulkCollectionAnalysisResult[] = [];
+
+    try {
+      for (const collection of collections) {
+        setBulkProgress((previous) =>
+          previous
+            ? {
+                ...previous,
+                currentTag: collection.tag,
+                currentName: collection.name,
+              }
+            : previous,
+        );
+
+        try {
+          const result = await analyzeCollection(collection.tag);
+          results.push({ collection, analysis: result, error: null });
+        } catch (error: any) {
+          results.push({
+            collection,
+            analysis: null,
+            error: String(error?.message || error),
+          });
+        }
+
+        setBulkResults([...results]);
+        setBulkProgress((previous) =>
+          previous
+            ? {
+                ...previous,
+                completed: previous.completed + 1,
+              }
+            : previous,
+        );
+      }
+    } finally {
+      setBulkProgress((previous) =>
+        previous
+          ? {
+              ...previous,
+              currentTag: null,
+              currentName: null,
+            }
+          : previous,
+      );
+      setBulkRunning(false);
+    }
+  }, [collections, bulkRunning]);
+
+  const bulkErrors = React.useMemo(() => bulkResults.filter((entry) => entry.error), [bulkResults]);
+
+  const bulkTopEntries = React.useMemo(() => {
+    const minRoi = Number.parseFloat(bulkFilter.minRoi.replace(",", "."));
+    const hasMinRoi = Number.isFinite(minRoi);
+    const minPrice = Number.parseFloat(bulkFilter.minPrice.replace(",", "."));
+    const hasMinPrice = Number.isFinite(minPrice);
+    const minProfitPercent = Number.parseFloat(bulkFilter.minProfit.replace(",", "."));
+    const hasMinProfit = Number.isFinite(minProfitPercent);
+    const searchNeedle = bulkFilter.search.trim().toLowerCase();
+
+    const aggregated: BulkAnalysisTopEntry[] = [];
+    for (const result of bulkResults) {
+      if (!result.analysis?.entries?.length) continue;
+      for (const entry of result.analysis.entries) {
+        aggregated.push({
+          collectionTag: result.collection.tag,
+          collectionName: result.collection.name,
+          entry,
+        });
+      }
+    }
+
+    const filtered = aggregated.filter((item) => {
+      if (searchNeedle) {
+        const matchesSearch =
+          item.collectionName.toLowerCase().includes(searchNeedle) ||
+          item.collectionTag.toLowerCase().includes(searchNeedle) ||
+          item.entry.targetMarketHashName.toLowerCase().includes(searchNeedle);
+        if (!matchesSearch) {
+          return false;
+        }
+      }
+
+      if (hasMinRoi && item.entry.ratioPercent < minRoi) {
+        return false;
+      }
+
+      if (hasMinPrice && item.entry.targetPrice < minPrice) {
+        return false;
+      }
+
+      if (hasMinProfit) {
+        const probabilityPercent = (item.entry.profitProbability ?? 0) * 100;
+        if (probabilityPercent < minProfitPercent) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+
+    filtered.sort((a, b) => {
+      if (b.entry.ratioPercent !== a.entry.ratioPercent) {
+        return b.entry.ratioPercent - a.entry.ratioPercent;
+      }
+      const profitA = a.entry.profitProbability ?? 0;
+      const profitB = b.entry.profitProbability ?? 0;
+      if (profitB !== profitA) {
+        return profitB - profitA;
+      }
+      return a.entry.targetMarketHashName.localeCompare(b.entry.targetMarketHashName, "ru");
+    });
+
+    return filtered.slice(0, 30);
+  }, [bulkResults, bulkFilter]);
+
+  const handleBulkFilterChange = React.useCallback(
+    (key: keyof BulkFilterState) =>
+      (event: React.ChangeEvent<HTMLInputElement>) => {
+        const { value } = event.target;
+        setBulkFilter((previous) => ({ ...previous, [key]: value }));
+      },
+    [setBulkFilter],
+  );
+
+  const handleBulkFilterReset = React.useCallback(() => {
+    setBulkFilter({ search: "", minRoi: "", minPrice: "", minProfit: "" });
+  }, [setBulkFilter]);
 
   const activeCollection = React.useMemo(
     () => collections.find((collection) => collection.tag === selectedTag) ?? null,
@@ -729,6 +975,28 @@ const CollectionAnalyzer: React.FC = () => {
                 value={filter}
                 onChange={(event) => setFilter(event.target.value)}
               />
+            </div>
+            <div className="collection-analyzer__collections-actions">
+              <button
+                type="button"
+                className="btn btn-outline-light btn-sm"
+                onClick={handleAnalyzeAll}
+                disabled={bulkRunning || !collections.length}
+              >
+                Анализировать все
+              </button>
+              {bulkRunning && bulkProgress ? (
+                <div className="collection-analyzer__bulk-status">
+                  Анализ {Math.min(bulkProgress.completed + 1, bulkProgress.total)} из {bulkProgress.total}
+                  {bulkProgress.currentName ? ` • ${bulkProgress.currentName}` : ""}
+                </div>
+              ) : null}
+              {!bulkRunning && bulkProgress?.total ? (
+                <div className="collection-analyzer__bulk-status">
+                  Проанализировано: {bulkProgress.completed} из {bulkProgress.total}
+                  {bulkErrors.length ? ` • Ошибок: ${bulkErrors.length}` : ""}
+                </div>
+              ) : null}
             </div>
             <div className="collection-analyzer__collections-list">
               {loading && <div className="text-secondary small">Загрузка…</div>}
@@ -814,19 +1082,39 @@ const CollectionAnalyzer: React.FC = () => {
                           {entry.inputRarity ? ` • вход: ${entry.inputRarity}` : ""}
                         </div>
                         <div className="collection-chart__inputs">
-                          Лучший вход:
-                          {entry.inputs.map((input, index) => {
-                            const floatLabel = formatFloatRange(input.minFloat, input.maxFloat);
-                            return (
-                              <React.Fragment key={`${entry.key}:${input.marketHashName}:${index}`}>
-                                {index > 0 ? ", " : " "}
-                                {input.marketHashName} × {input.count} ({formatCurrency(input.unitPrice)} за слот
-                                {floatLabel ? `, float ${floatLabel}` : ""})
-                              </React.Fragment>
-                            );
-                          })}
-                          {" • Σ "}
-                          {formatCurrency(entry.totalInputCost)}
+                          <div className="collection-chart__inputs-summary">
+                            Лучший вход:
+                            {entry.inputs.map((input, index) => {
+                              const floatLabel = formatFloatRange(input.minFloat, input.maxFloat);
+                              return (
+                                <React.Fragment key={`${entry.key}:${input.marketHashName}:${index}`}>
+                                  {index > 0 ? ", " : " "}
+                                  {input.marketHashName} × {input.count} ({formatCurrency(input.unitPrice)} за слот
+                                  {floatLabel ? `, float ${floatLabel}` : ""})
+                                </React.Fragment>
+                              );
+                            })}
+                            {" • Σ "}
+                            {formatCurrency(entry.totalInputCost)}
+                          </div>
+                          {entry.inputSlots.length ? (
+                            <ol className="collection-chart__slots">
+                              {entry.inputSlots.map((slot) => (
+                                <li key={`${entry.key}:slot:${slot.slot}`} className="collection-chart__slot">
+                                  <span className="collection-chart__slot-index">#{slot.slot}</span>
+                                  <span className="collection-chart__slot-name">{slot.marketHashName}</span>
+                                  <span className="collection-chart__slot-price">
+                                    {formatCurrency(slot.price)}
+                                  </span>
+                                  {slot.float != null ? (
+                                    <span className="collection-chart__slot-float">
+                                      float {formatFloat(slot.float)}
+                                    </span>
+                                  ) : null}
+                                </li>
+                              ))}
+                            </ol>
+                          ) : null}
                         </div>
                         {entry.profitProbability != null ? (
                           <div
@@ -856,6 +1144,160 @@ const CollectionAnalyzer: React.FC = () => {
             ) : null}
           </div>
         </div>
+        {bulkResults.length ? (
+          <div className="collection-analyzer__bulk-results">
+            <div>
+              <h3 className="h5 mb-1">Результаты массового анализа</h3>
+              <div className="text-secondary small">
+                Коллекций: {bulkResults.length} • Успешно: {bulkResults.length - bulkErrors.length}
+                {bulkErrors.length ? ` • Ошибок: ${bulkErrors.length}` : ""}
+              </div>
+            </div>
+            {bulkTopEntries.length ? (
+              <>
+                <div className="collection-analyzer__bulk-filters">
+                  <input
+                    type="search"
+                    className="form-control form-control-sm"
+                    placeholder="Фильтр по коллекции или скину"
+                    value={bulkFilter.search}
+                    onChange={handleBulkFilterChange("search")}
+                  />
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    className="form-control form-control-sm"
+                    placeholder="Мин. ROI %"
+                    value={bulkFilter.minRoi}
+                    onChange={handleBulkFilterChange("minRoi")}
+                  />
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    className="form-control form-control-sm"
+                    placeholder="Мин. цена результата"
+                    value={bulkFilter.minPrice}
+                    onChange={handleBulkFilterChange("minPrice")}
+                  />
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    className="form-control form-control-sm"
+                    placeholder="Мин. шанс профита %"
+                    value={bulkFilter.minProfit}
+                    onChange={handleBulkFilterChange("minProfit")}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-outline-light btn-sm"
+                    onClick={handleBulkFilterReset}
+                  >
+                    Сбросить
+                  </button>
+                </div>
+                <ul className="collection-analyzer__bulk-list">
+                  {bulkTopEntries.map((item) => {
+                    const targetsToShow = item.entry.possibleTargets.length
+                      ? item.entry.possibleTargets
+                      : ([
+                          {
+                            marketHashName: item.entry.targetMarketHashName,
+                            price: item.entry.targetPrice,
+                            exterior: item.entry.targetExterior,
+                          },
+                        ] as CollectionAnalysisTargetOption[]);
+
+                    return (
+                      <li key={`${item.collectionTag}:${item.entry.key}`}>
+                        <div className="collection-analyzer__bulk-entry">
+                          <div className="collection-analyzer__bulk-entry-head">
+                            <div className="collection-analyzer__bulk-entry-info">
+                              <div className="fw-semibold">{item.collectionName}</div>
+                              <div className="text-secondary small">
+                                {item.entry.targetMarketHashName} • {TARGET_RARITY_TITLES[item.entry.targetRarity]}
+                              </div>
+                            </div>
+                            <div className="collection-analyzer__bulk-metrics">
+                              <span className="collection-analyzer__bulk-metric">
+                                {formatCurrency(item.entry.targetPrice)}
+                              </span>
+                              <span className="collection-analyzer__bulk-metric">
+                                ROI {item.entry.ratioPercent.toFixed(1)}%
+                              </span>
+                              <span className="collection-analyzer__bulk-metric">
+                                Σ {formatCurrency(item.entry.totalInputCost)}
+                              </span>
+                              {item.entry.profitProbability != null ? (
+                                <span className="collection-analyzer__bulk-metric">
+                                  Профит {formatProbabilityPercent(item.entry.profitProbability)}
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
+                          <div className="collection-analyzer__bulk-targets">
+                            <div className="collection-analyzer__bulk-targets-title">Возможные результаты:</div>
+                            <div className="collection-analyzer__bulk-targets-list">
+                              {targetsToShow.map((target) => (
+                                <span
+                                  key={`${item.entry.key}:target:${target.marketHashName}`}
+                                  className={`collection-analyzer__bulk-target${
+                                    target.marketHashName === item.entry.targetMarketHashName
+                                      ? " collection-analyzer__bulk-target--primary"
+                                      : ""
+                                  }`}
+                                >
+                                  {target.marketHashName}
+                                  <span className="text-secondary ms-1">
+                                    ({formatCurrency(target.price)})
+                                  </span>
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                          {item.entry.inputSlots.length ? (
+                            <ol className="collection-analyzer__bulk-inputs">
+                              {item.entry.inputSlots.map((slot) => (
+                                <li
+                                  key={`${item.entry.key}:bulk-slot:${slot.slot}`}
+                                  className="collection-analyzer__bulk-input"
+                                >
+                                  <span className="collection-analyzer__bulk-input-index">#{slot.slot}</span>
+                                  <span className="collection-analyzer__bulk-input-name">{slot.marketHashName}</span>
+                                  <span className="collection-analyzer__bulk-input-price">
+                                    {formatCurrency(slot.price)}
+                                  </span>
+                                  {slot.float != null ? (
+                                    <span className="collection-analyzer__bulk-input-float">
+                                      float {formatFloat(slot.float)}
+                                    </span>
+                                  ) : null}
+                                </li>
+                              ))}
+                            </ol>
+                          ) : null}
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </>
+            ) : (
+              <div className="text-secondary small">
+                Не удалось подобрать выгодные контракты для выбранных коллекций.
+              </div>
+            )}
+            {bulkErrors.length ? (
+              <div className="text-warning small">
+                Ошибки при обработке: {" "}
+                {bulkErrors
+                  .slice(0, 5)
+                  .map((entry) => entry.collection.name)
+                  .join(", ")}
+                {bulkErrors.length > 5 ? " и другие." : "."}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </div>
   );
