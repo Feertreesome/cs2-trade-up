@@ -10,6 +10,7 @@ import {
   type TradeupInputPayload,
   type TradeupOutcomeResponse,
   type SteamCollectionSummary,
+  type TradeupTargetOverridePayload,
 } from "../tradeups/services/api";
 import { planRowsForCollection } from "../tradeups/hooks/rowPlanning";
 import { useSteamCollections } from "../tradeups/hooks/useSteamCollections";
@@ -108,6 +109,7 @@ interface RarityPreparation {
   pricedInputs: CollectionInputSummary[];
   collectionId: string | null;
   targetPriceLookup: Map<string, number>;
+  targetOverrides: TradeupTargetOverridePayload[];
 }
 
 interface TradeupEvaluationResult {
@@ -198,6 +200,37 @@ const prioritizeTargetOptions = (
   const primary = options.filter((option) => option.marketHashName === primaryMarketHashName);
   const rest = options.filter((option) => option.marketHashName !== primaryMarketHashName);
   return [...primary, ...rest];
+};
+
+const buildTargetOverrides = (
+  collectionId: string | null,
+  collectionTag: string,
+  targets: CollectionTargetsResponse["targets"],
+): TradeupTargetOverridePayload[] => {
+  const overrides: TradeupTargetOverridePayload[] = [];
+
+  targets.forEach((target) => {
+    target.exteriors.forEach((exterior) => {
+      const minFloat =
+        typeof exterior.minFloat === "number" ? exterior.minFloat : null;
+      const maxFloat =
+        typeof exterior.maxFloat === "number" ? exterior.maxFloat : null;
+      const price = typeof exterior.price === "number" ? exterior.price : null;
+
+      overrides.push({
+        collectionId,
+        collectionTag,
+        baseName: target.baseName,
+        exterior: exterior.exterior,
+        marketHashName: exterior.marketHashName,
+        minFloat,
+        maxFloat,
+        price,
+      });
+    });
+  });
+
+  return overrides;
 };
 
 const buildTargetOptionsFromOutcomes = (
@@ -296,6 +329,11 @@ const prepareRarityData = async (
   const targetPriceLookup = new Map(
     targetOptions.map((option) => [option.marketHashName, option.price] as const),
   );
+  const targetOverrides = buildTargetOverrides(
+    effectiveCollectionId,
+    collectionTag,
+    targets,
+  );
 
   return {
     targets,
@@ -303,6 +341,7 @@ const prepareRarityData = async (
     pricedInputs,
     collectionId: effectiveCollectionId,
     targetPriceLookup,
+    targetOverrides,
   };
 };
 
@@ -434,12 +473,18 @@ const buildTradeupPayload = (
       return null;
     }
 
+    const priceText = row.price.replace(/\s+/g, "");
+    const normalizedPriceText = priceText.replace(/[^0-9.,-]/g, "");
+    const priceValue = Number.parseFloat(normalizedPriceText.replace(",", "."));
+    const priceOverrideNet = Number.isFinite(priceValue) ? priceValue : null;
+
     payload.push({
       marketHashName: row.marketHashName,
       float: floatValue,
       collectionId,
       minFloat: floatValue,
       maxFloat: floatValue,
+      priceOverrideNet,
     });
   }
 
@@ -480,6 +525,7 @@ const evaluateTradeupOutcomes = async (
   targetRarity: TargetRarity,
   targetPriceLookup: Map<string, number>,
   totalInputCost: number,
+  targetOverrides: TradeupTargetOverridePayload[],
 ): Promise<TradeupEvaluationResult> => {
   if (!payload || !targetCollectionId) {
     return { targets: [], profitProbability: null };
@@ -490,6 +536,7 @@ const evaluateTradeupOutcomes = async (
       inputs: payload,
       targetCollectionIds: [targetCollectionId],
       targetRarity,
+      targetOverrides,
     });
 
     const resolvedTargets = buildTargetOptionsFromOutcomes(
@@ -552,6 +599,7 @@ const buildEntryForTarget = async ({
     targetRarity,
     rarityData.targetPriceLookup,
     summary.totalInputCost,
+    rarityData.targetOverrides,
   );
 
   const prioritizedTargets = resolvedTargets.length

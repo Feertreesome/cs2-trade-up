@@ -124,6 +124,35 @@ const summarizeTargetsToRanges = (
     .filter((entry): entry is CollectionFloatRange => Boolean(entry));
 };
 
+type OverrideRangeAccumulator = {
+  baseName: string;
+  minFloat: number | null;
+  maxFloat: number | null;
+};
+
+const summarizeOverrideRanges = (
+  overrides: Map<string, OverrideRangeAccumulator>,
+  rarity: TargetRarity,
+): CollectionFloatRange[] => {
+  const fallback = PREDEFINED_FLOATS_BY_RARITY[rarity] ?? new Map();
+  return Array.from(overrides.values())
+    .map((entry) => {
+      let { minFloat, maxFloat } = entry;
+      if (minFloat == null || maxFloat == null) {
+        const predefined = fallback.get(entry.baseName);
+        if (predefined) {
+          minFloat = minFloat == null ? predefined.minFloat : Math.min(minFloat, predefined.minFloat);
+          maxFloat = maxFloat == null ? predefined.maxFloat : Math.max(maxFloat, predefined.maxFloat);
+        }
+      }
+      if (minFloat == null || maxFloat == null) {
+        return null;
+      }
+      return { baseName: entry.baseName, minFloat, maxFloat };
+    })
+    .filter((entry): entry is CollectionFloatRange => Boolean(entry));
+};
+
 const WEAR_BUCKETS: Array<{ exterior: Exterior; min: number; max: number }> = [
   { exterior: "Factory New", min: 0, max: 0.06999999999999999 },
   { exterior: "Minimal Wear", min: 0.07, max: 0.14999999999999999 },
@@ -257,7 +286,7 @@ const buildOutcome = async (
     entry: CollectionFloatRange;
     collectionProbability: number;
     rangeCount: number;
-    override?: TargetOverrideRequest;
+    overridesByCollection: Map<string, TargetOverrideRequest>;
   },
 ): Promise<TradeupOutcome> => {
   const {
@@ -266,20 +295,30 @@ const buildOutcome = async (
     entry,
     collectionProbability,
     rangeCount,
-    override,
+    overridesByCollection,
   } = options;
 
-  const minFloat = override?.minFloat ?? entry.minFloat;
-  const maxFloat = override?.maxFloat ?? entry.maxFloat;
+  const baseKey = `${collection.id}:${entry.baseName.toLowerCase()}`;
+  const baseOverride = overridesByCollection.get(baseKey);
+
+  const minFloat = entry.minFloat;
+  const maxFloat = entry.maxFloat;
   // В игре trade-up использует средний float входов (InputFloat) и линейно
   // преобразует его в диапазон результата: OutputFloat = (Maxout - Minout) * InputFloat + Minout.
   const raw = inputAverageFloat * (maxFloat - minFloat) + minFloat;
   const rollFloat = clamp(raw, minFloat, maxFloat);
-  const exterior = override?.exterior ?? getExteriorByFloat(rollFloat);
+  const defaultExterior = getExteriorByFloat(rollFloat);
+  const baseExterior = baseOverride?.exterior ?? defaultExterior;
+  const baseMarketHashName =
+    baseOverride?.marketHashName ?? toMarketHashName(entry.baseName, baseExterior);
+  const marketKey = `${collection.id}:${baseMarketHashName.toLowerCase()}`;
+  const effectiveOverride = overridesByCollection.get(marketKey) ?? baseOverride;
+  const exterior = effectiveOverride?.exterior ?? baseExterior;
   const wearRange = getWearRange(exterior);
-  const marketHashName = override?.marketHashName ?? toMarketHashName(entry.baseName, exterior);
+  const marketHashName =
+    effectiveOverride?.marketHashName ?? toMarketHashName(entry.baseName, exterior);
 
-  let price = override?.price ?? null;
+  let price = effectiveOverride?.price ?? null;
   let priceError: unknown = undefined;
   if (price == null) {
     const { price: fetchedPrice, error } = await getPriceUSD(marketHashName);
@@ -661,8 +700,9 @@ export const calculateTradeup = async (
     collectionCounts.set(slot.collectionId, (collectionCounts.get(slot.collectionId) ?? 0) + 1);
   }
 
-  const overridesByCollection = new Map<string, TargetOverrideRequest>();
+  const overrideDetails = new Map<string, TargetOverrideRequest>();
   const overrideCollectionTags = new Map<string, string>();
+  const overrideRangesByCollection = new Map<string, Map<string, OverrideRangeAccumulator>>();
   for (const override of payload.targetOverrides ?? []) {
     if (!override?.baseName) continue;
     let collectionId = override.collectionId ?? null;
@@ -674,10 +714,40 @@ export const calculateTradeup = async (
       overrideCollectionTags.set(collectionId, override.collectionTag);
       rememberCollectionId(override.collectionTag, collectionId);
     }
-    const key = `${collectionId}:${override.baseName.toLowerCase()}`;
-    if (!overridesByCollection.has(key)) {
-      overridesByCollection.set(key, { ...override, collectionId });
+    const normalizedOverride: TargetOverrideRequest = { ...override, collectionId };
+    const baseKey = `${collectionId}:${override.baseName.toLowerCase()}`;
+    if (!overrideDetails.has(baseKey)) {
+      overrideDetails.set(baseKey, normalizedOverride);
     }
+    if (override.marketHashName) {
+      const marketKey = `${collectionId}:${override.marketHashName.toLowerCase()}`;
+      overrideDetails.set(marketKey, normalizedOverride);
+    }
+
+    let rangeMap = overrideRangesByCollection.get(collectionId);
+    if (!rangeMap) {
+      rangeMap = new Map<string, OverrideRangeAccumulator>();
+      overrideRangesByCollection.set(collectionId, rangeMap);
+    }
+    const rangeKey = override.baseName.toLowerCase();
+    const current = rangeMap.get(rangeKey) ?? {
+      baseName: override.baseName,
+      minFloat: null,
+      maxFloat: null,
+    };
+    if (typeof override.minFloat === "number") {
+      current.minFloat =
+        current.minFloat == null
+          ? override.minFloat
+          : Math.min(current.minFloat, override.minFloat);
+    }
+    if (typeof override.maxFloat === "number") {
+      current.maxFloat =
+        current.maxFloat == null
+          ? override.maxFloat
+          : Math.max(current.maxFloat, override.maxFloat);
+    }
+    rangeMap.set(rangeKey, current);
   }
 
   const targetRarity: TargetRarity = payload.targetRarity ?? "Covert";
@@ -695,38 +765,25 @@ export const calculateTradeup = async (
       const explicitTag = overrideCollectionTags.get(collection.id);
       const steamTag = explicitTag ?? findSteamTagByCollectionId(collection.id);
       let candidates: CollectionFloatRange[] = [];
+      const overrideRangeMap = overrideRangesByCollection.get(collection.id);
+      if (overrideRangeMap?.size) {
+        candidates = summarizeOverrideRanges(overrideRangeMap, targetRarity);
+      }
       if (steamTag) {
-        try {
-          const result = await fetchCollectionTargets(steamTag, targetRarity);
-          if (result.collectionId) {
-            rememberCollectionId(steamTag, result.collectionId);
+        if (!candidates.length) {
+          try {
+            const result = await fetchCollectionTargets(steamTag, targetRarity);
+            if (result.collectionId) {
+              rememberCollectionId(steamTag, result.collectionId);
+            }
+            candidates = summarizeTargetsToRanges(result.targets, targetRarity);
+          } catch (error) {
+            // Ignore and fall back to catalog
           }
-          candidates = summarizeTargetsToRanges(result.targets, targetRarity);
-        } catch (error) {
-          // Ignore and fall back to catalog
         }
       }
       if (!candidates.length) {
         candidates = getCatalogRangesForRarity(collection, targetRarity);
-      }
-      if (!candidates.length) {
-        const overrideCandidates = Array.from(overridesByCollection.entries())
-          .filter(([key]) => key.startsWith(`${collection.id}:`))
-          .map(([, override]) => {
-            const min = typeof override.minFloat === "number" ? override.minFloat : null;
-            const max = typeof override.maxFloat === "number" ? override.maxFloat : null;
-            if (min != null && max != null) {
-              return { baseName: override.baseName, minFloat: min, maxFloat: max };
-            }
-            const fallback = (PREDEFINED_FLOATS_BY_RARITY[targetRarity] ?? new Map()).get(
-              override.baseName,
-            );
-            return fallback ?? null;
-          })
-          .filter((entry): entry is CollectionFloatRange => Boolean(entry));
-        if (overrideCandidates.length) {
-          candidates = overrideCandidates;
-        }
       }
       return { collection, candidates };
     }),
@@ -746,7 +803,7 @@ export const calculateTradeup = async (
           entry,
           collectionProbability,
           rangeCount,
-          override: overridesByCollection.get(`${collection.id}:${entry.baseName.toLowerCase()}`),
+          overridesByCollection: overrideDetails,
         }),
       );
     }),
