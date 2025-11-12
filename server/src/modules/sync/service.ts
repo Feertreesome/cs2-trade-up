@@ -1,4 +1,4 @@
-import type { Prisma, CatalogSyncJob as CatalogSyncJobRecord } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 import type { SteamCollectionTag, SearchItem } from "../steam/repo";
 import {
   fetchCollectionTags,
@@ -51,6 +51,8 @@ export interface SyncJobStatus {
 export interface CatalogSyncJobData {
   triggeredBy?: "manual" | "schedule";
 }
+
+type CatalogSyncJobRecord = Prisma.CatalogSyncJobGetPayload<true>;
 
 const rarityOrder = Object.keys(RARITY_TO_TAG) as (keyof typeof RARITY_TO_TAG)[];
 
