@@ -54,6 +54,17 @@ export interface CatalogSyncJobData {
 
 type CatalogSyncJobRecord = Prisma.CatalogSyncJobGetPayload<true>;
 
+const hasDatabaseConnection = () => {
+  const url = process.env.DATABASE_URL;
+  return typeof url === "string" && url.trim().length > 0;
+};
+
+const ensureDatabaseConnection = () => {
+  if (!hasDatabaseConnection()) {
+    throw new Error("DATABASE_URL environment variable is not configured");
+  }
+};
+
 const rarityOrder = Object.keys(RARITY_TO_TAG) as (keyof typeof RARITY_TO_TAG)[];
 
 const initialProgress = (): SyncJobProgress => ({
@@ -445,6 +456,11 @@ const findLatestActiveJob = async (): Promise<CatalogSyncJobRecord | null> =>
   });
 
 const resumeInterruptedJob = async () => {
+  if (!hasDatabaseConnection()) {
+    console.warn("Skipping catalog sync job resume because DATABASE_URL is not set.");
+    return;
+  }
+
   const latest = await findLatestActiveJob();
   if (!latest) return;
 
@@ -471,6 +487,8 @@ void resumeInterruptedJob().catch((error) => {
 });
 
 export const requestFullCatalogSync = async (): Promise<SyncJobStatus> => {
+  ensureDatabaseConnection();
+
   const existing = await findLatestActiveJob();
   if (existing) {
     ensureJobStarted(existing);
@@ -494,6 +512,8 @@ export const requestFullCatalogSync = async (): Promise<SyncJobStatus> => {
 };
 
 export const getSyncJobStatus = async (id: string): Promise<SyncJobStatus | undefined> => {
+  ensureDatabaseConnection();
+
   const job = await prisma.catalogSyncJob.findUnique({ where: { id } });
   if (!job) return undefined;
   ensureJobStarted(job);
@@ -501,6 +521,8 @@ export const getSyncJobStatus = async (id: string): Promise<SyncJobStatus | unde
 };
 
 export const getActiveSyncJob = async (): Promise<SyncJobStatus | null> => {
+  ensureDatabaseConnection();
+
   const job = await findLatestActiveJob();
   if (!job) return null;
   ensureJobStarted(job);
@@ -508,6 +530,8 @@ export const getActiveSyncJob = async (): Promise<SyncJobStatus | null> => {
 };
 
 export const listSyncJobs = async (): Promise<SyncJobStatus[]> => {
+  ensureDatabaseConnection();
+
   const jobs = await prisma.catalogSyncJob.findMany({
     orderBy: { createdAt: "desc" },
     take: 20,
