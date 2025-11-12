@@ -9,6 +9,7 @@ import { STEAM_MAX_AUTO_LIMIT, STEAM_PAGE_SIZE } from "../../config";
 import { baseFromMarketHash, parseMarketHashExterior } from "../skins/service";
 import { getSkinFloatRange, type SkinFloatRange } from "../tradeups/floatRanges";
 import { prisma } from "../../database/client";
+import { ensureDatabaseConnection, hasDatabaseConnection } from "../../database/env";
 import { markCatalogReady } from "../../database/status";
 import { COLLECTIONS_WITH_FLOAT } from "../../../../data/CollectionsWithFloat";
 
@@ -53,17 +54,6 @@ export interface CatalogSyncJobData {
 }
 
 type CatalogSyncJobRecord = Prisma.CatalogSyncJobGetPayload<true>;
-
-const hasDatabaseConnection = () => {
-  const url = process.env.DATABASE_URL;
-  return typeof url === "string" && url.trim().length > 0;
-};
-
-const ensureDatabaseConnection = () => {
-  if (!hasDatabaseConnection()) {
-    throw new Error("DATABASE_URL environment variable is not configured");
-  }
-};
 
 const rarityOrder = Object.keys(RARITY_TO_TAG) as (keyof typeof RARITY_TO_TAG)[];
 
