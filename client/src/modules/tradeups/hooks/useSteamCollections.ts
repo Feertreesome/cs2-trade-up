@@ -2,7 +2,7 @@ import React from "react";
 import {
   fetchSteamCollections,
   type SteamCollectionSummary,
-} from "../../services/api";
+} from "../services/api";
 
 /**
  * Отвечает за загрузку списка коллекций из Steam и предоставляет быстрые словари по тегу/ID.

@@ -1,4 +1,4 @@
-import { baseFromMarketHash } from "../skins/service";
+import { baseFromMarketHash } from "../shared/itemNames";
 
 interface RemoteSkin {
   name?: string | null;

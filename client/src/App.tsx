@@ -1,6 +1,4 @@
 import React from "react";
-import SkinsBrowser from "./modules/skins";
-import TradeupBuilder from "./modules/tradeups";
 import CollectionAnalyzer from "./modules/collections";
 import {
   fetchCollectionsSyncStatus,
@@ -9,9 +7,6 @@ import {
 } from "./modules/tradeups/services/api";
 
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = React.useState<"browser" | "tradeup" | "collections">(
-    "browser",
-  );
   const [syncOverview, setSyncOverview] = React.useState<{
     active: SyncJobStatus | null;
     jobs: SyncJobStatus[];
@@ -32,6 +27,10 @@ const App: React.FC = () => {
     }
   }, []);
 
+  React.useEffect(() => {
+    updateSyncOverview().catch(() => undefined);
+  }, [updateSyncOverview]);
+
   const handleStartSync = React.useCallback(async () => {
     setSyncLoading(true);
     setSyncMessage(null);
@@ -47,19 +46,12 @@ const App: React.FC = () => {
     }
   }, []);
 
-  const handleCheckSyncStatus = React.useCallback(async () => {
-    await updateSyncOverview();
-  }, [updateSyncOverview]);
-
   const renderActiveSync = () => {
-    if (!syncOverview) {
-      return null;
-    }
-    const { active } = syncOverview;
-    if (!active) {
+    if (!syncOverview?.active) {
       return <div className="text-secondary small">No active sync jobs.</div>;
     }
 
+    const { active } = syncOverview;
     const progress = active.progress;
     const progressText =
       progress.totalCollections > 0
@@ -109,7 +101,7 @@ const App: React.FC = () => {
           <button
             type="button"
             className="btn btn-outline-secondary btn-sm"
-            onClick={handleCheckSyncStatus}
+            onClick={updateSyncOverview}
             disabled={syncLoading}
           >
             Check sync status
@@ -130,30 +122,7 @@ const App: React.FC = () => {
           )}
         </div>
       </div>
-      <ul className="nav nav-tabs mb-3">
-        {[
-          { id: "browser" as const, label: "Market Browser" },
-          { id: "tradeup" as const, label: "Trade-Up Calculator" },
-          { id: "collections" as const, label: "Анализ коллекций" },
-        ].map((tab) => (
-          <li key={tab.id} className="nav-item">
-            <button
-              className={`nav-link ${activeTab === tab.id ? "active" : ""}`}
-              type="button"
-              onClick={() => setActiveTab(tab.id)}
-            >
-              {tab.label}
-            </button>
-          </li>
-        ))}
-      </ul>
-      {activeTab === "tradeup" ? (
-        <TradeupBuilder />
-      ) : activeTab === "collections" ? (
-        <CollectionAnalyzer />
-      ) : (
-        <SkinsBrowser />
-      )}
+      <CollectionAnalyzer />
     </div>
   );
 };

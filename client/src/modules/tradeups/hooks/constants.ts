@@ -1,4 +1,4 @@
-import type { Exterior } from "../../skins/services/types";
+import type { Exterior } from "../types";
 
 export const EXTERIOR_FLOAT_RANGES: Record<
   Exterior,

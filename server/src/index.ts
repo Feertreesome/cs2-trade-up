@@ -1,20 +1,18 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
-import { createSkinsRouter } from "./modules/skins";
 import { createTradeupsRouter, warmTradeupCatalog } from "./modules/tradeups";
 import { getPriceUSD } from "./modules/steam/repo";
 
 /**
- * Точка входа API: здесь только то, что нужно SkinsBrowserComponent.
- * Включает JSON-парсер и CORS, монтирует /api/skins и батч для цен.
+ * Точка входа API: предоставляет только то, что требуется для анализа коллекций
+ * и trade-up расчётов. Включает JSON-парсер и CORS, монтирует /api/tradeups и
+ * батч-роут для цен.
  */
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "128kb" }));
 
-// Основной модуль с /api/skins*
-app.use("/api/skins", createSkinsRouter());
 app.use("/api/tradeups", createTradeupsRouter());
 
 // Подготавливаем справочники trade-up каталога при старте сервера.

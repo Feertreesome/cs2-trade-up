@@ -22,7 +22,7 @@ import {
   baseFromMarketHash,
   parseMarketHashExterior,
   type Exterior,
-} from "../skins/service";
+} from "../shared/itemNames";
 import { getSkinFloatRange, type SkinFloatRange } from "./floatRanges";
 import {
   getCollectionSummariesFromDb,

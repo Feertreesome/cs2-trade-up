@@ -10,7 +10,7 @@ import type {
   InputRarity,
 } from "../modules/tradeups/types";
 import { TARGET_RARITIES } from "../modules/tradeups/types";
-import { baseFromMarketHash } from "../modules/skins/service";
+import { baseFromMarketHash } from "../modules/shared/itemNames";
 
 const normalizeRarity = (rarity: string) => rarity.trim();
 
