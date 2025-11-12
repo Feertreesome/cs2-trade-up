@@ -20,7 +20,6 @@ export const isCatalogReady = async (): Promise<boolean> => {
   }
 
   if (!hasDatabaseConnection()) {
-    console.warn("Skipping catalog readiness check because DATABASE_URL is not set.");
     cache = { ready: false, checkedAt: now };
     return false;
   }
