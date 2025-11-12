@@ -447,7 +447,6 @@ const findLatestActiveJob = async (): Promise<CatalogSyncJobRecord | null> =>
 
 const resumeInterruptedJob = async () => {
   if (!hasDatabaseConnection()) {
-    console.warn("Skipping catalog sync job resume because DATABASE_URL is not set.");
     return;
   }
 
