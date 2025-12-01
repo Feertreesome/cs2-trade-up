@@ -6,21 +6,21 @@
     "schema": "./prisma/schema.prisma"
   },
   "scripts": {
+    "predev": "npm run prisma:generate",
     "dev": "ts-node --project tsconfig.json src/index.ts",
+    "prebuild": "npm run prisma:generate",
     "build": "tsc -p tsconfig.json",
+    "prestart": "npm run prisma:generate",
     "start": "node dist/index.js",
     "prisma:generate": "cross-env PRISMA_ENGINES_CHECKSUM_IGNORE_MISSING=1 prisma generate",
-    "prisma:migrate": "cross-env PRISMA_ENGINES_CHECKSUM_IGNORE_MISSING=1 prisma migrate deploy",
-    "worker": "ts-node --project tsconfig.json src/worker.ts"
+    "prisma:migrate": "cross-env PRISMA_ENGINES_CHECKSUM_IGNORE_MISSING=1 prisma migrate deploy"
   },
   "dependencies": {
     "@prisma/client": "^5.16.2",
     "axios": "^1.7.3",
-    "bullmq": "^5.12.2",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
-    "ioredis": "^5.4.1",
     "lru-cache": "^11.0.1"
   },
   "devDependencies": {

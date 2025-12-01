@@ -3,11 +3,13 @@
 ########################
 # Builder
 ########################
-FROM node:20-alpine AS builder
+FROM node:20 AS builder
 WORKDIR /app
 
 # OpenSSL до npm ci, чтобы Prisma подтянула правильные бинарники
-RUN apk add --no-cache libssl3 openssl
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends openssl ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
 
 COPY package.json package-lock.json ./
 COPY server/package.json ./server/package.json
@@ -24,14 +26,16 @@ RUN npm run -w cs2-tradeup-ev-server build
 ########################
 # Runtime
 ########################
-FROM node:20-alpine AS runtime
+FROM node:20 AS runtime
 WORKDIR /app
 
 ENV NODE_ENV=production \
     PRISMA_ENGINES_CHECKSUM_IGNORE_MISSING=1 \
     DATABASE_URL="postgresql://postgres:postgres@localhost:5432/postgres"
 
-RUN apk add --no-cache libssl3 openssl
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends openssl ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
 
 # то, что нужно для старта
 COPY package.json ./

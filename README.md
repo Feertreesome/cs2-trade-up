@@ -13,7 +13,7 @@
 cp server/.env.example server/.env
 ```
 
-`DATABASE_URL` и `REDIS_URL` нужны как серверу, так и Prisma. Переменная `PRISMA_ENGINES_CHECKSUM_IGNORE_MISSING`
+`DATABASE_URL` нужна как серверу, так и Prisma. Переменная `PRISMA_ENGINES_CHECKSUM_IGNORE_MISSING`
 позволяет генерировать Prisma Client даже в окружениях без доступа к официальному CDN (например, внутри Docker на
 машинах без OpenSSL 1.1).
 
@@ -29,12 +29,12 @@ npm --workspace=cs2-tradeup-ev-server run prisma:generate
 
 ## Быстрый старт через Docker Compose
 
-1. Соберите и запустите весь стек (PostgreSQL, Redis, API и воркер) одной командой:
+1. Соберите и запустите весь стек (PostgreSQL и API) одной командой:
    ```bash
    docker compose up --build
    ```
-   Dockerfile устанавливает зависимости, собирает сервер и автоматически запускает миграции перед стартом API и
-   воркера. Повторные запуски можно выполнять без флага `--build`, если код не менялся.
+   Dockerfile устанавливает зависимости, собирает сервер и автоматически запускает миграции перед стартом API.
+   Повторные запуски можно выполнять без флага `--build`, если код не менялся.
 2. После того как сервисы стартовали, инициируйте синхронизацию каталога:
    ```bash
    curl -X POST http://localhost:5174/api/tradeups/collections/sync
@@ -44,8 +44,8 @@ npm --workspace=cs2-tradeup-ev-server run prisma:generate
 
 ## Локальная разработка без Docker
 
-1. Поднимите PostgreSQL и Redis (можно через локальные сервисы или Docker). Убедитесь, что `DATABASE_URL` и `REDIS_URL`
-   указывают на поднятые инстансы.
+1. Поднимите PostgreSQL (локально или через Docker). Убедитесь, что `DATABASE_URL`
+   указывает на поднятую базу данных.
 2. Выполните команды установки из раздела «Установка зависимостей».
 3. Примените миграции:
    ```bash
@@ -56,11 +56,8 @@ npm --workspace=cs2-tradeup-ev-server run prisma:generate
    npm run dev
    ```
    Клиент откроется на `http://localhost:5173`, API будет доступен на `http://localhost:5174` (через прокси `/api`).
-5. В отдельном терминале запустите воркер очереди:
-   ```bash
-   npm --workspace=cs2-tradeup-ev-server run worker
-   ```
-6. Инициируйте синхронизацию каталога через `POST /api/tradeups/collections/sync`, как и в Docker‑сценарии.
+5. Инициируйте синхронизацию каталога через `POST /api/tradeups/collections/sync`, как и в Docker‑сценарии —
+   фоновые задачи теперь выполняются внутри процесса API.
 
 ## Работа с данными
 

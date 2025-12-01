@@ -3,7 +3,7 @@
 
 generator client {
   provider      = "prisma-client-js"
-  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+  binaryTargets = ["native"]
 }
 
 datasource db {
@@ -66,5 +66,28 @@ model PriceSnapshot {
   skin      Skin     @relation(fields: [skinId], references: [id], onDelete: Cascade)
   priceUsd  Float?   @map("price_usd")
   takenAt   DateTime @default(now()) @map("taken_at")
+}
+
+
+enum CatalogSyncJobStatus {
+  pending
+  running
+  completed
+  failed
+}
+
+model CatalogSyncJob {
+  id          String               @id @default(cuid())
+  status      CatalogSyncJobStatus @default(pending)
+  triggeredBy String?              @map("triggered_by")
+  startedAt   DateTime?            @map("started_at")
+  finishedAt  DateTime?            @map("finished_at")
+  error       String?
+  progress    Json?
+  payload     Json?
+  createdAt   DateTime             @default(now()) @map("created_at")
+  updatedAt   DateTime             @updatedAt @map("updated_at")
+
+  @@index([status, createdAt], map: "catalog_sync_job_status_created_at_idx")
 }
 

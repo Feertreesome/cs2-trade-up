@@ -1,4 +1,5 @@
 import { prisma } from "./client";
+import { hasDatabaseConnection } from "./env";
 
 interface StatusCache {
   ready: boolean;
@@ -16,6 +17,11 @@ export const isCatalogReady = async (): Promise<boolean> => {
   const now = Date.now();
   if (cache && now - cache.checkedAt < CACHE_TTL_MS) {
     return cache.ready;
+  }
+
+  if (!hasDatabaseConnection()) {
+    cache = { ready: false, checkedAt: now };
+    return false;
   }
 
   try {

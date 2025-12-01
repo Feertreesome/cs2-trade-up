@@ -1,5 +1,3 @@
-import type { Job, JobState } from "bullmq";
-import { Queue } from "bullmq";
 import type { Prisma } from "@prisma/client";
 import type { SteamCollectionTag, SearchItem } from "../steam/repo";
 import {
@@ -11,9 +9,9 @@ import { STEAM_MAX_AUTO_LIMIT, STEAM_PAGE_SIZE } from "../../config";
 import { baseFromMarketHash, parseMarketHashExterior } from "../skins/service";
 import { getSkinFloatRange, type SkinFloatRange } from "../tradeups/floatRanges";
 import { prisma } from "../../database/client";
+import { ensureDatabaseConnection, hasDatabaseConnection } from "../../database/env";
 import { markCatalogReady } from "../../database/status";
 import { COLLECTIONS_WITH_FLOAT } from "../../../../data/CollectionsWithFloat";
-import { redisConnection } from "../../queues/connection";
 
 interface PersistedSkin {
   marketHashName: string;
@@ -51,46 +49,11 @@ export interface SyncJobStatus {
   progress: SyncJobProgress;
 }
 
-export type CatalogSyncJobName = "full-catalog-sync";
-
 export interface CatalogSyncJobData {
   triggeredBy?: "manual" | "schedule";
 }
 
-export type CatalogSyncJob = Job<CatalogSyncJobData, unknown, CatalogSyncJobName>;
-
-const queueName = process.env.CATALOG_SYNC_QUEUE ?? "catalog-sync";
-
-const QUEUE_RATE_LIMIT = {
-  max: 1,
-  duration: 1100,
-} as const;
-
-export const catalogSyncQueue = new Queue<CatalogSyncJobData, unknown, CatalogSyncJobName>(queueName, {
-  connection: redisConnection,
-  defaultJobOptions: {
-    attempts: 8,
-    backoff: {
-      type: "exponential",
-      delay: 2000,
-    },
-    removeOnComplete: {
-      age: 60 * 60 * 24,
-      count: 10,
-    },
-    removeOnFail: {
-      age: 60 * 60 * 24 * 3,
-      count: 25,
-    },
-  },
-});
-
-void catalogSyncQueue
-  .waitUntilReady()
-  .then(() => catalogSyncQueue.setGlobalRateLimit(QUEUE_RATE_LIMIT.max, QUEUE_RATE_LIMIT.duration))
-  .catch((error) => {
-    console.error("Failed to set catalog sync queue rate limit", error);
-  });
+type CatalogSyncJobRecord = Prisma.CatalogSyncJobGetPayload<true>;
 
 const rarityOrder = Object.keys(RARITY_TO_TAG) as (keyof typeof RARITY_TO_TAG)[];
 
@@ -293,16 +256,9 @@ const syncCollection = async (
 };
 
 
-const mapJobState = (state: JobState | "unknown"): SyncJobStatus["status"] => {
-  if (state === "completed") return "completed";
-  if (state === "failed") return "failed";
-  if (state === "active") return "running";
-  return "pending";
-};
-
-const normalizeProgress = (value: unknown): SyncJobProgress => {
+const normalizeProgress = (value: Prisma.JsonValue | Prisma.InputJsonValue | null | undefined): SyncJobProgress => {
   const base = initialProgress();
-  if (!value || typeof value !== "object") {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
     return base;
   }
 
@@ -329,89 +285,248 @@ const normalizeProgress = (value: unknown): SyncJobProgress => {
   };
 };
 
-const toSyncJobStatus = async (job: CatalogSyncJob): Promise<SyncJobStatus> => {
-  const state = await job.getState().catch(() => "unknown" as const);
+const toSyncJobStatus = (job: CatalogSyncJobRecord): SyncJobStatus => {
   const progress = normalizeProgress(job.progress);
-  const startedAt = job.processedOn ?? job.timestamp ?? Date.now();
 
   return {
-    id: String(job.id ?? ""),
-    status: mapJobState(state),
-    startedAt: new Date(startedAt).toISOString(),
-    finishedAt: job.finishedOn ? new Date(job.finishedOn).toISOString() : undefined,
-    error: job.failedReason || undefined,
+    id: job.id,
+    status: job.status as SyncJobStatus["status"],
+    startedAt: (job.startedAt ?? job.createdAt).toISOString(),
+    finishedAt: job.finishedAt?.toISOString(),
+    error: job.error ?? undefined,
     progress,
   };
 };
 
-export const processCatalogSyncJob = async (job: CatalogSyncJob): Promise<void> => {
+const serializeJobPayload = (data: CatalogSyncJobData): Prisma.InputJsonValue => {
+  const payload: Prisma.JsonObject = {};
+  if (data.triggeredBy) {
+    payload.triggeredBy = data.triggeredBy;
+  }
+  return payload;
+};
+
+const toJsonProgress = (value: SyncJobProgress): Prisma.InputJsonValue => {
+  const payload: Prisma.JsonObject = {
+    totalCollections: value.totalCollections,
+    syncedCollections: value.syncedCollections,
+  };
+  if (value.currentCollectionTag !== undefined) payload.currentCollectionTag = value.currentCollectionTag;
+  if (value.currentCollectionName !== undefined) payload.currentCollectionName = value.currentCollectionName;
+  if (value.currentRarity !== undefined) payload.currentRarity = value.currentRarity;
+  return payload;
+};
+
+const parseJobPayload = (value: Prisma.JsonValue | Prisma.InputJsonValue | null | undefined): CatalogSyncJobData => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+
+  const payload = value as { triggeredBy?: unknown };
+  const triggeredBy = payload.triggeredBy;
+  return {
+    triggeredBy:
+      triggeredBy === "manual" || triggeredBy === "schedule"
+        ? (triggeredBy as "manual" | "schedule")
+        : undefined,
+  };
+};
+
+const toErrorString = (error: unknown): string => {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+};
+
+let activeJobId: string | null = null;
+
+const runCatalogSyncJob = async (jobId: string, payload: CatalogSyncJobData): Promise<void> => {
   const floatCache = new Map<string, SkinFloatRange | null>();
   const progress = initialProgress();
 
   const pushProgress = async () => {
-    await job.updateProgress({ ...progress });
+    await prisma.catalogSyncJob.update({
+      where: { id: jobId },
+      data: { progress: toJsonProgress(progress) },
+    });
   };
 
+  await prisma.catalogSyncJob.update({
+    where: { id: jobId },
+    data: {
+      status: "running",
+      startedAt: new Date(),
+      finishedAt: null,
+      error: null,
+      progress: toJsonProgress(progress),
+      payload: serializeJobPayload(payload),
+    },
+  });
+
   await pushProgress();
 
-  const tags = await fetchCollectionTags();
-  progress.totalCollections = tags.length;
-  await pushProgress();
+  try {
+    const tags = await fetchCollectionTags();
+    progress.totalCollections = tags.length;
+    await pushProgress();
 
-  for (const tag of tags) {
-    progress.currentCollectionTag = tag.tag;
-    progress.currentCollectionName = tag.name;
+    for (const tag of tags) {
+      progress.currentCollectionTag = tag.tag;
+      progress.currentCollectionName = tag.name;
+      await pushProgress();
+      await syncCollection(tag, progress, floatCache, pushProgress);
+      progress.syncedCollections += 1;
+      await pushProgress();
+    }
+
+    progress.currentCollectionTag = undefined;
+    progress.currentCollectionName = undefined;
+    progress.currentRarity = undefined;
     await pushProgress();
-    await syncCollection(tag, progress, floatCache, pushProgress);
-    progress.syncedCollections += 1;
-    await pushProgress();
+
+    await prisma.catalogSyncJob.update({
+      where: { id: jobId },
+      data: {
+        status: "completed",
+        finishedAt: new Date(),
+        progress: toJsonProgress(progress),
+      },
+    });
+
+    markCatalogReady();
+  } catch (error) {
+    await prisma.catalogSyncJob.update({
+      where: { id: jobId },
+      data: {
+        status: "failed",
+        finishedAt: new Date(),
+        error: toErrorString(error),
+        progress: toJsonProgress(progress),
+      },
+    });
+
+    throw error;
+  }
+};
+
+const startCatalogSyncJob = (jobId: string, payload: CatalogSyncJobData) => {
+  if (activeJobId === jobId) {
+    return;
   }
 
-  progress.currentCollectionTag = undefined;
-  progress.currentCollectionName = undefined;
-  progress.currentRarity = undefined;
-  await pushProgress();
+  activeJobId = jobId;
 
-  markCatalogReady();
+  void runCatalogSyncJob(jobId, payload)
+    .catch((error) => {
+      console.error("Catalog sync job failed", { jobId, error });
+    })
+    .finally(() => {
+      if (activeJobId === jobId) {
+        activeJobId = null;
+      }
+    });
 };
 
-const getExistingJob = async (): Promise<CatalogSyncJob | null> => {
-  const [active] = await catalogSyncQueue.getJobs(["active"], 0, 0, false);
-  if (active) return active;
-  const [waiting] = await catalogSyncQueue.getJobs(["waiting", "delayed"], 0, 0, false);
-  if (waiting) return waiting;
-  return null;
+const ensureJobStarted = (job: CatalogSyncJobRecord | null | undefined) => {
+  if (!job) return;
+  if (job.status !== "pending" && job.status !== "running") return;
+  if (activeJobId === job.id) return;
+  startCatalogSyncJob(job.id, parseJobPayload(job.payload));
 };
+
+const findLatestActiveJob = async (): Promise<CatalogSyncJobRecord | null> =>
+  prisma.catalogSyncJob.findFirst({
+    where: { status: { in: ["pending", "running"] } },
+    orderBy: { createdAt: "desc" },
+  });
+
+const resumeInterruptedJob = async () => {
+  if (!hasDatabaseConnection()) {
+    return;
+  }
+
+  const latest = await findLatestActiveJob();
+  if (!latest) return;
+
+  if (latest.status === "running") {
+    const reset = await prisma.catalogSyncJob.update({
+      where: { id: latest.id },
+      data: {
+        status: "pending",
+        startedAt: null,
+        finishedAt: null,
+        error: "Job was restarted after interruption",
+        progress: toJsonProgress(initialProgress()),
+      },
+    });
+    ensureJobStarted(reset);
+    return;
+  }
+
+  ensureJobStarted(latest);
+};
+
+void resumeInterruptedJob().catch((error) => {
+  console.error("Failed to resume catalog sync job", error);
+});
 
 export const requestFullCatalogSync = async (): Promise<SyncJobStatus> => {
-  const existing = await getExistingJob();
+  ensureDatabaseConnection();
+
+  const existing = await findLatestActiveJob();
   if (existing) {
+    ensureJobStarted(existing);
     return toSyncJobStatus(existing);
   }
 
-  const job = await catalogSyncQueue.add("full-catalog-sync", { triggeredBy: "manual" });
+  const payload: CatalogSyncJobData = { triggeredBy: "manual" };
+
+  const job = await prisma.catalogSyncJob.create({
+    data: {
+      status: "pending",
+      triggeredBy: payload.triggeredBy ?? null,
+      progress: toJsonProgress(initialProgress()),
+      payload: serializeJobPayload(payload),
+    },
+  });
+
+  ensureJobStarted(job);
+
   return toSyncJobStatus(job);
 };
 
 export const getSyncJobStatus = async (id: string): Promise<SyncJobStatus | undefined> => {
-  const job = await catalogSyncQueue.getJob(id);
-  return job ? toSyncJobStatus(job) : undefined;
+  ensureDatabaseConnection();
+
+  const job = await prisma.catalogSyncJob.findUnique({ where: { id } });
+  if (!job) return undefined;
+  ensureJobStarted(job);
+  return toSyncJobStatus(job);
 };
 
 export const getActiveSyncJob = async (): Promise<SyncJobStatus | null> => {
-  const [active] = await catalogSyncQueue.getJobs(["active"], 0, 0, false);
-  if (!active) return null;
-  return toSyncJobStatus(active);
+  ensureDatabaseConnection();
+
+  const job = await findLatestActiveJob();
+  if (!job) return null;
+  ensureJobStarted(job);
+  return toSyncJobStatus(job);
 };
 
 export const listSyncJobs = async (): Promise<SyncJobStatus[]> => {
-  const jobs = await catalogSyncQueue.getJobs(
-    ["active", "waiting", "delayed", "completed", "failed"],
-    0,
-    20,
-    false,
-  );
-  const statuses = await Promise.all(jobs.map((job) => toSyncJobStatus(job)));
-  const unique = new Map(statuses.map((status) => [status.id, status]));
-  return Array.from(unique.values()).sort((a, b) => (a.startedAt < b.startedAt ? 1 : -1));
+  ensureDatabaseConnection();
+
+  const jobs = await prisma.catalogSyncJob.findMany({
+    orderBy: { createdAt: "desc" },
+    take: 20,
+  });
+
+  ensureJobStarted(jobs.find((job) => job.status === "pending" || job.status === "running"));
+
+  return jobs.map((job) => toSyncJobStatus(job));
 };

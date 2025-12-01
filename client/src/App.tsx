@@ -1,16 +1,16 @@
-import React from "react";
-import SkinsBrowser from "./modules/skins";
-import TradeupBuilder from "./modules/tradeups";
-import CollectionAnalyzer from "./modules/collections";
+import React from 'react';
+import CollectionAnalyzer from './modules/collections';
+import SkinsBrowser from './modules/skins';
+import TradeupBuilder from './modules/tradeups';
 import {
   fetchCollectionsSyncStatus,
   requestCollectionsSync,
   type SyncJobStatus,
-} from "./modules/tradeups/services/api";
+} from './modules/tradeups/services/api';
 
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = React.useState<"browser" | "tradeup" | "collections">(
-    "browser",
+  const [activeTab, setActiveTab] = React.useState<'browser' | 'tradeup' | 'collections'>(
+    'browser',
   );
   const [syncOverview, setSyncOverview] = React.useState<{
     active: SyncJobStatus | null;
@@ -70,8 +70,8 @@ const App: React.FC = () => {
       <div className="small">
         Active job #{active.id}: {active.status}
         {` • ${progressText} collections`}
-        {progress.currentCollectionName ? ` • ${progress.currentCollectionName}` : ""}
-        {progress.currentRarity ? ` (${progress.currentRarity})` : ""}
+        {progress.currentCollectionName ? ` • ${progress.currentCollectionName}` : ''}
+        {progress.currentRarity ? ` (${progress.currentRarity})` : ''}
       </div>
     );
   };
@@ -87,7 +87,7 @@ const App: React.FC = () => {
     }
     return (
       <div className="text-secondary small">
-        Recent jobs: {recent.map((job) => `#${job.id} ${job.status}`).join(", ")}
+        Recent jobs: {recent.map((job) => `#${job.id} ${job.status}`).join(', ')}
       </div>
     );
   };
@@ -132,13 +132,13 @@ const App: React.FC = () => {
       </div>
       <ul className="nav nav-tabs mb-3">
         {[
-          { id: "browser" as const, label: "Market Browser" },
-          { id: "tradeup" as const, label: "Trade-Up Calculator" },
-          { id: "collections" as const, label: "Анализ коллекций" },
+          { id: 'browser' as const, label: 'Market Browser' },
+          { id: 'tradeup' as const, label: 'Trade-Up Calculator' },
+          { id: 'collections' as const, label: 'Анализ коллекций' },
         ].map((tab) => (
           <li key={tab.id} className="nav-item">
             <button
-              className={`nav-link ${activeTab === tab.id ? "active" : ""}`}
+              className={`nav-link ${activeTab === tab.id ? 'active' : ''}`}
               type="button"
               onClick={() => setActiveTab(tab.id)}
             >
@@ -147,9 +147,9 @@ const App: React.FC = () => {
           </li>
         ))}
       </ul>
-      {activeTab === "tradeup" ? (
+      {activeTab === 'tradeup' ? (
         <TradeupBuilder />
-      ) : activeTab === "collections" ? (
+      ) : activeTab === 'collections' ? (
         <CollectionAnalyzer />
       ) : (
         <SkinsBrowser />
