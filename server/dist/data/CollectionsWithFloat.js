@@ -1,0 +1,1969 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.rebuildCollectionFloatCaches = exports.CLASSIFIED_FLOAT_BY_BASENAME = exports.COVERT_FLOAT_BY_BASENAME = exports.COLLECTIONS_WITH_FLOAT_BY_NAME = exports.COLLECTIONS_WITH_FLOAT_MAP = exports.COLLECTIONS_WITH_FLOAT = void 0;
+exports.COLLECTIONS_WITH_FLOAT = [
+    {
+        id: "limited-edition-item",
+        name: "Limited Edition Item",
+        covert: [],
+        classified: [
+            {
+                baseName: "Desert Eagle | Heat Treated",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+            {
+                baseName: "M4A1-S | Solitude",
+                minFloat: 0,
+                maxFloat: 0.7,
+            },
+        ],
+    },
+    {
+        id: "the-2018-inferno-collection",
+        name: "The 2018 Inferno Collection",
+        covert: [],
+        classified: [
+            {
+                baseName: "Dual Berettas | Twin Turbo",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+            {
+                baseName: "SG 553 | Integrale",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+        ],
+    },
+    {
+        id: "the-2018-nuke-collection",
+        name: "The 2018 Nuke Collection",
+        covert: [],
+        classified: [
+            {
+                baseName: "M4A1-S | Control Panel",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+            {
+                baseName: "Tec-9 | Remote Control",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+        ],
+    },
+    {
+        id: "the-2021-dust-2-collection",
+        name: "The 2021 Dust 2 Collection",
+        covert: [
+            {
+                baseName: "AK-47 | Gold Arabesque",
+                minFloat: 0,
+                maxFloat: 0.7,
+            },
+        ],
+        classified: [
+            {
+                baseName: "SSG 08 | Death Strike",
+                minFloat: 0,
+                maxFloat: 0.8,
+            },
+            {
+                baseName: "UMP-45 | Fade",
+                minFloat: 0,
+                maxFloat: 0.08,
+            },
+        ],
+    },
+    {
+        id: "the-2021-mirage-collection",
+        name: "The 2021 Mirage Collection",
+        covert: [
+            {
+                baseName: "AWP | Desert Hydra",
+                minFloat: 0,
+                maxFloat: 0.6,
+            },
+        ],
+        classified: [
+            {
+                baseName: "Desert Eagle | Fennec Fox",
+                minFloat: 0,
+                maxFloat: 0.8,
+            },
+            {
+                baseName: "MP5-SD | Oxide Oasis",
+                minFloat: 0,
+                maxFloat: 0.55,
+            },
+        ],
+    },
+    {
+        id: "the-2021-train-collection",
+        name: "The 2021 Train Collection",
+        covert: [
+            {
+                baseName: "Glock-18 | Gamma Doppler",
+                minFloat: 0,
+                maxFloat: 0.5,
+            },
+            {
+                baseName: "M4A4 | The Coalition",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+        ],
+        classified: [
+            {
+                baseName: "FAMAS | Meltdown",
+                minFloat: 0,
+                maxFloat: 0.4,
+            },
+            {
+                baseName: "MAC-10 | Propaganda",
+                minFloat: 0,
+                maxFloat: 0.62,
+            },
+            {
+                baseName: "USP-S | Whiteout",
+                minFloat: 0.06,
+                maxFloat: 0.8,
+            },
+        ],
+    },
+    {
+        id: "the-2021-vertigo-collection",
+        name: "The 2021 Vertigo Collection",
+        covert: [
+            {
+                baseName: "M4A1-S | Imminent Danger",
+                minFloat: 0,
+                maxFloat: 0.8,
+            },
+        ],
+        classified: [
+            {
+                baseName: "Five-SeveN | Fall Hazard",
+                minFloat: 0.01,
+                maxFloat: 0.52,
+            },
+            {
+                baseName: "SG 553 | Hazard Pay",
+                minFloat: 0,
+                maxFloat: 0.48,
+            },
+        ],
+    },
+    {
+        id: "the-ancient-collection",
+        name: "The Ancient Collection",
+        covert: [
+            {
+                baseName: "M4A1-S | Welcome to the Jungle",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+        ],
+        classified: [
+            {
+                baseName: "AK-47 | Panthera onca",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+            {
+                baseName: "P90 | Run and Hide",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+        ],
+    },
+    {
+        id: "the-anubis-collection",
+        name: "The Anubis Collection",
+        covert: [
+            {
+                baseName: "M4A4 | Eye of Horus",
+                minFloat: 0,
+                maxFloat: 0.7,
+            },
+        ],
+        classified: [
+            {
+                baseName: "FAMAS | Waters of Nephthys",
+                minFloat: 0,
+                maxFloat: 0.7,
+            },
+            {
+                baseName: "P250 | Apep's Curse",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+        ],
+    },
+    {
+        id: "the-arms-deal-2-collection",
+        name: "The Arms Deal 2 Collection",
+        covert: [
+            {
+                baseName: "SSG 08 | Blood in the Water",
+                minFloat: 0.06,
+                maxFloat: 0.2,
+            },
+        ],
+        classified: [
+            {
+                baseName: "P90 | Cold Blooded",
+                minFloat: 0,
+                maxFloat: 0.08,
+            },
+            {
+                baseName: "USP-S | Serum",
+                minFloat: 0,
+                maxFloat: 0.25,
+            },
+        ],
+    },
+    {
+        id: "the-arms-deal-3-collection",
+        name: "The Arms Deal 3 Collection",
+        covert: [
+            {
+                baseName: "CZ75-Auto | Victoria",
+                minFloat: 0,
+                maxFloat: 0.75,
+            },
+        ],
+        classified: [
+            {
+                baseName: "CZ75-Auto | The Fuschia Is Now",
+                minFloat: 0,
+                maxFloat: 0.4,
+            },
+            {
+                baseName: "P250 | Undertow",
+                minFloat: 0,
+                maxFloat: 0.2,
+            },
+        ],
+    },
+    {
+        id: "the-arms-deal-collection",
+        name: "The Arms Deal Collection",
+        covert: [
+            {
+                baseName: "AWP | Lightning Strike",
+                minFloat: 0,
+                maxFloat: 0.08,
+            },
+        ],
+        classified: [
+            {
+                baseName: "AK-47 | Case Hardened",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+            {
+                baseName: "Desert Eagle | Hypnotic",
+                minFloat: 0,
+                maxFloat: 0.08,
+            },
+        ],
+    },
+    {
+        id: "the-ascent-collection",
+        name: "The Ascent Collection",
+        covert: [],
+        classified: [
+            {
+                baseName: "M4A1-S | Stratosphere",
+                minFloat: 0,
+                maxFloat: 0.8,
+            },
+        ],
+    },
+    {
+        id: "the-baggage-collection",
+        name: "The Baggage Collection",
+        covert: [],
+        classified: [
+            {
+                baseName: "AK-47 | Jet Set",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+        ],
+    },
+    {
+        id: "the-bank-collection",
+        name: "The Bank Collection",
+        covert: [],
+        classified: [
+            {
+                baseName: "P250 | Franklin",
+                minFloat: 0,
+                maxFloat: 0.4,
+            },
+        ],
+    },
+    {
+        id: "the-boreal-collection",
+        name: "The Boreal Collection",
+        covert: [],
+        classified: [
+            {
+                baseName: "AWP | Green Energy",
+                minFloat: 0,
+                maxFloat: 0.75,
+            },
+        ],
+    },
+    {
+        id: "the-bravo-collection",
+        name: "The Bravo Collection",
+        covert: [
+            {
+                baseName: "AK-47 | Fire Serpent",
+                minFloat: 0.06,
+                maxFloat: 0.76,
+            },
+            {
+                baseName: "Desert Eagle | Golden Koi",
+                minFloat: 0,
+                maxFloat: 0.12,
+            },
+        ],
+        classified: [
+            {
+                baseName: "AWP | Graphite",
+                minFloat: 0,
+                maxFloat: 0.12,
+            },
+            {
+                baseName: "P2000 | Ocean Foam",
+                minFloat: 0,
+                maxFloat: 0.12,
+            },
+            {
+                baseName: "P90 | Emerald Dragon",
+                minFloat: 0.06,
+                maxFloat: 0.52,
+            },
+        ],
+    },
+    {
+        id: "the-breakout-collection",
+        name: "The Breakout Collection",
+        covert: [
+            {
+                baseName: "M4A1-S | Cyrex",
+                minFloat: 0,
+                maxFloat: 0.5,
+            },
+            {
+                baseName: "P90 | Asiimov",
+                minFloat: 0,
+                maxFloat: 0.92,
+            },
+        ],
+        classified: [
+            {
+                baseName: "Desert Eagle | Conspiracy",
+                minFloat: 0,
+                maxFloat: 0.3,
+            },
+            {
+                baseName: "Five-SeveN | Fowl Play",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+            {
+                baseName: "Glock-18 | Water Elemental",
+                minFloat: 0,
+                maxFloat: 0.7,
+            },
+        ],
+    },
+    {
+        id: "the-canals-collection",
+        name: "The Canals Collection",
+        covert: [
+            {
+                baseName: "AWP | The Prince",
+                minFloat: 0,
+                maxFloat: 0.6,
+            },
+        ],
+        classified: [
+            {
+                baseName: "MAG-7 | Cinquedea",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+        ],
+    },
+    {
+        id: "the-chop-shop-collection",
+        name: "The Chop Shop Collection",
+        covert: [],
+        classified: [
+            {
+                baseName: "Glock-18 | Twilight Galaxy",
+                minFloat: 0,
+                maxFloat: 0.2,
+            },
+            {
+                baseName: "M4A1-S | Hot Rod",
+                minFloat: 0,
+                maxFloat: 0.08,
+            },
+        ],
+    },
+    {
+        id: "the-chroma-2-collection",
+        name: "The Chroma 2 Collection",
+        covert: [
+            {
+                baseName: "M4A1-S | Hyper Beast",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+            {
+                baseName: "MAC-10 | Neon Rider",
+                minFloat: 0,
+                maxFloat: 0.45,
+            },
+        ],
+        classified: [
+            {
+                baseName: "FAMAS | Djinn",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+            {
+                baseName: "Five-SeveN | Monkey Business",
+                minFloat: 0.1,
+                maxFloat: 0.9,
+            },
+            {
+                baseName: "Galil AR | Eco",
+                minFloat: 0.1,
+                maxFloat: 0.85,
+            },
+        ],
+    },
+    {
+        id: "the-chroma-3-collection",
+        name: "The Chroma 3 Collection",
+        covert: [
+            {
+                baseName: "M4A1-S | Chantico's Fire",
+                minFloat: 0,
+                maxFloat: 0.99,
+            },
+            {
+                baseName: "PP-Bizon | Judgement of Anubis",
+                minFloat: 0,
+                maxFloat: 0.5,
+            },
+        ],
+        classified: [
+            {
+                baseName: "AUG | Fleet Flock",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+            {
+                baseName: "P250 | Asiimov",
+                minFloat: 0.1,
+                maxFloat: 1,
+            },
+            {
+                baseName: "UMP-45 | Primal Saber",
+                minFloat: 0,
+                maxFloat: 0.77,
+            },
+        ],
+    },
+    {
+        id: "the-chroma-collection",
+        name: "The Chroma Collection",
+        covert: [
+            {
+                baseName: "AWP | Man-o'-war",
+                minFloat: 0.1,
+                maxFloat: 0.2,
+            },
+            {
+                baseName: "Galil AR | Chatterbox",
+                minFloat: 0.35,
+                maxFloat: 0.85,
+            },
+        ],
+        classified: [
+            {
+                baseName: "AK-47 | Cartel",
+                minFloat: 0,
+                maxFloat: 0.75,
+            },
+            {
+                baseName: "M4A4 | 龍王 (Dragon King)",
+                minFloat: 0,
+                maxFloat: 0.75,
+            },
+            {
+                baseName: "P250 | Muertos",
+                minFloat: 0,
+                maxFloat: 0.6,
+            },
+        ],
+    },
+    {
+        id: "the-clutch-collection",
+        name: "The Clutch Collection",
+        covert: [
+            {
+                baseName: "M4A4 | Neo-Noir",
+                minFloat: 0,
+                maxFloat: 0.9,
+            },
+            {
+                baseName: "MP7 | Bloodsport",
+                minFloat: 0,
+                maxFloat: 0.65,
+            },
+        ],
+        classified: [
+            {
+                baseName: "AUG | Stymphalian",
+                minFloat: 0,
+                maxFloat: 0.63,
+            },
+            {
+                baseName: "AWP | Mortis",
+                minFloat: 0,
+                maxFloat: 0.64,
+            },
+            {
+                baseName: "USP-S | Cortex",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+        ],
+    },
+    {
+        id: "the-cobblestone-collection",
+        name: "The Cobblestone Collection",
+        covert: [
+            {
+                baseName: "AWP | Dragon Lore",
+                minFloat: 0,
+                maxFloat: 0.7,
+            },
+        ],
+        classified: [
+            {
+                baseName: "M4A1-S | Knight",
+                minFloat: 0,
+                maxFloat: 0.1,
+            },
+        ],
+    },
+    {
+        id: "the-control-collection",
+        name: "The Control Collection",
+        covert: [
+            {
+                baseName: "AWP | Fade",
+                minFloat: 0,
+                maxFloat: 0.08,
+            },
+        ],
+        classified: [
+            {
+                baseName: "M4A1-S | Blue Phosphor",
+                minFloat: 0,
+                maxFloat: 0.08,
+            },
+            {
+                baseName: "USP-S | Target Acquired",
+                minFloat: 0,
+                maxFloat: 0.5,
+            },
+        ],
+    },
+    {
+        id: "the-cs20-collection",
+        name: "The CS20 Collection",
+        covert: [
+            {
+                baseName: "AWP | Wildfire",
+                minFloat: 0.01,
+                maxFloat: 0.7,
+            },
+            {
+                baseName: "FAMAS | Commemoration",
+                minFloat: 0,
+                maxFloat: 0.5,
+            },
+        ],
+        classified: [
+            {
+                baseName: "AUG | Death by Puppy",
+                minFloat: 0,
+                maxFloat: 0.4,
+            },
+            {
+                baseName: "MP9 | Hydra",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+            {
+                baseName: "P90 | Nostalgia",
+                minFloat: 0,
+                maxFloat: 0.57,
+            },
+        ],
+    },
+    {
+        id: "the-danger-zone-collection",
+        name: "The Danger Zone Collection",
+        covert: [
+            {
+                baseName: "AK-47 | Asiimov",
+                minFloat: 0.05,
+                maxFloat: 0.7,
+            },
+            {
+                baseName: "AWP | Neo-Noir",
+                minFloat: 0,
+                maxFloat: 0.5,
+            },
+        ],
+        classified: [
+            {
+                baseName: "Desert Eagle | Mecha Industries",
+                minFloat: 0,
+                maxFloat: 0.6,
+            },
+            {
+                baseName: "MP5-SD | Phosphor",
+                minFloat: 0,
+                maxFloat: 0.8,
+            },
+            {
+                baseName: "UMP-45 | Momentum",
+                minFloat: 0,
+                maxFloat: 0.5,
+            },
+        ],
+    },
+    {
+        id: "the-dreams-nightmares-collection",
+        name: "The Dreams & Nightmares Collection",
+        covert: [
+            {
+                baseName: "AK-47 | Nightwish",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+            {
+                baseName: "MP9 | Starlight Protector",
+                minFloat: 0,
+                maxFloat: 0.8,
+            },
+        ],
+        classified: [
+            {
+                baseName: "Dual Berettas | Melondrama",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+            {
+                baseName: "FAMAS | Rapid Eye Movement",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+            {
+                baseName: "MP7 | Abyssal Apparition",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+        ],
+    },
+    {
+        id: "the-dust-2-collection",
+        name: "The Dust 2 Collection",
+        covert: [],
+        classified: [
+            {
+                baseName: "R8 Revolver | Amber Fade",
+                minFloat: 0,
+                maxFloat: 0.4,
+            },
+        ],
+    },
+    {
+        id: "the-esports-2013-collection",
+        name: "The eSports 2013 Collection",
+        covert: [
+            {
+                baseName: "P90 | Death by Kitty",
+                minFloat: 0.08,
+                maxFloat: 0.32,
+            },
+        ],
+        classified: [
+            {
+                baseName: "AK-47 | Red Laminate",
+                minFloat: 0.06,
+                maxFloat: 0.8,
+            },
+            {
+                baseName: "AWP | BOOM",
+                minFloat: 0.06,
+                maxFloat: 0.28,
+            },
+        ],
+    },
+    {
+        id: "the-esports-2013-winter-collection",
+        name: "The eSports 2013 Winter Collection",
+        covert: [
+            {
+                baseName: "M4A4 | X-Ray",
+                minFloat: 0,
+                maxFloat: 0.3,
+            },
+        ],
+        classified: [
+            {
+                baseName: "AWP | Electric Hive",
+                minFloat: 0,
+                maxFloat: 0.4,
+            },
+            {
+                baseName: "Desert Eagle | Cobalt Disruption",
+                minFloat: 0,
+                maxFloat: 0.2,
+            },
+            {
+                baseName: "FAMAS | Afterimage",
+                minFloat: 0.02,
+                maxFloat: 0.4,
+            },
+        ],
+    },
+    {
+        id: "the-esports-2014-summer-collection",
+        name: "The eSports 2014 Summer Collection",
+        covert: [
+            {
+                baseName: "AK-47 | Jaguar",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+            {
+                baseName: "M4A4 | Bullet Rain",
+                minFloat: 0.02,
+                maxFloat: 0.46,
+            },
+        ],
+        classified: [
+            {
+                baseName: "AUG | Bengal Tiger",
+                minFloat: 0.06,
+                maxFloat: 0.8,
+            },
+            {
+                baseName: "AWP | Corticera",
+                minFloat: 0.06,
+                maxFloat: 0.3,
+            },
+            {
+                baseName: "Nova | Bloomstick",
+                minFloat: 0.06,
+                maxFloat: 0.8,
+            },
+            {
+                baseName: "P2000 | Corticera",
+                minFloat: 0.06,
+                maxFloat: 0.3,
+            },
+        ],
+    },
+    {
+        id: "the-falchion-collection",
+        name: "The Falchion Collection",
+        covert: [
+            {
+                baseName: "AK-47 | Aquamarine Revenge",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+            {
+                baseName: "AWP | Hyper Beast",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+        ],
+        classified: [
+            {
+                baseName: "CZ75-Auto | Yellow Jacket",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+            {
+                baseName: "MP7 | Nemesis",
+                minFloat: 0,
+                maxFloat: 0.32,
+            },
+            {
+                baseName: "SG 553 | Cyrex",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+        ],
+    },
+    {
+        id: "the-fever-collection",
+        name: "The Fever Collection",
+        covert: [
+            {
+                baseName: "AWP | Printstream",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+            {
+                baseName: "FAMAS | Bad Trip",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+        ],
+        classified: [
+            {
+                baseName: "AK-47 | Searing Rage",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+            {
+                baseName: "Glock-18 | Shinobu",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+            {
+                baseName: "UMP-45 | K.O. Factory",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+        ],
+    },
+    {
+        id: "the-fracture-collection",
+        name: "The Fracture Collection",
+        covert: [
+            {
+                baseName: "AK-47 | Legion of Anubis",
+                minFloat: 0,
+                maxFloat: 0.7,
+            },
+            {
+                baseName: "Desert Eagle | Printstream",
+                minFloat: 0,
+                maxFloat: 0.8,
+            },
+        ],
+        classified: [
+            {
+                baseName: "Glock-18 | Vogue",
+                minFloat: 0,
+                maxFloat: 0.75,
+            },
+            {
+                baseName: "M4A4 | Tooth Fairy",
+                minFloat: 0,
+                maxFloat: 0.73,
+            },
+            {
+                baseName: "XM1014 | Entombed",
+                minFloat: 0,
+                maxFloat: 0.5,
+            },
+        ],
+    },
+    {
+        id: "the-gallery-collection",
+        name: "The Gallery Collection",
+        covert: [
+            {
+                baseName: "Glock-18 | Gold Toof",
+                minFloat: 0,
+                maxFloat: 0.730496,
+            },
+            {
+                baseName: "M4A1-S | Vaporwave",
+                minFloat: 0,
+                maxFloat: 0.597321,
+            },
+        ],
+        classified: [
+            {
+                baseName: "AK-47 | The Outsiders",
+                minFloat: 0,
+                maxFloat: 0.9,
+            },
+            {
+                baseName: "P250 | Epicenter",
+                minFloat: 0,
+                maxFloat: 0.8,
+            },
+            {
+                baseName: "UMP-45 | Neo-Noir",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+        ],
+    },
+    {
+        id: "the-gamma-2-collection",
+        name: "The Gamma 2 Collection",
+        covert: [
+            {
+                baseName: "AK-47 | Neon Revolution",
+                minFloat: 0,
+                maxFloat: 0.8,
+            },
+            {
+                baseName: "FAMAS | Roll Cage",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+        ],
+        classified: [
+            {
+                baseName: "AUG | Syd Mead",
+                minFloat: 0,
+                maxFloat: 0.8,
+            },
+            {
+                baseName: "MP9 | Airlock",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+            {
+                baseName: "Tec-9 | Fuel Injector",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+        ],
+    },
+    {
+        id: "the-gamma-collection",
+        name: "The Gamma Collection",
+        covert: [
+            {
+                baseName: "Glock-18 | Wasteland Rebel",
+                minFloat: 0,
+                maxFloat: 0.54,
+            },
+            {
+                baseName: "M4A1-S | Mecha Industries",
+                minFloat: 0,
+                maxFloat: 0.8,
+            },
+        ],
+        classified: [
+            {
+                baseName: "M4A4 | Desolate Space",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+            {
+                baseName: "P2000 | Imperial Dragon",
+                minFloat: 0,
+                maxFloat: 0.63,
+            },
+            {
+                baseName: "SCAR-20 | Bloodsport",
+                minFloat: 0,
+                maxFloat: 0.45,
+            },
+        ],
+    },
+    {
+        id: "the-genesis-collection",
+        name: "The Genesis Collection",
+        covert: [
+            {
+                baseName: "AK-47 | The Oligarch",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+            {
+                baseName: "M4A4 | Full Throttle",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+        ],
+        classified: [
+            {
+                baseName: "AWP | Ice Coaled",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+            {
+                baseName: "Glock-18 | Mirror Mosaic",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+            {
+                baseName: "MP7 | Smoking Kills",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+        ],
+    },
+    {
+        id: "the-glove-collection",
+        name: "The Glove Collection",
+        covert: [
+            {
+                baseName: "M4A4 | Buzz Kill",
+                minFloat: 0,
+                maxFloat: 0.7,
+            },
+            {
+                baseName: "SSG 08 | Dragonfire",
+                minFloat: 0,
+                maxFloat: 0.5,
+            },
+        ],
+        classified: [
+            {
+                baseName: "FAMAS | Mecha Industries",
+                minFloat: 0,
+                maxFloat: 0.5,
+            },
+            {
+                baseName: "P90 | Shallow Grave",
+                minFloat: 0,
+                maxFloat: 0.75,
+            },
+            {
+                baseName: "Sawed-Off | Wasteland Princess",
+                minFloat: 0,
+                maxFloat: 0.7,
+            },
+        ],
+    },
+    {
+        id: "the-gods-and-monsters-collection",
+        name: "The Gods and Monsters Collection",
+        covert: [
+            {
+                baseName: "AWP | Medusa",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+        ],
+        classified: [
+            {
+                baseName: "M4A4 | Poseidon",
+                minFloat: 0,
+                maxFloat: 0.33,
+            },
+        ],
+    },
+    {
+        id: "the-graphic-design-collection",
+        name: "The Graphic Design Collection",
+        covert: [
+            {
+                baseName: "AWP | CMYK",
+                minFloat: 0,
+                maxFloat: 0.8,
+            },
+        ],
+        classified: [
+            {
+                baseName: "AUG | Lil' Pig",
+                minFloat: 0,
+                maxFloat: 0.8,
+            },
+            {
+                baseName: "Desert Eagle | Starcade",
+                minFloat: 0,
+                maxFloat: 0.75,
+            },
+        ],
+    },
+    {
+        id: "the-havoc-collection",
+        name: "The Havoc Collection",
+        covert: [
+            {
+                baseName: "AK-47 | X-Ray",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+        ],
+        classified: [
+            {
+                baseName: "AWP | Silk Tiger",
+                minFloat: 0,
+                maxFloat: 0.6,
+            },
+            {
+                baseName: "MAC-10 | Hot Snakes",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+        ],
+    },
+    {
+        id: "the-horizon-collection",
+        name: "The Horizon Collection",
+        covert: [
+            {
+                baseName: "AK-47 | Neon Rider",
+                minFloat: 0,
+                maxFloat: 0.8,
+            },
+            {
+                baseName: "Desert Eagle | Code Red",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+        ],
+        classified: [
+            {
+                baseName: "FAMAS | Eye of Athena",
+                minFloat: 0,
+                maxFloat: 0.7,
+            },
+            {
+                baseName: "M4A1-S | Nightmare",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+            {
+                baseName: "Sawed-Off | Devourer",
+                minFloat: 0,
+                maxFloat: 0.8,
+            },
+        ],
+    },
+    {
+        id: "the-huntsman-collection",
+        name: "The Huntsman Collection",
+        covert: [
+            {
+                baseName: "AK-47 | Vulcan",
+                minFloat: 0,
+                maxFloat: 0.9,
+            },
+            {
+                baseName: "M4A4 | Desert-Strike",
+                minFloat: 0,
+                maxFloat: 0.7,
+            },
+        ],
+        classified: [
+            {
+                baseName: "M4A1-S | Atomic Alloy",
+                minFloat: 0,
+                maxFloat: 0.9,
+            },
+            {
+                baseName: "SCAR-20 | Cyrex",
+                minFloat: 0,
+                maxFloat: 0.5,
+            },
+            {
+                baseName: "USP-S | Caiman",
+                minFloat: 0,
+                maxFloat: 0.4,
+            },
+            {
+                baseName: "USP-S | Orion",
+                minFloat: 0,
+                maxFloat: 0.5,
+            },
+        ],
+    },
+    {
+        id: "the-kilowatt-collection",
+        name: "The Kilowatt Collection",
+        covert: [
+            {
+                baseName: "AK-47 | Inheritance",
+                minFloat: 0,
+                maxFloat: 0.797346,
+            },
+            {
+                baseName: "AWP | Chrome Cannon",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+        ],
+        classified: [
+            {
+                baseName: "M4A1-S | Black Lotus",
+                minFloat: 0,
+                maxFloat: 0.7,
+            },
+            {
+                baseName: "USP-S | Jawbreaker",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+            {
+                baseName: "Zeus x27 | Olympus",
+                minFloat: 0,
+                maxFloat: 0.67,
+            },
+        ],
+    },
+    {
+        id: "the-militia-collection",
+        name: "The Militia Collection",
+        covert: [],
+        classified: [
+            {
+                baseName: "SCAR-20 | Splash Jam",
+                minFloat: 0.06,
+                maxFloat: 0.8,
+            },
+        ],
+    },
+    {
+        id: "the-norse-collection",
+        name: "The Norse Collection",
+        covert: [
+            {
+                baseName: "AWP | Gungnir",
+                minFloat: 0,
+                maxFloat: 0.6,
+            },
+        ],
+        classified: [
+            {
+                baseName: "Negev | Mjölnir",
+                minFloat: 0,
+                maxFloat: 0.6,
+            },
+        ],
+    },
+    {
+        id: "the-operation-broken-fang-collection",
+        name: "The Operation Broken Fang Collection",
+        covert: [
+            {
+                baseName: "Glock-18 | Neo-Noir",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+            {
+                baseName: "M4A1-S | Printstream",
+                minFloat: 0,
+                maxFloat: 0.8,
+            },
+        ],
+        classified: [
+            {
+                baseName: "Five-SeveN | Fairy Tale",
+                minFloat: 0.02,
+                maxFloat: 0.9,
+            },
+            {
+                baseName: "M4A4 | Cyber Security",
+                minFloat: 0,
+                maxFloat: 0.98,
+            },
+            {
+                baseName: "USP-S | Monster Mashup",
+                minFloat: 0,
+                maxFloat: 0.7,
+            },
+        ],
+    },
+    {
+        id: "the-operation-hydra-collection",
+        name: "The Operation Hydra Collection",
+        covert: [
+            {
+                baseName: "AWP | Oni Taiji",
+                minFloat: 0,
+                maxFloat: 0.5,
+            },
+            {
+                baseName: "Five-SeveN | Hyper Beast",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+        ],
+        classified: [
+            {
+                baseName: "Dual Berettas | Cobra Strike",
+                minFloat: 0,
+                maxFloat: 0.6,
+            },
+            {
+                baseName: "Galil AR | Sugar Rush",
+                minFloat: 0,
+                maxFloat: 0.55,
+            },
+            {
+                baseName: "M4A4 | Hellfire",
+                minFloat: 0,
+                maxFloat: 0.5,
+            },
+        ],
+    },
+    {
+        id: "the-operation-riptide-collection",
+        name: "The Operation Riptide Collection",
+        covert: [
+            {
+                baseName: "AK-47 | Leet Museo",
+                minFloat: 0,
+                maxFloat: 0.65,
+            },
+            {
+                baseName: "Desert Eagle | Ocean Drive",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+        ],
+        classified: [
+            {
+                baseName: "Glock-18 | Snack Attack",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+            {
+                baseName: "MAC-10 | Toybox",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+            {
+                baseName: "SSG 08 | Turbo Peek",
+                minFloat: 0,
+                maxFloat: 0.6,
+            },
+        ],
+    },
+    {
+        id: "the-overpass-2024-collection",
+        name: "The Overpass 2024 Collection",
+        covert: [
+            {
+                baseName: "AK-47 | B the Monster",
+                minFloat: 0,
+                maxFloat: 0.8,
+            },
+        ],
+        classified: [
+            {
+                baseName: "AWP | Crakow!",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+            {
+                baseName: "Zeus x27 | Dragon Snore",
+                minFloat: 0,
+                maxFloat: 0.8,
+            },
+        ],
+    },
+    {
+        id: "the-overpass-collection",
+        name: "The Overpass Collection",
+        covert: [],
+        classified: [
+            {
+                baseName: "M4A1-S | Master Piece",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+        ],
+    },
+    {
+        id: "the-phoenix-collection",
+        name: "The Phoenix Collection",
+        covert: [
+            {
+                baseName: "AUG | Chameleon",
+                minFloat: 0,
+                maxFloat: 0.5,
+            },
+            {
+                baseName: "AWP | Asiimov",
+                minFloat: 0.18,
+                maxFloat: 1,
+            },
+        ],
+        classified: [
+            {
+                baseName: "AK-47 | Redline",
+                minFloat: 0.1,
+                maxFloat: 0.7,
+            },
+            {
+                baseName: "Nova | Antique",
+                minFloat: 0,
+                maxFloat: 0.3,
+            },
+            {
+                baseName: "P90 | Trigon",
+                minFloat: 0.08,
+                maxFloat: 0.75,
+            },
+        ],
+    },
+    {
+        id: "the-prisma-2-collection",
+        name: "The Prisma 2 Collection",
+        covert: [
+            {
+                baseName: "Glock-18 | Bullet Queen",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+            {
+                baseName: "M4A1-S | Player Two",
+                minFloat: 0,
+                maxFloat: 0.84,
+            },
+        ],
+        classified: [
+            {
+                baseName: "AK-47 | Phantom Disruptor",
+                minFloat: 0,
+                maxFloat: 0.65,
+            },
+            {
+                baseName: "MAC-10 | Disco Tech",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+            {
+                baseName: "MAG-7 | Justice",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+        ],
+    },
+    {
+        id: "the-prisma-collection",
+        name: "The Prisma Collection",
+        covert: [
+            {
+                baseName: "Five-SeveN | Angry Mob",
+                minFloat: 0,
+                maxFloat: 0.7,
+            },
+            {
+                baseName: "M4A4 | The Emperor",
+                minFloat: 0,
+                maxFloat: 0.8,
+            },
+        ],
+        classified: [
+            {
+                baseName: "AUG | Momentum",
+                minFloat: 0.05,
+                maxFloat: 1,
+            },
+            {
+                baseName: "R8 Revolver | Skull Crusher",
+                minFloat: 0.25,
+                maxFloat: 0.8,
+            },
+            {
+                baseName: "XM1014 | Incinegator",
+                minFloat: 0.14,
+                maxFloat: 0.65,
+            },
+        ],
+    },
+    {
+        id: "the-radiant-collection",
+        name: "The Radiant Collection",
+        covert: [],
+        classified: [
+            {
+                baseName: "AK-47 | Nouveau Rouge",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+        ],
+    },
+    {
+        id: "the-recoil-collection",
+        name: "The Recoil Collection",
+        covert: [
+            {
+                baseName: "AWP | Chromatic Aberration",
+                minFloat: 0,
+                maxFloat: 0.7,
+            },
+            {
+                baseName: "USP-S | Printstream",
+                minFloat: 0,
+                maxFloat: 0.85,
+            },
+        ],
+        classified: [
+            {
+                baseName: "AK-47 | Ice Coaled",
+                minFloat: 0,
+                maxFloat: 0.77,
+            },
+            {
+                baseName: "P250 | Visions",
+                minFloat: 0,
+                maxFloat: 0.7,
+            },
+            {
+                baseName: "Sawed-Off | Kiss♥Love",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+        ],
+    },
+    {
+        id: "the-revolution-collection",
+        name: "The Revolution Collection",
+        covert: [
+            {
+                baseName: "AK-47 | Head Shot",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+            {
+                baseName: "M4A4 | Temukau",
+                minFloat: 0,
+                maxFloat: 0.8,
+            },
+        ],
+        classified: [
+            {
+                baseName: "AWP | Duality",
+                minFloat: 0,
+                maxFloat: 0.8,
+            },
+            {
+                baseName: "P2000 | Wicked Sick",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+            {
+                baseName: "UMP-45 | Wild Child",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+        ],
+    },
+    {
+        id: "the-revolver-case-collection",
+        name: "The Revolver Case Collection",
+        covert: [
+            {
+                baseName: "M4A4 | Royal Paladin",
+                minFloat: 0,
+                maxFloat: 0.8,
+            },
+            {
+                baseName: "R8 Revolver | Fade",
+                minFloat: 0,
+                maxFloat: 0.4,
+            },
+        ],
+        classified: [
+            {
+                baseName: "AK-47 | Point Disarray",
+                minFloat: 0,
+                maxFloat: 0.67,
+            },
+            {
+                baseName: "G3SG1 | The Executioner",
+                minFloat: 0.14,
+                maxFloat: 0.85,
+            },
+            {
+                baseName: "P90 | Shapewood",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+        ],
+    },
+    {
+        id: "the-rising-sun-collection",
+        name: "The Rising Sun Collection",
+        covert: [
+            {
+                baseName: "AUG | Akihabara Accept",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+        ],
+        classified: [
+            {
+                baseName: "AK-47 | Hydroponic",
+                minFloat: 0,
+                maxFloat: 0.8,
+            },
+        ],
+    },
+    {
+        id: "the-shadow-collection",
+        name: "The Shadow Collection",
+        covert: [
+            {
+                baseName: "M4A1-S | Golden Coil",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+            {
+                baseName: "USP-S | Kill Confirmed",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+        ],
+        classified: [
+            {
+                baseName: "AK-47 | Frontside Misty",
+                minFloat: 0.02,
+                maxFloat: 0.87,
+            },
+            {
+                baseName: "G3SG1 | Flux",
+                minFloat: 0,
+                maxFloat: 0.9,
+            },
+            {
+                baseName: "SSG 08 | Big Iron",
+                minFloat: 0,
+                maxFloat: 0.64,
+            },
+        ],
+    },
+    {
+        id: "the-shattered-web-collection",
+        name: "The Shattered Web Collection",
+        covert: [
+            {
+                baseName: "AWP | Containment Breach",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+            {
+                baseName: "MAC-10 | Stalker",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+        ],
+        classified: [
+            {
+                baseName: "SG 553 | Colony IV",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+            {
+                baseName: "SSG 08 | Bloodshot",
+                minFloat: 0.14,
+                maxFloat: 0.6,
+            },
+            {
+                baseName: "Tec-9 | Decimator",
+                minFloat: 0,
+                maxFloat: 0.75,
+            },
+        ],
+    },
+    {
+        id: "the-snakebite-collection",
+        name: "The Snakebite Collection",
+        covert: [
+            {
+                baseName: "M4A4 | In Living Color",
+                minFloat: 0,
+                maxFloat: 0.79,
+            },
+            {
+                baseName: "USP-S | The Traitor",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+        ],
+        classified: [
+            {
+                baseName: "Galil AR | Chromatic Aberration",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+            {
+                baseName: "MP9 | Food Chain",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+            {
+                baseName: "XM1014 | XOXO",
+                minFloat: 0,
+                maxFloat: 0.9,
+            },
+        ],
+    },
+    {
+        id: "the-spectrum-2-collection",
+        name: "The Spectrum 2 Collection",
+        covert: [
+            {
+                baseName: "AK-47 | The Empress",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+            {
+                baseName: "P250 | See Ya Later",
+                minFloat: 0,
+                maxFloat: 0.7,
+            },
+        ],
+        classified: [
+            {
+                baseName: "M4A1-S | Leaded Glass",
+                minFloat: 0,
+                maxFloat: 0.7,
+            },
+            {
+                baseName: "PP-Bizon | High Roller",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+            {
+                baseName: "R8 Revolver | Llama Cannon",
+                minFloat: 0.03,
+                maxFloat: 0.7,
+            },
+        ],
+    },
+    {
+        id: "the-spectrum-collection",
+        name: "The Spectrum Collection",
+        covert: [
+            {
+                baseName: "AK-47 | Bloodsport",
+                minFloat: 0,
+                maxFloat: 0.45,
+            },
+            {
+                baseName: "USP-S | Neo-Noir",
+                minFloat: 0,
+                maxFloat: 0.7,
+            },
+        ],
+        classified: [
+            {
+                baseName: "AWP | Fever Dream",
+                minFloat: 0,
+                maxFloat: 0.55,
+            },
+            {
+                baseName: "CZ75-Auto | Xiangliu",
+                minFloat: 0,
+                maxFloat: 0.56,
+            },
+            {
+                baseName: "M4A1-S | Decimator",
+                minFloat: 0,
+                maxFloat: 0.85,
+            },
+        ],
+    },
+    {
+        id: "the-sport-field-collection",
+        name: "The Sport & Field Collection",
+        covert: [
+            {
+                baseName: "M4A1-S | Fade",
+                minFloat: 0,
+                maxFloat: 0.08,
+            },
+        ],
+        classified: [
+            {
+                baseName: "Galil AR | Rainbow Spoon",
+                minFloat: 0,
+                maxFloat: 0.554422,
+            },
+            {
+                baseName: "Glock-18 | AXIA",
+                minFloat: 0,
+                maxFloat: 0.7,
+            },
+        ],
+    },
+    {
+        id: "the-st-marc-collection",
+        name: "The St. Marc Collection",
+        covert: [
+            {
+                baseName: "AK-47 | Wild Lotus",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+        ],
+        classified: [
+            {
+                baseName: "MP9 | Wild Lily",
+                minFloat: 0,
+                maxFloat: 0.7,
+            },
+        ],
+    },
+    {
+        id: "the-train-2025-collection",
+        name: "The Train 2025 Collection",
+        covert: [
+            {
+                baseName: "AWP | LongDog",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+        ],
+        classified: [
+            {
+                baseName: "M4A4 | Hellish",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+            {
+                baseName: "MP9 | Latte Rush",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+        ],
+    },
+    {
+        id: "the-vanguard-collection",
+        name: "The Vanguard Collection",
+        covert: [
+            {
+                baseName: "AK-47 | Wasteland Rebel",
+                minFloat: 0.05,
+                maxFloat: 0.7,
+            },
+            {
+                baseName: "P2000 | Fire Elemental",
+                minFloat: 0,
+                maxFloat: 0.6,
+            },
+        ],
+        classified: [
+            {
+                baseName: "P250 | Cartel",
+                minFloat: 0,
+                maxFloat: 0.75,
+            },
+            {
+                baseName: "SCAR-20 | Cardiac",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+            {
+                baseName: "XM1014 | Tranquility",
+                minFloat: 0,
+                maxFloat: 0.5,
+            },
+        ],
+    },
+    {
+        id: "the-wildfire-collection",
+        name: "The Wildfire Collection",
+        covert: [
+            {
+                baseName: "AK-47 | Fuel Injector",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+            {
+                baseName: "M4A4 | The Battlestar",
+                minFloat: 0,
+                maxFloat: 0.64,
+            },
+        ],
+        classified: [
+            {
+                baseName: "AWP | Elite Build",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+            {
+                baseName: "Desert Eagle | Kumicho Dragon",
+                minFloat: 0,
+                maxFloat: 0.76,
+            },
+            {
+                baseName: "Nova | Hyper Beast",
+                minFloat: 0,
+                maxFloat: 0.6,
+            },
+        ],
+    },
+    {
+        id: "the-winter-offensive-collection",
+        name: "The Winter Offensive Collection",
+        covert: [
+            {
+                baseName: "M4A4 | Asiimov",
+                minFloat: 0.18,
+                maxFloat: 1,
+            },
+            {
+                baseName: "Sawed-Off | The Kraken",
+                minFloat: 0,
+                maxFloat: 0.4,
+            },
+        ],
+        classified: [
+            {
+                baseName: "AWP | Redline",
+                minFloat: 0.1,
+                maxFloat: 0.4,
+            },
+            {
+                baseName: "M4A1-S | Guardian",
+                minFloat: 0,
+                maxFloat: 0.5,
+            },
+            {
+                baseName: "P250 | Mehndi",
+                minFloat: 0,
+                maxFloat: 1,
+            },
+        ],
+    },
+];
+exports.COLLECTIONS_WITH_FLOAT_MAP = new Map();
+exports.COLLECTIONS_WITH_FLOAT_BY_NAME = new Map();
+exports.COVERT_FLOAT_BY_BASENAME = new Map();
+exports.CLASSIFIED_FLOAT_BY_BASENAME = new Map();
+const rebuildCollectionFloatCaches = (entries = exports.COLLECTIONS_WITH_FLOAT) => {
+    exports.COLLECTIONS_WITH_FLOAT_MAP.clear();
+    exports.COLLECTIONS_WITH_FLOAT_BY_NAME.clear();
+    exports.COVERT_FLOAT_BY_BASENAME.clear();
+    exports.CLASSIFIED_FLOAT_BY_BASENAME.clear();
+    for (const entry of entries) {
+        exports.COLLECTIONS_WITH_FLOAT_MAP.set(entry.id, entry);
+        exports.COLLECTIONS_WITH_FLOAT_BY_NAME.set(entry.name.toLowerCase(), entry);
+        for (const covert of entry.covert) {
+            exports.COVERT_FLOAT_BY_BASENAME.set(covert.baseName, covert);
+        }
+        for (const classified of entry.classified) {
+            exports.CLASSIFIED_FLOAT_BY_BASENAME.set(classified.baseName, classified);
+        }
+    }
+};
+exports.rebuildCollectionFloatCaches = rebuildCollectionFloatCaches;
+(0, exports.rebuildCollectionFloatCaches)();
